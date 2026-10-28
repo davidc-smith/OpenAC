@@ -6,7 +6,9 @@ namespace AcDream.App.UI.Hud;
 /// <param name="HoldsRetailVisibility">The retail windows' visibility is the player's, kept for them while
 /// replaced and put back after (the chat windows); otherwise their controllers decide it (the vitals).</param>
 /// <param name="OnDemand">Shown only while the player has it open (the Gear Deck), not whenever
-/// gameplay is on screen. Opening one of its retail windows opens it instead (<see cref="ModernHudSwitch.RedirectTarget"/>).</param>
+/// gameplay is on screen. Opening one of its retail windows opens it instead (<see cref="ModernHudSwitch.RedirectTarget"/>).
+/// When Modern HUD turns off its retail windows are not reopened (their held visibility is still
+/// released): a retail panel would take the shared main-panel slot from the Options panel.</param>
 public sealed record ModernHudReplacement(
     string Name,
     string Window,
@@ -189,7 +191,10 @@ public sealed class ModernHudSwitch
                 foreach (string window in r.RetailWindows)
                 {
                     bool was = _wasVisible.Remove(window, out bool recorded) && recorded;
-                    if (_releaseVisibility?.Invoke(window) ?? was) _show(window);
+                    bool restore = _releaseVisibility?.Invoke(window) ?? was;   // releases the hold either way
+                    // An on-demand window's retail panel would take the shared main-panel slot from the
+                    // Options panel the player is turning Modern HUD off in; it stays closed instead.
+                    if (restore && !r.OnDemand) _show(window);
                 }
             }
             r.ResyncRetail?.Invoke();

@@ -339,7 +339,7 @@ public sealed class ModernHudSwitchTests
     }
 
     [Fact]
-    public void OnDemand_OffClosesDeck_RestoresHeldRetail()
+    public void OnDemand_OffClosesDeck_ReleasesTheHold_WithoutReopeningRetail()
     {
         var h = new Harness(withGear: true);
         h.Visible.Add(WindowNames.Inventory);
@@ -348,7 +348,10 @@ public sealed class ModernHudSwitchTests
         h.Switch.Tick();
         h.Switch.Apply(false);
         Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
-        Assert.Contains(WindowNames.Inventory, h.Visible);
+        // The retail inventory would take the Options panel's shared slot, where the
+        // player is turning Modern HUD off; it stays closed, and its hold is released.
+        Assert.DoesNotContain(WindowNames.Inventory, h.Visible);
+        Assert.Empty(h.Held);
         Assert.False(h.Switch.IsOpen(WindowNames.GearDeck));
     }
 

@@ -317,4 +317,42 @@ public sealed class GearDeckWiringTests
         Assert.False(character.Visible);   // the retail panels take turns in the main slot
         Assert.False(w.DeckVisible);
     }
+
+    [Fact]
+    public void TurningModernHudOff_FromTheOptionsPanel_LeavesItOpen_AndTheInventoryClosed()
+    {
+        var w = new World();
+        var options = new UiPanel { Width = 300, Height = 500 };
+        w.Root.AddChild(options);
+        w.Root.RegisterWindow(WindowNames.Options, options, options, null);
+        var panelUi = new RetailPanelUiController(w.Root.IsWindowVisible, w.Root.ShowWindow, w.Root.HideWindow);
+        panelUi.Register(RetailPanelCatalog.Options, WindowNames.Options);
+        panelUi.Register(RetailPanelCatalog.Inventory, WindowNames.Inventory);
+        panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+
+        // The runtime's raw operations: a retail panel goes through the shared main-panel slot.
+        var held = new Dictionary<string, bool>();
+        var released = new List<string>();
+        var hud = new ModernHudSwitch(
+            n => RetailPanelCatalog.TryGetPanelId(n, out uint id) ? panelUi.SetPanelVisibility(id, true) : w.Root.ShowWindow(n),
+            n => RetailPanelCatalog.TryGetPanelId(n, out uint id) ? panelUi.SetPanelVisibility(id, false) : w.Root.HideWindow(n),
+            n => RetailPanelCatalog.TryGetPanelId(n, out uint id) ? panelUi.IsPanelVisible(id) : w.Root.IsWindowVisible(n),
+            () => w.Gameplay,
+            [RetailUiRuntime.GearDeckReplacement(() => w.Deck)],
+            holdVisibility: n => held.TryAdd(n, w.Inventory.Visible),
+            releaseVisibility: n => { released.Add(n); return held.Remove(n, out bool v) && v; },
+            log: _ => { });
+
+        hud.Apply(true);                                   // holds "inventory was open"
+        Assert.False(w.Inventory.Visible);
+        panelUi.SetPanelVisibility(RetailPanelCatalog.Options, visible: true);
+        Assert.True(options.Visible);
+
+        hud.Apply(false);
+
+        Assert.True(options.Visible);
+        Assert.False(w.Inventory.Visible);
+        Assert.Equal([WindowNames.Inventory], released);
+        Assert.False(w.DeckVisible);
+    }
 }
