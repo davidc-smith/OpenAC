@@ -60,4 +60,34 @@ public sealed class GearDeckSessionTests
         Assert.Contains("\"view\":\"list\"", store.Saved["Davian"]);
         Assert.Equal(GearDeckSettings.Default, s.Settings);
     }
+
+    [Fact]
+    public void TickSave_WritesAPendingChangeAfterTheIdle_WithoutReadingTheKey()
+    {
+        var store = new FakeStore();
+        double now = 0;
+        int keyReads = 0;
+        var s = new GearDeckSession(store, () => { keyReads++; return "Davian"; }, () => true, () => now);
+        s.Tick();
+        s.Update(x => x with { Folded = true });   // then the deck closes: only the runtime ticks now
+        int reads = keyReads;
+        now = 0.3; s.TickSave();
+        Assert.False(store.Saved.ContainsKey("Davian"));
+        now = 0.6; s.TickSave();
+        Assert.Contains("\"folded\":true", store.Saved["Davian"]);
+        Assert.Equal(reads, keyReads);
+    }
+
+    [Fact]
+    public void TickSave_NeverLoadsOrSavesBeforeARealCharacter()
+    {
+        var store = new FakeStore();
+        store.Saved["Davian"] = """{"version":1,"folded":true}""";
+        double now = 0;
+        var s = new GearDeckSession(store, () => "Davian", () => false, () => now);
+        s.Update(x => x with { View = GearPackView.List });
+        now = 5; s.TickSave();
+        Assert.False(s.Settings.Folded);
+        Assert.Equal("""{"version":1,"folded":true}""", store.Saved["Davian"]);
+    }
 }

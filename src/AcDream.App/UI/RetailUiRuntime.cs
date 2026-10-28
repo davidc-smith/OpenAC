@@ -928,6 +928,9 @@ public sealed class RetailUiRuntime : IDisposable
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
         _hudSwitch?.Tick();
+        // Every frame, shown or not: a change made just before the deck closed is still saved.
+        // The deck's own tick loads the character's settings; this only writes.
+        _gearDeckSession?.TickSave();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();

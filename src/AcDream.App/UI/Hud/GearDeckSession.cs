@@ -35,6 +35,17 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
             Settings = GearDeckSettings.FromJson(SafeLoad(key));
             Changed?.Invoke();
         }
+        TickSave();
+    }
+
+    /// <summary>
+    /// Writes a pending change once it has been idle <see cref="SaveIdleSeconds"/>. The
+    /// runtime calls it every frame, so a change made just before the deck closes is still
+    /// saved; it reads no key and never loads (a change made before a character loaded has
+    /// no key and is dropped by <see cref="Flush"/>, as before).
+    /// </summary>
+    public void TickSave()
+    {
         if (_dirty && _clock() - _lastChange >= SaveIdleSeconds) Flush();
     }
 
