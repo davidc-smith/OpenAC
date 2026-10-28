@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using AcDream.Core.Chess;
 using AcDream.Core.Net.Messages;
 using Xunit;
 
@@ -80,7 +81,7 @@ public sealed class ChessMessagesTests
 
         Assert.Equal(new GameEvents.ChessStartGame(0x7A9B4001u, 0),
             GameEvents.ParseChessStartGame(start));
-        Assert.Equal(new GameEvents.ChessMoveResponse(0x7A9B4001u, -106),
+        Assert.Equal(new GameEvents.ChessMoveResponse(0x7A9B4001u, ChessMoveResult.WouldSelfCheck),
             GameEvents.ParseChessMoveResponse(refused));
         Assert.Null(GameEvents.ParseChessStartGame(start.AsSpan(0, 7)));
         Assert.Null(GameEvents.ParseChessMoveResponse(refused.AsSpan(0, 7)));

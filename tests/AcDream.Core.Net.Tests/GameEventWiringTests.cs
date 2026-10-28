@@ -1975,7 +1975,7 @@ public sealed class GameEventWiringTests
 
         Assert.Equal(0, join!.Value.Team);
         Assert.Equal(0, start!.Value.FirstTeam);
-        Assert.Equal(1, move!.Value.Result);
+        Assert.Equal(AcDream.Core.Chess.ChessMoveResult.MovedToEmptySquare, move!.Value.Result);
         Assert.Equal(4, turn!.Value.Move.ToY);
         Assert.True(stalemate!.Value.Offered);
         Assert.Equal(board, over!.Value.BoardGuid);

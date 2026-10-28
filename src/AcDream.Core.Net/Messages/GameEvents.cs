@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Text;
+using AcDream.Core.Chess;
 using AcDream.Core.Items;
 
 namespace AcDream.Core.Net.Messages;
@@ -949,16 +950,15 @@ public static class GameEvents
             BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(4)));
     }
 
-    /// <summary>0x0283 MoveResponse: the server's verdict on your last move,
-    /// a chess move result code (above zero accepted, zero or below refused).</summary>
-    public readonly record struct ChessMoveResponse(uint BoardGuid, int Result);
+    /// <summary>0x0283 MoveResponse: the server's verdict on your last move.</summary>
+    public readonly record struct ChessMoveResponse(uint BoardGuid, ChessMoveResult Result);
 
     public static ChessMoveResponse? ParseChessMoveResponse(ReadOnlySpan<byte> payload)
     {
         if (payload.Length < 8) return null;
         return new ChessMoveResponse(
             BinaryPrimitives.ReadUInt32LittleEndian(payload),
-            BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(4)));
+            (ChessMoveResult)BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(4)));
     }
 
     /// <summary>
