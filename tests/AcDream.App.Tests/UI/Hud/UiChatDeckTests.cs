@@ -38,6 +38,7 @@ public sealed class UiChatDeckTests
         public Action? RestorePlacement;
         public int Beeps;
         public int SettingsOpened;
+        public bool SettingsIsOpen;
 
         public Harness(bool withModel = true, DeckFonts? fonts = null)
         {
@@ -54,7 +55,8 @@ public sealed class UiChatDeckTests
                     Keyboard: Keyboard,
                     RestorePinnedPlacement: () => RestorePlacement?.Invoke(),
                     PlayAlert: () => Beeps++,
-                    OpenSettings: () => SettingsOpened++),
+                    OpenSettings: () => SettingsOpened++,
+                    SettingsOpen: () => SettingsIsOpen),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();

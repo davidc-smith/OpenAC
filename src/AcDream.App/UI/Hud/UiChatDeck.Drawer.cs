@@ -110,7 +110,8 @@ internal sealed partial class UiChatDeck
         UiElement? focus = root.KeyboardFocus;
         return Inside(Left, Top, Width, Height, root.MouseX, root.MouseY)
             || ReferenceEquals(focus, Input) || ReferenceEquals(focus, SearchField)
-            || _tabMenu.IsOpen || _chipMenu.IsOpen || Transcript.IsSelecting;
+            || _tabMenu.IsOpen || _chipMenu.IsOpen || Transcript.IsSelecting
+            || _b.SettingsOpen?.Invoke() == true;
     }
 
     private void PressCollapse()

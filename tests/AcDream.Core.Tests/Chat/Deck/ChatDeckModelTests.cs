@@ -251,6 +251,18 @@ public sealed class ChatDeckModelTests
     }
 
     [Fact]
+    public void SetAppearance_IgnoresNoChange()
+    {
+        var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");
+        int raised = 0;
+        model.SettingsChanged += _ => raised++;
+        model.SetAppearance(model.Settings.Appearance with { });
+        Assert.Equal(0, raised);
+        model.SetAppearance(model.Settings.Appearance with { BackgroundOpacity = 0.3f });
+        Assert.Equal(1, raised);
+    }
+
+    [Fact]
     public void SetKeys_Stores_AndIgnoresNoChange()
     {
         var model = new ChatDeckModel(new ChatLog(), ChatDeckDefaults.Create(), "Davian");

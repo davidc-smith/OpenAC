@@ -263,6 +263,20 @@ public sealed class UiChatDeckDrawerTests
     }
 
     [Fact]
+    public void OpenSettingsWindow_KeepsTheDeckFromFading()
+    {
+        var w = new DrawerWorld();
+        w.H.Model!.SetAppearance(w.H.Model.Settings.Appearance with { FadeWhenIdle = true, FadeAfterSeconds = 2 });
+        w.H.SettingsIsOpen = true;
+        w.Root.OnMouseMove(1500, 100);
+        w.Tick(5);
+        Assert.Equal(1f, w.Deck.BackgroundFade);
+        w.H.SettingsIsOpen = false;
+        w.Tick(2.5);
+        Assert.Equal(0f, w.Deck.BackgroundFade);
+    }
+
+    [Fact]
     public void ALineInTheSelectedTab_WakesTheFade()
     {
         var w = new DrawerWorld();

@@ -129,6 +129,7 @@ public sealed class ChatDeckModel : IDisposable
     public void SetAppearance(ChatDeckAppearance appearance)
     {
         ChatDeckAppearance next = ChatDeckSettingsNormalizer.Normalize(Settings with { Appearance = appearance }).Appearance;
+        if (next == Settings.Appearance) return;
         Settings = Settings with { Appearance = next };
         SettingsChanged?.Invoke(Settings);
     }
