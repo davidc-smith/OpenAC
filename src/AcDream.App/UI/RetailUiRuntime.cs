@@ -3979,7 +3979,8 @@ public sealed class RetailUiRuntime : IDisposable
                     IsPending: items.IsPendingInventorySource,
                     Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
                     // One line per drag and drop, beside the mount line, for live checks.
-                    Log: Console.WriteLine),
+                    Log: Console.WriteLine,
+                    Keyboard: Host.Keyboard),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

@@ -17,7 +17,8 @@ internal sealed record GearDeckBindings(
     IGearItemActions Actions,
     Func<uint, bool> IsPending,
     Action Close,
-    Action<string>? Log = null);
+    Action<string>? Log = null,
+    Silk.NET.Input.IKeyboard? Keyboard = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
@@ -94,7 +95,13 @@ internal sealed partial class UiGearDeck : UiElement
         ResizeX = false;
         ResizeY = true;
         _g = GearDeckGeometry.Create(Height, LayoutInput());
-        _b.Session.Ended += () => SetQuery(GearQuery.Empty);   // the live query is not kept between sessions
+        CreateQueryInput();   // UiGearDeck.Query.cs
+        CreateMenu();         // UiGearDeck.Menu.cs
+        _b.Session.Ended += () =>   // the live query is not kept between sessions
+        {
+            SetQuery(GearQuery.Empty);
+            QueryInput.SetText("");
+        };
     }
 
     /// <summary>How the runtime mounts the deck: imported chrome, 300 wide, resized from the top or bottom, hidden.</summary>
@@ -239,18 +246,23 @@ internal sealed partial class UiGearDeck : UiElement
         _model.Worn.Count,
         Shown.Count,
         _model.SidePackSlots,
-        _scrollRow);
+        _scrollRow,
+        Suggestions: VisibleSuggestions);
 
     private void SyncGeometry()
     {
         GearDeckLayoutInput input = LayoutInput();
         FitMinHeight(input);
-        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H)
+        GearPills pills = Pills();
+        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H || _pillsVersion != _geometryPills)
         {
-            _g = GearDeckGeometry.Create(Height, input);
+            _g = GearDeckGeometry.Create(Height, input, pills);
+            _geometryPills = _pillsVersion;
             ClearFitted();
             Array.Clear(_slotLabels);
+            Array.Clear(_fittedChips);
         }
+        PlaceQueryInput();
     }
 
     /// <summary>

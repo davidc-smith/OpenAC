@@ -45,6 +45,7 @@ internal sealed partial class UiGearDeck
         else DrawSlots(ctx, objects);
         DrawPacksHeader(ctx);
         DeckChrome.DrawGauge(ctx, g.BurdenBar, _model.BurdenFill, StaminaInk, 1f);
+        DrawQueryBar(ctx);
 
         DeckRect c = g.Contents;
         ctx.PushClip(c.X, c.Y, c.W, c.H);
@@ -347,6 +348,75 @@ internal sealed partial class UiGearDeck
         return right - ColumnW;
     }
 
+    // ---- query bar ----
+
+    /// <summary>The bar's backing, its chips and "+N" pill, and the field's dark well with the
+    /// placeholder while it is empty and unfocused (the field child draws the typed text).</summary>
+    private void DrawQueryBar(UiRenderContext ctx)
+    {
+        GearDeckGeometry g = _g;
+        DeckRect bar = g.QueryBar;
+        ctx.FillRoundedRect(bar.X, bar.Y, bar.W, bar.H, 5f, HeaderFill);
+
+        DeckRect well = g.QueryField;
+        if (well.W > 0f)
+        {
+            ctx.FillRoundedRect(well.X, well.Y + 2f, well.W, well.H - 4f, 4f, ChatDeckPalette.FieldFill);
+            if (QueryInput.Text.Length == 0 && !QueryInput.IsFocused)
+                DrawText(ctx, Small, QueryPlaceholder, well.X + 4f, well, LabelInk);
+        }
+
+        IReadOnlyList<string> labels = Pills().Chips;
+        for (int i = 0; i < g.Chips.Count && i < labels.Count; i++)
+            DrawChip(ctx, i, labels[i], g.Chips[i]);
+        if (g.ChipMore is { } more)
+        {
+            DrawCell(ctx, more, HeaderFill, CellEdge, 5f);
+            DrawCentred(ctx, Bold, MoreText, more, Hover.Zone == GearZone.ChipMore ? TextInk : LabelInk);
+        }
+    }
+
+    /// <summary>A chip pill: its label fitted before a small × in the right <see cref="GearDeckGeometry.ChipCloseW"/>.</summary>
+    private void DrawChip(UiRenderContext ctx, int index, string label, DeckRect r)
+    {
+        bool hot = Hover.Zone == GearZone.Chip && Hover.Index == index;
+        DrawCell(ctx, r, HeaderFill, hot ? Handle with { W = 0.6f } : CellEdge, 5f);
+        const float pad = GearDeckGeometry.PillPadX, closeW = GearDeckGeometry.ChipCloseW;
+        string text = index < _fittedChips.Length && _fittedChips[index] is { } fitted
+            ? fitted
+            : Fit(ctx, Bold, label, MathF.Max(0f, r.W - 2f * pad - closeW));
+        if (index < _fittedChips.Length) _fittedChips[index] = text;
+        Vector4 ink = hot ? TextInk : LabelInk;
+        DrawText(ctx, Bold, text, r.X + pad, r, ink);
+
+        const float arm = 2.5f;
+        float cx = r.X + r.W - pad - closeW / 2f, cy = r.Y + r.H / 2f;
+        ctx.DrawLine(cx - arm, cy - arm, cx + arm, cy + arm, ink, 1.2f);
+        ctx.DrawLine(cx + arm, cy - arm, cx - arm, cy + arm, ink, 1.2f);
+    }
+
+    /// <summary>The suggestion rows under the bar, over the grid: a panel with each chip's
+    /// suggestion text and the highlighted row (the one Enter takes) backed.</summary>
+    private void DrawSuggestions(UiRenderContext ctx)
+    {
+        int count = Math.Min(_g.Input.Suggestions, _suggestions.Count);
+        if (count == 0 || _model.Packs.Count == 0) return;
+        DeckRect first = _g.Suggestion(0), last = _g.Suggestion(count - 1);
+        var panel = new DeckRect(first.X, first.Y, first.W, last.Y + last.H - first.Y);
+        DrawCell(ctx, panel, CellFill, CellEdge, 4f);
+        DeckFace face = Small;
+        for (int i = 0; i < count; i++)
+        {
+            DeckRect row = _g.Suggestion(i);
+            bool picked = i == _suggestIndex;
+            if (picked) ctx.FillRoundedRect(row.X + 1f, row.Y + 1f, row.W - 2f, row.H - 2f, 3f, MenuHighlight);
+            if (i >= _suggestTexts.Length) break;
+            string text = _suggestTexts[i] ??= Fit(ctx, face, GearChipText.Suggestion(_suggestions[i]), row.W - 12f);
+            bool hot = picked || (Hover.Zone == GearZone.Suggestion && Hover.Index == i);
+            DrawText(ctx, face, text, row.X + 6f, row, hot ? TextInk : LabelInk);
+        }
+    }
+
     // ---- side column ----
 
     /// <summary>The main pack, then each side pack, then empty side-pack slots up to the
@@ -386,6 +456,8 @@ internal sealed partial class UiGearDeck
         GearZone.EquipSlot when hit.Index >= 0 => _g.EquipSlot(hit.Index),
         GearZone.WornCell when hit.Index >= 0 => _g.WornCell(hit.Index),
         GearZone.SidePack when hit.Index >= 0 => _g.SidePack(hit.Index),
+        GearZone.Chip when hit.Index >= 0 && hit.Index < _g.Chips.Count => _g.Chips[hit.Index],
+        GearZone.ChipMore => _g.ChipMore,
         GearZone.Item => _g.Input.List ? _g.ListRow(hit.Index, _scrollRow) : _g.GridCell(hit.Index, _scrollRow),
         _ => null,
     };

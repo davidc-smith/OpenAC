@@ -306,4 +306,20 @@ public class UiFieldTests
         Assert.Equal(new[] { "escape", "lost" }, order);
         Assert.Null(root.KeyboardFocus);
     }
+
+    [Fact]
+    public void BackspaceOnAnEmptyField_RunsTheHookOnce_AndOtherwiseDeletes()
+    {
+        int fired = 0;
+        var input = new UiField { OnBackspaceWhenEmpty = () => fired++ };
+        var backspace = new UiEvent(0, input, UiEventType.KeyDown, Data0: (int)Silk.NET.Input.Key.Backspace);
+
+        Assert.True(input.OnEvent(backspace));
+        Assert.Equal(1, fired);
+
+        input.SetText("ab");
+        Assert.True(input.OnEvent(backspace));
+        Assert.Equal(1, fired);
+        Assert.Equal("a", input.Text);
+    }
 }

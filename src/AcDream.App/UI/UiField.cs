@@ -112,6 +112,9 @@ public sealed class UiField : UiElement
     /// </summary>
     public Action? OnEscape { get; set; }
 
+    /// <summary>Backspace pressed on an empty field (the owner may remove a chip); never on auto-repeat.</summary>
+    public Action? OnBackspaceWhenEmpty { get; set; }
+
     /// <summary>
     /// True while an Enter submit that handed the text to <see cref="OnSubmit"/>,
     /// or cleared it, is under way, including the focus loss that ends it.
@@ -952,7 +955,9 @@ public sealed class UiField : UiElement
                             LosingFocusToSubmit = false;
                         }
                         return true;
-                    case Silk.NET.Input.Key.Backspace: Backspace();        StartRepeat(key); return true;
+                    case Silk.NET.Input.Key.Backspace:
+                        if (_text.Length == 0 && OnBackspaceWhenEmpty is { } onEmpty) { onEmpty(); return true; }
+                        Backspace(); StartRepeat(key); return true;
                     case Silk.NET.Input.Key.Delete:    DeleteForward();    StartRepeat(key); return true;
                     case Silk.NET.Input.Key.Left:      MoveCaret(-1, shift); StartRepeat(key); return true;
                     case Silk.NET.Input.Key.Right:     MoveCaret(1, shift);  StartRepeat(key); return true;

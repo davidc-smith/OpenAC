@@ -68,6 +68,10 @@ internal sealed partial class UiGearDeck
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
                 _press = _g.HitAt(e.Data1, e.Data2);
+                // The root took the focus from the field for this press; a press on a suggestion
+                // or the field gives it back, so the rows stay up until the click acts.
+                if (_press.Zone is GearZone.Suggestion or GearZone.QueryField)
+                    FindRoot()?.SetKeyboardFocus(QueryInput);
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.Click:
                 return ReleasedOnPress(e, out GearDeckHit clicked) ? Click(clicked) : IsControl(clicked.Zone);
@@ -139,6 +143,18 @@ internal sealed partial class UiGearDeck
                 else SelectPack(_model.Packs[hit.Index]);
                 return true;
             case GearZone.FigureStud:   // Figure is plan 3
+                return true;
+            case GearZone.Chip when hit.Index < _query.Chips.Count:
+                SetQuery(_query.Without(hit.Index));
+                return true;
+            case GearZone.ChipMore when _g.ChipMore is { } more:
+                OpenMenuAt(more);   // UiGearDeck.Menu.cs
+                return true;
+            case GearZone.Suggestion:
+                TakeSuggestion(hit.Index);
+                return true;
+            case GearZone.QueryField:   // the field child normally takes the click itself
+                FindRoot()?.SetKeyboardFocus(QueryInput);
                 return true;
             default:
                 return IsControl(hit.Zone);
@@ -409,6 +425,8 @@ internal sealed partial class UiGearDeck
                 return Caption(cell);
             case GearZone.SidePack when hit.Index < _model.Packs.Count && !_model.Packs[hit.Index].IsMain:
                 return Caption(_model.Packs[hit.Index].Id);
+            case GearZone.Chip:
+                return "Click to remove";
             default:
                 return null;
         }
@@ -418,6 +436,7 @@ internal sealed partial class UiGearDeck
 
     protected override void OnDrawOverlay(UiRenderContext ctx)
     {
+        DrawSuggestions(ctx);   // UiGearDeck.Draw.cs: above the grid, below the tooltip
         if (VisibleTooltip is not { } tip || RectFor(Hover) is not { } anchor) return;
         ctx.PushAlphaAbsolute(1f);
         try
