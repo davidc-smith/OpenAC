@@ -57,6 +57,18 @@ public sealed class UiTargetDeckTextSizeTests
             && f.Pixels < DeckFonts.PixelHeight(DeckFonts.TextPixelHeight, 1.5f));
     }
 
+    [Theory]
+    [MemberData(nameof(Plates))]
+    public void AtSmallText_ThePlateDraws_AndTheChipFaceIsTheMinimum(TargetPlateModel model)
+    {
+        var fits = new List<DeckFit>();
+        UiTargetDeck deck = Make(model, At(80), FakeDeckFonts.Make(fits));
+        MarkupDrawProbe.Draw(deck, TargetDeckGeometry.Width, TargetDeckGeometry.Height);
+        DeckFit[] chips = fits.Where(f => f.BasePixels == 9f).ToArray();   // ChipPixels: 9 × 0.8 rounds to 7
+        if (model.Chips.Count > 0 || model.Level is not null) Assert.NotEmpty(chips);
+        Assert.All(chips, f => Assert.Equal(BundledUiFont.MinimumPixelHeight, f.Pixels));
+    }
+
     [Fact]
     public void ChipAndLevelWidths_AreKept_AtLargeText()
     {

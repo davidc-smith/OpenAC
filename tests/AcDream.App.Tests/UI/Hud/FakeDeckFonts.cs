@@ -4,7 +4,10 @@ using DatReaderWriter.Types;
 
 namespace AcDream.App.Tests.UI.Hud;
 
-/// <summary>Deck fonts for tests: a face's line is its pixel height plus two, and every fitted face is recorded.</summary>
+/// <summary>
+/// Deck fonts for tests: a face's line is its pixel height plus two, and every fitted face is recorded.
+/// Like the real baker, a pixel height outside the bundled font's range throws.
+/// </summary>
 internal static class FakeDeckFonts
 {
     public static float Line(float pixels) => pixels + 2f;
@@ -13,6 +16,8 @@ internal static class FakeDeckFonts
     {
         var fonts = new DeckFonts((px, weight) =>
         {
+            if (!float.IsFinite(px) || px < BundledUiFont.MinimumPixelHeight || px > BundledUiFont.MaximumPixelHeight)
+                throw new ArgumentOutOfRangeException(nameof(px), $"Font size {px} is outside the bundled font's range.");
             baked?.Add((px, weight));
             return Font(px);
         });

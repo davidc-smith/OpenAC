@@ -19,10 +19,15 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
 
     private readonly Dictionary<(float, BundledUiFontWeight), Lazy<UiDatFont>> _faces = [];
 
-    /// <summary>A bundled sans face at a whole-pixel height (the Chat Deck's text sizes), baked once.</summary>
+    /// <summary>
+    /// A bundled sans face at a whole-pixel height (the Chat Deck's text sizes), baked once.
+    /// The height is kept inside the range the font can bake
+    /// (<see cref="BundledUiFont.MinimumPixelHeight"/> to <see cref="BundledUiFont.MaximumPixelHeight"/>),
+    /// so a small deck at a small text size draws its smallest labels at the minimum.
+    /// </summary>
     public UiDatFont Face(float pixelHeight, BundledUiFontWeight weight)
     {
-        float px = PixelHeight(pixelHeight, 1f);
+        float px = Bakeable(PixelHeight(pixelHeight, 1f));
         if (!_faces.TryGetValue((px, weight), out Lazy<UiDatFont>? face))
             _faces[(px, weight)] = face = new(() => bake(px, weight));
         return face.Value;
@@ -52,6 +57,10 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
         return set;
     }
 
+    /// <summary>A whole pixel height kept inside the range the bundled font can bake.</summary>
+    internal static float Bakeable(float pixels) =>
+        Math.Clamp(pixels, BundledUiFont.MinimumPixelHeight, BundledUiFont.MaximumPixelHeight);
+
     /// <summary>A base pixel height at a deck scale, in whole pixels.</summary>
     internal static float PixelHeight(float basePixels, float scale) =>
         MathF.Round(basePixels * scale, MidpointRounding.AwayFromZero);
@@ -67,12 +76,13 @@ internal sealed class DeckFonts(Func<float, BundledUiFontWeight, UiDatFont> bake
     /// The face for text in a fixed box: round(base × scale × factor) pixels, or, when
     /// that face's line is taller than <paramref name="boxHeight"/>, the largest smaller
     /// face whose line fits. Never below the face at the deck's own scale (factor 1), so
-    /// a deck at 100% draws exactly as before; never above the factor's face.
+    /// a deck at 100% draws exactly as before; never above the factor's face; and never
+    /// outside the range the font can bake (<see cref="Bakeable"/>).
     /// </summary>
     public UiDatFont FitFace(float basePixels, BundledUiFontWeight weight, float scale, float textFactor, float boxHeight)
     {
-        float floor = PixelHeight(basePixels, scale);
-        float px = PixelHeight(basePixels, scale * textFactor);
+        float floor = Bakeable(PixelHeight(basePixels, scale));
+        float px = Bakeable(PixelHeight(basePixels, scale * textFactor));
         UiDatFont? face = Face(px, weight);
         while (px > floor && face is not null && face.LineHeight > boxHeight + 0.01f)
         {

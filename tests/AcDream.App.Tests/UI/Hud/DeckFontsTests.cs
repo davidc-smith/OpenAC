@@ -107,6 +107,54 @@ public sealed class DeckFontsTests
     }
 
     [Fact]
+    public void FitFace_ReportsTheFloorCase_WhenEvenTheDecksOwnFaceIsTallerThanTheBox()
+    {
+        var fits = new List<DeckFit>();
+        DeckFonts fonts = FakeDeckFonts.Make(fits);
+        fonts.FitFace(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, boxHeight: 8f);
+        DeckFit fit = Assert.Single(fits);
+        Assert.Equal(DeckFonts.PixelHeight(DeckFonts.SmallPixelHeight, 1f), fit.Pixels);
+        Assert.True(fit.LineHeight > fit.BoxHeight);
+        FakeDeckFonts.AssertAllFit(fits);
+    }
+
+    [Theory]
+    [InlineData(7f, 8f)]
+    [InlineData(2f, 8f)]
+    [InlineData(8f, 8f)]
+    [InlineData(32f, 32f)]
+    [InlineData(40f, 32f)]
+    public void Face_ClampsToTheBakersRange(float asked, float baked)
+    {
+        var bakes = new List<(float Px, BundledUiFontWeight Weight)>();
+        DeckFonts fonts = FakeDeckFonts.Make(baked: bakes);
+        UiDatFont face = fonts.Face(asked, BundledUiFontWeight.Regular);
+        Assert.Equal(FakeDeckFonts.Line(baked), face.LineHeight);
+        Assert.Equal([(baked, BundledUiFontWeight.Regular)], bakes);
+    }
+
+    [Fact]
+    public void At_ASmallScaleAndFactor_BakesNoFaceBelowTheMinimum()
+    {
+        DeckFonts fonts = FakeDeckFonts.Make();
+        DeckFontSet set = fonts.At(0.75f, 0.8f);   // small: 12 × 0.6 = 7.2 → 7, below the baker's range
+        Assert.Equal(FakeDeckFonts.Line(BundledUiFont.MinimumPixelHeight), set.Small.LineHeight);
+        Assert.Equal(FakeDeckFonts.Line(BundledUiFont.MinimumPixelHeight), set.SmallBold.LineHeight);
+        Assert.Equal(FakeDeckFonts.Line(8f), set.Text.LineHeight);   // 14 × 0.6 = 8.4 → 8
+    }
+
+    [Fact]
+    public void FitFace_NeverStepsBelowTheMinimum()
+    {
+        var fits = new List<DeckFit>();
+        DeckFonts fonts = FakeDeckFonts.Make(fits);
+        // 9 px × 0.8 = 7.2 → 7, and a box too short even for 8 px: the face stays at the minimum.
+        UiDatFont face = fonts.FitFace(9f, BundledUiFontWeight.SemiBold, 1f, 0.8f, boxHeight: 6f);
+        Assert.Equal(FakeDeckFonts.Line(BundledUiFont.MinimumPixelHeight), face.LineHeight);
+        Assert.Equal(BundledUiFont.MinimumPixelHeight, Assert.Single(fits).Pixels);
+    }
+
+    [Fact]
     public void FitFace_ASmallerFactorIsNeverRaised()
     {
         DeckFonts fonts = FakeDeckFonts.Make();

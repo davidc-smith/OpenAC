@@ -68,6 +68,20 @@ public sealed class UiCommandDeckTextSizeTests
         Assert.All(values, f => Assert.True(f.Pixels < uncapped));
     }
 
+    [Theory]
+    [InlineData(CombatMode.Melee)]
+    [InlineData(CombatMode.Magic)]
+    [InlineData(CombatMode.NonCombat)]
+    public void AtTheSmallestScaleAndText_TheDeckDraws(CombatMode mode)
+    {
+        // Small labels: 12 × 0.75 × 0.8 = 7.2 rounds to 7, below the bundled font's 8 px minimum.
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        UiCommandDeck deck = Make(mode, At(80), FakeDeckFonts.Make(baked: baked), scale: 0.75f);
+        MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
+        Assert.NotEmpty(baked);
+        Assert.Contains(baked, b => b.Px == BundledUiFont.MinimumPixelHeight);
+    }
+
     [Fact]
     public void ARightClickOnTheFrame_ListsTextSize_OnTheOrb_Nothing()
     {
