@@ -85,6 +85,8 @@ internal sealed partial class UiGearDeck
                 SetHover(_g.HitAt(e.Data1, e.Data2));
                 return Hover.Zone != GearZone.None;
             case UiEventType.HoverLeave:
+                // The root stops hit-testing the deck once the pointer is elsewhere, so the last hit is stale.
+                _hit = NoHit;
                 SetHover(NoHit);
                 return true;
             case UiEventType.Scroll:

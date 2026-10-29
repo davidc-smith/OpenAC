@@ -167,6 +167,26 @@ public sealed class UiGearDeckSavedFilterTests
     }
 
     [Fact]
+    public void TheStarAfterNamingClosedByAPressElsewhere_OpensTheField()
+    {
+        var (root, deck) = Rooted();
+        deck.SetQuery(Steely);
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.True(deck.SaveNameInput.Visible);
+
+        // Straight off the star to a press outside the deck: the deck is never hit-tested there.
+        int x = (int)root.Width - 5, y = (int)root.Height - 5;
+        Assert.True(x > deck.ScreenPosition.X + deck.Width || y > deck.ScreenPosition.Y + deck.Height);
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Left, x, y);
+        root.OnMouseUp(UiMouseButton.Left, x, y);
+        Assert.False(deck.SaveNameInput.Visible);
+
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.True(deck.SaveNameInput.Visible);
+    }
+
+    [Fact]
     public void ClearingALitFilterWithText_ChangesTheQueryOnce()
     {
         var (root, deck) = Rooted();
