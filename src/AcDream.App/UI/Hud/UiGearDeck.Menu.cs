@@ -6,7 +6,7 @@ namespace AcDream.App.UI.Hud;
 internal sealed partial class UiGearDeck
 {
     /// <summary>What the open menu lists; later plans fill in Sort, SavedFilter, SavedMore and Item.</summary>
-    private enum MenuKind { None, HiddenChips, Sort, SavedFilter, SavedMore, Item }
+    private enum MenuKind { None, HiddenChips, Sort, SavedFilter, SavedMore, Item, TextSize }
 
     private readonly UiMarkupContextMenu _menu = new() { ThemePalette = ChatDeckPalette.Menu };
     private MenuKind _menuKind;
@@ -46,12 +46,8 @@ internal sealed partial class UiGearDeck
         ContextMenu = _menu;
     }
 
-    /// <summary>The menu draws at the deck's scale: its rows, insets and widths, in the deck's small face.</summary>
-    private void SetMenuScale()
-    {
-        _menu.Scale = _scale;
-        _menu.DatFont = _fonts?.At(_scale).Small;
-    }
+    /// <summary>The menu draws at the deck's scale: its rows, insets and widths, in the deck's small face at its text size.</summary>
+    private void SetMenuScale() => HudTextMenu.StyleMenu(_menu, _fonts, _scale, _textFactor);
 
     /// <summary>The kind a right-click (or a left-click opener's point inside its stud) asks for.</summary>
     private void PickMenu(GearDeckHit hit)
@@ -63,6 +59,8 @@ internal sealed partial class UiGearDeck
             GearZone.SavedFilter when hit.Index >= 0 && hit.Index < _b.Session.Settings.SavedFilters.Count => MenuKind.SavedFilter,
             GearZone.SavedMore when _g.HiddenSaved > 0 => MenuKind.SavedMore,
             GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => MenuKind.Item,
+            // The title and the empty frame; items, chips and studs keep their own zones and menus.
+            GearZone.Frame when _b.Text is not null => MenuKind.TextSize,
             _ => MenuKind.None,
         };
         _menuChips = [];
@@ -128,6 +126,8 @@ internal sealed partial class UiGearDeck
                 return _menuSaved.Select(f => f.Name).ToArray();
             case MenuKind.Item:
                 return _menuItems;
+            case MenuKind.TextSize:
+                return HudTextMenu.Labels(_b.Text!.Settings, HudDeck.Gear);
             default:
                 return [];
         }
@@ -138,6 +138,7 @@ internal sealed partial class UiGearDeck
 
     private bool[] MenuEnabled()
     {
+        if (_menuKind == MenuKind.TextSize) return HudTextMenu.EnabledFlags();
         int count = MenuItems().Count;
         var flags = new bool[count];
         Array.Fill(flags, true);
@@ -185,6 +186,9 @@ internal sealed partial class UiGearDeck
                     case SelectAllLabel: SelectAll(); break;
                     case ClearSelectionLabel: ClearSelection(); break;
                 }
+                break;
+            case MenuKind.TextSize when _b.Text is { } text:
+                HudTextMenu.Choose(text, HudDeck.Gear, index);
                 break;
         }
     }
