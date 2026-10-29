@@ -3761,7 +3761,8 @@ public sealed class RetailUiRuntime : IDisposable
                 else dock?.Detach();
             },
             _deckFonts,
-            itemId => magic.Objects.Get(itemId)?.GetAppropriateName());
+            itemId => magic.Objects.Get(itemId)?.GetAppropriateName(),
+            text: HudTextSize);
 
         // Detached, the Spell Deck starts just above the Command Deck's default place.
         float deckLeft = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f);

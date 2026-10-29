@@ -30,6 +30,7 @@ internal sealed partial class UiSpellDeck : UiElement
     private readonly Action _toggleClickCasts;
     private readonly Action<bool> _setAttached;
     private readonly DeckFonts? _fonts;
+    private readonly HudText? _text;
     private readonly Func<uint, string?> _itemName;
     private readonly UiMarkupContextMenu _menu;
     private SpellDeckGeometry _geometry;
@@ -56,7 +57,8 @@ internal sealed partial class UiSpellDeck : UiElement
         Action toggleClickCasts,
         Action<bool> setAttached,
         DeckFonts? fonts = null,
-        Func<uint, string?>? itemName = null)
+        Func<uint, string?>? itemName = null,
+        HudText? text = null)
     {
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _spellIcon = spellIcon ?? throw new ArgumentNullException(nameof(spellIcon));
@@ -69,6 +71,7 @@ internal sealed partial class UiSpellDeck : UiElement
         _setAttached = setAttached ?? throw new ArgumentNullException(nameof(setAttached));
         _fonts = fonts;
         _itemName = itemName ?? (_ => null);
+        _text = text;
         _geometry = SpellDeckGeometry.Create(1f, 1f, controller.RowCount);
         Width = _geometry.Width;
         Height = _geometry.Height;
@@ -90,6 +93,11 @@ internal sealed partial class UiSpellDeck : UiElement
         AddChild(_menu);
         ContextMenu = _menu;
     }
+
+    /// <summary>The deck's text factor: its own size or the HUD-wide one (1 without a text size).</summary>
+    internal float TextFactor => _text?.FactorFor(HudDeck.Spell) ?? 1f;
+
+    internal UiMarkupContextMenu Menu => _menu;
 
     // Every size the deck can have: 1-10 rows at any scale and stretch.
     private static float MinWindowWidth => SpellDeckGeometry.BaseWidthAt(DeckGeometry.MinStretch) * DeckGeometry.MinScale;
@@ -234,7 +242,8 @@ internal sealed partial class UiSpellDeck : UiElement
         try
         {
             HudTooltip.Draw(ctx, tip, HudTooltipStyle.Card, RectFor(_hover),
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts,
+                _geometry.Scale, TextFactor);
         }
         finally { ctx.PopAlpha(); }
     }
@@ -537,6 +546,7 @@ internal sealed partial class UiSpellDeck : UiElement
     {
         _menuItems = [];
         _menuActions.Clear();
+        HudTextMenu.StyleMenu(_menu, _fonts, _geometry.Scale, TextFactor);
         SpellDeckHit hit = HitAt(x, y);
         if (hit.Zone == SpellDeckZone.None) return _menuItems;
 
@@ -570,6 +580,16 @@ internal sealed partial class UiSpellDeck : UiElement
         Separator();
         bool attached = _controller.Attached;
         Add(attached ? "Detach from deck" : "Attach to deck", true, () => _setAttached(!attached));
+        if (hit.Zone == SpellDeckZone.Frame && _text is { } text)
+        {
+            Separator();
+            string[] sizes = HudTextMenu.Labels(text.Settings, HudDeck.Spell);
+            for (int i = 0; i < sizes.Length; i++)
+            {
+                int choice = i;
+                Add(sizes[i], HudTextMenu.Enabled(i), () => HudTextMenu.Choose(text, HudDeck.Spell, choice));
+            }
+        }
         return _menuItems;
 
         void Add(string text, bool enabled, Action action)

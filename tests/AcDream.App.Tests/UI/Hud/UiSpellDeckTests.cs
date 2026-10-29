@@ -47,7 +47,7 @@ public sealed class UiSpellDeckTests
         [30] = Spell(30, "Blade Blessing", "Item Enchantment"),
     };
 
-    private static Rig Make(bool clickCasts = false, Func<uint, string?>? itemName = null)
+    private static Rig Make(bool clickCasts = false, Func<uint, string?>? itemName = null, HudText? text = null, DeckFonts? fonts = null)
     {
         var g = new Game();
         g.Tabs[0].AddRange([10u, 11u, 12u]);
@@ -68,10 +68,59 @@ public sealed class UiSpellDeckTests
             isLocked: () => false,
             toggleClickCasts: () => { },
             setAttached: _ => { },
-            itemName: itemName);
+            fonts: fonts,
+            itemName: itemName,
+            text: text);
         rig = new Rig { Deck = deck, Controller = c, Game = g };
         deck.Refresh();
         return rig;
+    }
+
+    private static HudText TextAt(int percent) => new(HudTextSettings.Default.WithGlobal(percent));
+
+    [Theory]
+    [InlineData(80)]
+    [InlineData(150)]
+    public void TheDeckKeepsItsSize_AtEveryTextSize(int percent)
+    {
+        Rig plain = Make();
+        Rig r = Make(text: TextAt(percent), fonts: FakeDeckFonts.Make());
+        Assert.Equal(plain.Deck.Width, r.Deck.Width);
+        Assert.Equal(plain.Deck.Height, r.Deck.Height);
+    }
+
+    [Fact]
+    public void AtLargeText_KeyLabelsAndBookmarksFitTheirBoxes()
+    {
+        var fits = new List<DeckFit>();
+        Rig r = Make(text: TextAt(150), fonts: FakeDeckFonts.Make(fits));
+        MarkupDrawProbe.Draw(r.Deck, r.Deck.Width, r.Deck.Height);
+        Assert.NotEmpty(fits);
+        FakeDeckFonts.AssertAllFit(fits);
+        // FitFace really dropped at least one face below what 150% asks for.
+        Assert.Contains(fits, f => f.Pixels < DeckFonts.PixelHeight(f.BasePixels, f.Scale * f.TextFactor));
+    }
+
+    [Fact]
+    public void ARightClickOnTheFrame_EndsTheDeckMenuWithTextSize_ASlotsMenuDoesNot()
+    {
+        HudText text = TextAt(100);
+        Rig r = Make(text: text);
+        var root = new UiRoot { Width = 1200, Height = 800 };
+        root.AddChild(r.Deck);
+        HudTestInput.RightClick(root, r.Deck, 3f, r.Deck.Height - 3f);
+
+        Assert.True(r.Deck.Menu.IsOpen);
+        IReadOnlyList<string> items = r.Deck.Menu.ItemsSource();
+        Assert.Equal(HudTextMenu.Labels(text.Settings, HudDeck.Spell), items.Skip(items.Count - HudTextMenu.Count).ToArray());
+        Assert.Equal(UiMarkupContextMenu.Separator, items[items.Count - HudTextMenu.Count - 1]);
+        r.Deck.Menu.Selected!(items.Count - 1);   // 150%
+        Assert.Equal(150, text.Settings.PercentFor(HudDeck.Spell));
+        r.Deck.Menu.Close();
+
+        DeckRect slot = r.Deck.Geometry.Slot(0, 0);
+        HudTestInput.RightClick(root, r.Deck, slot.X + slot.W / 2f, slot.Y + slot.H / 2f);
+        Assert.DoesNotContain(HudTextMenu.Heading, r.Deck.Menu.ItemsSource());
     }
 
     private static void Send(UiSpellDeck d, int type, DeckRect r) =>
