@@ -158,4 +158,36 @@ public sealed class GearDeckSessionTests
         session.EndSession();
         Assert.Equal(1, ended);
     }
+
+    [Fact]
+    public void Equip_DefaultsToFigure_AndRoundTrips()
+    {
+        Assert.Equal(GearEquipView.Figure, GearDeckSettings.Default.Equip);
+        Assert.Equal(GearEquipView.Figure, GearDeckSettings.FromJson("""{"version":1,"folded":false}""").Equip);
+        Assert.Equal(GearEquipView.Figure, GearDeckSettings.FromJson("""{"equip":"hologram"}""").Equip);
+
+        GearDeckSettings slots = GearDeckSettings.Default with { Equip = GearEquipView.Slots };
+        string json = slots.ToJson();
+        Assert.Contains("\"equip\":\"slots\"", json);
+        Assert.Equal(GearEquipView.Slots, GearDeckSettings.FromJson(json).Equip);
+        Assert.Contains("\"equip\":\"figure\"", GearDeckSettings.Default.ToJson());
+    }
+
+    [Fact]
+    public void Equip_TakesPartInEquality()
+    {
+        GearDeckSettings slots = GearDeckSettings.Default with { Equip = GearEquipView.Slots };
+        Assert.NotEqual(GearDeckSettings.Default, slots);
+        Assert.Equal(slots, GearDeckSettings.FromJson(slots.ToJson()));
+    }
+
+    [Fact]
+    public void Equip_IsNotKeptAsAnUnknownKey()
+    {
+        GearDeckSettings s = GearDeckSettings.FromJson("""{"equip":"slots","future":3}""");
+        string json = (s with { Equip = GearEquipView.Figure }).ToJson();
+        Assert.Contains("\"equip\":\"figure\"", json);
+        Assert.DoesNotContain("\"equip\":\"slots\"", json);
+        Assert.Contains("\"future\":3", json);
+    }
 }
