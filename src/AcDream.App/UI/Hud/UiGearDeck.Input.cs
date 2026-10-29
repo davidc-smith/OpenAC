@@ -350,8 +350,18 @@ internal sealed partial class UiGearDeck
         {
             case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
                 GearItemView row = Shown[hit.Index];
+                // A toggle double-click's two clicks added the row and took it out again; the row used stays selected.
+                if (_selection.Add(row.Id))
+                {
+                    SetAnchor(hit.Index);
+                    _selectionVersion++;
+                }
                 if (row.Worn) Dispatcher.TakeOff(row.Id);   // a worn result comes off, as its slot does
                 else _b.Actions.Activate(row.Id);
+                return true;
+            case GearZone.SidePack when ShowsResults && hit.Index < _model.Packs.Count:
+                // Each click toggled the pack's chip, so the two cancelled out: a double-click toggles it once.
+                TogglePackChip(_model.Packs[hit.Index]);
                 return true;
             case GearZone.EquipSlot or GearZone.WornCell:
                 if (WornAt(hit) is uint worn) Dispatcher.TakeOff(worn);

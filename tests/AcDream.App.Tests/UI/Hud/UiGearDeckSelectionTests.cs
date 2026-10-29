@@ -21,7 +21,7 @@ public sealed class UiGearDeckSelectionTests
         public bool Merge(uint from, uint to) => true;
         public bool WieldFromPaperdoll(uint item, EquipMask mask) => true;
         public bool WieldSecondary(uint item) => true;
-        public bool Activate(uint item) => true;
+        public bool Activate(uint item) { Calls.Add($"use {item:X}"); return true; }
         public bool OpenPack(uint pack) { Calls.Add($"open {pack:X}"); return true; }
     }
 
@@ -99,6 +99,33 @@ public sealed class UiGearDeckSelectionTests
     }
 
     private static uint Id(Rig rig, int index) => rig.Deck.Shown[index].Id;
+
+    /// <summary>A double-click as the root sends it: two clicks, the second followed by DoubleClick.</summary>
+    private static void DoubleClickItem(Rig rig, int index, bool toggle = false)
+    {
+        ClickItem(rig, index, toggle);
+        ClickItem(rig, index, toggle);
+        Send(rig.Deck, UiEventType.DoubleClick, rig.Deck.Geometry.GridCell(index, rig.Deck.ScrollRow)!.Value);
+    }
+
+    [Fact]
+    public void ADoubleClick_UsesTheItem_AndLeavesItSelected()
+    {
+        Rig rig = Make();
+        DoubleClickItem(rig, 2);
+        Assert.Equal([$"use {Id(rig, 2):X}"], rig.Actions.Calls);
+        Assert.Equal(new[] { Id(rig, 2) }, rig.Deck.Selection);
+    }
+
+    [Fact]
+    public void AToggleDoubleClick_UsesTheItem_AndLeavesItSelected()
+    {
+        Rig rig = Make();
+        ClickItem(rig, 4);
+        DoubleClickItem(rig, 2, toggle: true);   // its two toggle clicks add then remove it; the use keeps it
+        Assert.Equal([$"use {Id(rig, 2):X}"], rig.Actions.Calls);
+        Assert.Equal(new[] { Id(rig, 2), Id(rig, 4) }.Order(), rig.Deck.Selection.Order());
+    }
 
     [Fact]
     public void PlainAndToggleClicks_BuildTheSelection()

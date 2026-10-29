@@ -206,6 +206,18 @@ public sealed class UiGearDeckResultsTests
     }
 
     [Fact]
+    public void ADoubleClickOnASidePack_WhileResultsAreShown_TogglesItsChipOnce()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(SteelBy(GearSort.Default));
+        DoubleClick(r.Deck, r.Deck.Geometry.SidePack(1));
+        Assert.Contains(GearChip.InPack(Bag), r.Deck.Query.Chips);
+        DoubleClick(r.Deck, r.Deck.Geometry.SidePack(1));
+        Assert.DoesNotContain(GearChip.InPack(Bag), r.Deck.Query.Chips);
+        Assert.Empty(r.Actions.Calls);
+    }
+
+    [Fact]
     public void ADropOnEmptyResultsSpace_IsNotATarget()
     {
         Rig r = Make();
