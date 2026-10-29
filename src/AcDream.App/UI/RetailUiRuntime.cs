@@ -452,6 +452,11 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.ModernHudSwitch? _hudSwitch;
     private Hud.UiCommandDeck? _commandDeck;
     private Hud.DeckFonts? _deckFonts;
+    private Hud.HudText? _hudText;
+
+    /// <summary>The Modern HUD text size, per client: loaded once from the settings file the
+    /// Modern HUD switch lives in, saved there on every change.</summary>
+    internal Hud.HudText HudTextSize => _hudText ??= Hud.HudText.Load(_bindings.Persistence?.Store, Console.WriteLine);
     private Hud.SpellDeckController? _spellDeckController;
     private Hud.UiSpellDeck? _spellDeck;
     private Hud.SpellDeckCharacterSync? _spellDeckSync;
@@ -3217,6 +3222,11 @@ public sealed class RetailUiRuntime : IDisposable
                     ApplyChatFont = ApplyChatFont,
                     ExtendedLevels = _bindings.Options.ExtendedLevels,
                     ModernHud = _bindings.Options.ModernHud,
+                    HudText = _bindings.Options.ModernHud is null
+                        ? null
+                        : new Layout.ConfigOptionsPageController.HudTextBindings(
+                            Load: () => HudTextSize.Settings.Global,
+                            Save: HudTextSize.SetGlobal),
                 },
                 resolveSprite: _bindings.Assets.ResolveSprite,
                 datFont: _bindings.Assets.DefaultFont,
