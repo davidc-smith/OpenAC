@@ -49,4 +49,87 @@ public sealed class DeckFontsTests
         _ = big.SmallBold;
         Assert.Equal((18f, BundledUiFontWeight.SemiBold), baked[^1]);
     }
+
+    [Theory]
+    [InlineData(1f, 1.5f, 21f, 18f)]
+    [InlineData(0.75f, 1.5f, 16f, 14f)]   // 15.75 and 13.5 round away from zero
+    [InlineData(1.25f, 0.8f, 14f, 12f)]
+    [InlineData(1.5f, 1f, 21f, 18f)]
+    public void At_WithATextFactor_BakesRoundOfBaseTimesScaleTimesFactor(float scale, float factor, float text, float small)
+    {
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        var fonts = new DeckFonts((px, weight) => { baked.Add((px, weight)); return null!; });
+        DeckFontSet set = fonts.At(scale, factor);
+        _ = set.Text;
+        _ = set.Small;
+        Assert.Equal(new[] { (text, BundledUiFontWeight.Regular), (small, BundledUiFontWeight.Regular) }, baked);
+    }
+
+    [Fact]
+    public void ScalesThatRoundToTheSamePixelHeight_ShareOneBake()
+    {
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        var fonts = new DeckFonts((px, weight) => { baked.Add((px, weight)); return null!; });
+        _ = fonts.At(1.4f).Text;    // 19.6 rounds to 20
+        _ = fonts.At(1.45f).Text;   // 20.3 rounds to 20
+        _ = fonts.Face(20f, BundledUiFontWeight.Regular);
+        Assert.Equal(new[] { (20f, BundledUiFontWeight.Regular) }, baked);
+    }
+
+    [Fact]
+    public void FitFace_KeepsTheFactorFaceWhenItsLineFits()
+    {
+        DeckFonts fonts = FakeDeckFonts.Make();
+        UiDatFont face = fonts.FitFace(DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, boxHeight: 30f);
+        Assert.Equal(FakeDeckFonts.Line(21f), face.LineHeight);
+    }
+
+    [Fact]
+    public void FitFace_DropsToTheLargestFaceWhoseLineFitsTheBox()
+    {
+        var fits = new List<DeckFit>();
+        DeckFonts fonts = FakeDeckFonts.Make(fits);
+        UiDatFont face = fonts.FitFace(DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, boxHeight: 20f);
+        Assert.Equal(20f, face.LineHeight);   // 18 px + 2
+        DeckFit fit = Assert.Single(fits);
+        Assert.Equal(18f, fit.Pixels);
+        Assert.Equal(20f, fit.BoxHeight);
+        Assert.Equal(1.5f, fit.TextFactor);
+        FakeDeckFonts.AssertAllFit(fits);
+    }
+
+    [Fact]
+    public void FitFace_NeverGoesBelowTheDecksOwnFace()
+    {
+        DeckFonts fonts = FakeDeckFonts.Make();
+        UiDatFont face = fonts.FitFace(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, boxHeight: 8f);
+        Assert.Equal(FakeDeckFonts.Line(12f), face.LineHeight);
+    }
+
+    [Fact]
+    public void FitFace_ASmallerFactorIsNeverRaised()
+    {
+        DeckFonts fonts = FakeDeckFonts.Make();
+        UiDatFont face = fonts.FitFace(DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular, 1f, 0.8f, boxHeight: 100f);
+        Assert.Equal(FakeDeckFonts.Line(11f), face.LineHeight);   // 11.2 rounds to 11
+    }
+
+    [Theory]
+    [InlineData(true, 1.5f, 6f)]
+    [InlineData(true, 1f, 0f)]
+    [InlineData(true, 0.8f, 0f)]
+    [InlineData(false, 1.5f, 6f)]
+    public void RowGrow_IsTheLinesGrowthOverTheDecksOwnFace(bool withFonts, float factor, float grow)
+    {
+        DeckFonts? fonts = withFonts ? FakeDeckFonts.Make() : null;
+        Assert.Equal(grow, DeckFonts.RowGrow(fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, 1f, factor), 3);
+    }
+
+    [Fact]
+    public void DeckFace_In_UsesTheFactor_AndTheDefaultFontWithoutFonts()
+    {
+        DeckFonts fonts = FakeDeckFonts.Make();
+        Assert.Equal(20f, DeckFace.In(fonts, DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, 20f).Font!.LineHeight);
+        Assert.Null(DeckFace.In(null, DeckFonts.TextPixelHeight, BundledUiFontWeight.Regular, 1f, 1.5f, 20f).Font);
+    }
 }
