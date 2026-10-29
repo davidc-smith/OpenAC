@@ -68,6 +68,8 @@ internal sealed partial class UiGearDeck
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
                 _press = _g.HitAt(e.Data1, e.Data2);
+                _starCloses = _namingClosedByStar && _press.Zone == GearZone.SaveStud;   // UiGearDeck.Query.cs
+                _namingClosedByStar = false;
                 // Empty contents space is no control, so no Click follows it: clear on the press.
                 if (_press.Zone == GearZone.Frame && _g.Contents.Contains(e.Data1, e.Data2)) ClearSelection();
                 // The root took the focus from the field for this press; a press on a suggestion
@@ -283,7 +285,8 @@ internal sealed partial class UiGearDeck
                 SetQuery(_query with { Sort = _query.Sort with { Descending = !_query.Sort.Descending } });
                 return true;
             case GearZone.SaveStud:
-                StartSave();   // UiGearDeck.Query.cs
+                if (!_starCloses) StartSave();   // UiGearDeck.Query.cs; a press that closed the name field only closes it
+                _starCloses = false;
                 return true;
             case GearZone.SavedFilter:
                 ClickSaved(hit.Index);

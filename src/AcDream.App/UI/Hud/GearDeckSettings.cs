@@ -66,7 +66,7 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
     public GearDeckSettings WithSaved(SavedFilter filter)
     {
         string name = filter.Name.Trim();
-        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength];
+        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength].TrimEnd();
         if (name.Length == 0) return this;
         var named = filter with { Name = name };
         var list = SavedFilters.ToList();

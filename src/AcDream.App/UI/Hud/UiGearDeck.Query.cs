@@ -44,6 +44,10 @@ internal sealed partial class UiGearDeck
     };
 
     private bool _naming;
+    /// <summary>The name field lost the focus to a press on the ★ (which shows it on); the click that follows
+    /// leaves it closed instead of opening it again, so the ★ toggles. Read and cleared by the press.</summary>
+    private bool _namingClosedByStar;
+    private bool _starCloses;
 
     /// <summary>No room for a new saved filter (a same-named one can still be replaced).</summary>
     private bool SavedFull => _b.Session.Settings.SavedFilters.Count >= SavedFilter.MaxCount;
@@ -132,7 +136,7 @@ internal sealed partial class UiGearDeck
         _naming = true;
         string name = string.Join(" ", ChipLabels);
         if (name.Length == 0) name = _query.Text;
-        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength];
+        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength].TrimEnd();
         SaveNameInput.SetText(name);
         SaveNameInput.Visible = true;
         PlaceQueryInput();
@@ -147,6 +151,8 @@ internal sealed partial class UiGearDeck
     {
         if (!_naming) return;
         _naming = false;
+        // The root hit-tests a press before it moves the focus, so _hit is the press's zone here.
+        _namingClosedByStar = why == "focus lost" && _hit.Zone == GearZone.SaveStud;
         _b.Log?.Invoke($"[gear-deck] save: name field closed ({why}){(name is null ? "" : " saving")}");
         SaveNameInput.Visible = false;
         if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, SaveNameInput)) root.SetKeyboardFocus(null);
@@ -175,8 +181,8 @@ internal sealed partial class UiGearDeck
         if (index < 0 || index >= saved.Count) return;
         if (_query.Equals(saved[index].Query))
         {
-            QueryInput.SetText("");
             SetQuery(GearQuery.Empty);
+            QueryInput.SetText("");   // after: its handler then sets the same empty query, no second change
         }
         else ApplySaved(saved[index]);
     }

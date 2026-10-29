@@ -133,6 +133,57 @@ public sealed class UiGearDeckSavedFilterTests
     }
 
     [Fact]
+    public void ALongPrefill_CutAtASpace_LeavesNoTrailingSpace()
+    {
+        var (root, deck) = Rooted();
+        string text = new string('a', SavedFilter.MaxNameLength - 1) + " bbb";   // the cut falls just after the space
+        deck.SetQuery(GearQuery.Empty with { Text = text });
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.Equal(new string('a', SavedFilter.MaxNameLength - 1), deck.SaveNameInput.Text);
+    }
+
+    [Fact]
+    public void AStoredNameCutAtASpace_LeavesNoTrailingSpace()
+    {
+        string name = new string('a', SavedFilter.MaxNameLength - 1) + " bbb";
+        SavedFilter saved = Assert.Single(GearDeckSettings.Default.WithSaved(new SavedFilter(name, Steely)).SavedFilters);
+        Assert.Equal(new string('a', SavedFilter.MaxNameLength - 1), saved.Name);
+    }
+
+    [Fact]
+    public void TheStarWhileNaming_ClosesTheField_AndTheNextStarOpensItAgain()
+    {
+        var (root, deck) = Rooted();
+        deck.SetQuery(Steely);
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.True(deck.SaveNameInput.Visible);
+
+        RootClick(root, deck, deck.Geometry.SaveStud);   // the press takes the focus (cancel); the click must not reopen
+        Assert.False(deck.SaveNameInput.Visible);
+        Assert.Empty(deck.Bindings.Session.Settings.SavedFilters);
+
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.True(deck.SaveNameInput.Visible);
+    }
+
+    [Fact]
+    public void ClearingALitFilterWithText_ChangesTheQueryOnce()
+    {
+        var (root, deck) = Rooted();
+        Save(root, deck, Steely with { Text = "steel" }, "Texty");
+        deck.SetQuery(GearQuery.Empty);
+        deck.QueryInput.SetText("");
+        RootClick(root, deck, deck.Geometry.SavedStuds[0]);   // applies it: "steel" in the field
+        Assert.Equal("steel", deck.QueryInput.Text);
+        int before = deck.QueryVersion;
+
+        RootClick(root, deck, deck.Geometry.SavedStuds[0]);   // lit: clears
+        Assert.Equal(GearQuery.Empty, deck.Query);
+        Assert.Equal("", deck.QueryInput.Text);
+        Assert.Equal(before + 1, deck.QueryVersion);
+    }
+
+    [Fact]
     public void ApplyingAFilterWithText_PutsTheTextInTheField_AndEscClearsBoth()
     {
         var (root, deck) = Rooted();

@@ -61,6 +61,7 @@ internal sealed partial class UiGearDeck : UiElement
     private GearQuery _query = GearQuery.Empty;
     /// <summary>Bumped by each query change; the caches that follow the query key on it.</summary>
     private int _queryVersion;
+    internal int QueryVersion => _queryVersion;
     private IReadOnlyList<GearItemView> _shown = [];
     private (ulong Build, int QueryVersion, uint Pack)? _shownFor;
 
