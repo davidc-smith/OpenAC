@@ -39,7 +39,35 @@ public sealed class PaperdollViewportRenderer :
 
     public void SetHeritage(uint heritageId) => _camera.SetHeritage(heritageId);
 
-    public void SetDoll(WorldEntity? doll) => _renderer.SetEntity(doll);
+    /// <summary>The camera's field of view at zoom 1 (<see cref="DollCamera"/>'s default).</summary>
+    private const float BaseFov = MathF.PI / 4f;
+
+    private WorldEntity? _doll;
+    private System.Numerics.Quaternion _dollBaseRotation = System.Numerics.Quaternion.Identity;
+    private PaperdollPose _pose = PaperdollPose.Default;
+
+    public void SetDoll(WorldEntity? doll)
+    {
+        _doll = doll;
+        if (doll is not null) _dollBaseRotation = doll.Rotation;
+        ApplyPose();
+        _renderer.SetEntity(doll);
+    }
+
+    void IPaperdollDollRenderer.SetPose(PaperdollPose pose)
+    {
+        if (pose == _pose) return;
+        _pose = pose;
+        ApplyPose();
+    }
+
+    /// <summary>The doll's rotation is read every draw (the private renderer's snapshot keys on meshes only),
+    /// so turning the entity in place is enough.</summary>
+    private void ApplyPose()
+    {
+        if (_doll is not null) _doll.Rotation = _pose.Apply(_dollBaseRotation);
+        _camera.FovRadians = _pose.Fov(BaseFov);
+    }
 
     public void Prepare() => _renderer.Prepare();
 
