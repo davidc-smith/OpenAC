@@ -1,14 +1,18 @@
 using System.Text.Json.Nodes;
+using AcDream.Core.Items.Gear;
 
 namespace AcDream.App.UI.Hud;
 
 internal enum GearPackView { Grid, List }
 
-/// <summary>The Gear Deck's per-character view state. Unknown keys from a newer build are kept and written back.</summary>
+/// <summary>The Gear Deck's per-character view state and saved filters. Unknown keys, and saved
+/// filters this build cannot read, are kept and written back.</summary>
 internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint SelectedPack)
 {
     public static GearDeckSettings Default { get; } = new(false, GearPackView.Grid, 0u);
     private JsonObject? Extra { get; init; }
+    private JsonArray? UnreadFilters { get; init; }
+    public IReadOnlyList<SavedFilter> SavedFilters { get; init; } = [];
 
     public static GearDeckSettings FromJson(string? json)
     {
@@ -19,9 +23,24 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
             bool folded = o["folded"]?.GetValue<bool>() ?? false;
             GearPackView view = (string?)o["view"] == "list" ? GearPackView.List : GearPackView.Grid;
             uint pack = o["selectedPack"]?.GetValue<uint>() ?? 0u;
+            var saved = new List<SavedFilter>();
+            JsonArray? unread = null;
+            bool hasFilters = o["savedFilters"] is JsonArray;
+            if (o["savedFilters"] is JsonArray filters)
+                foreach (JsonNode? f in filters)
+                {
+                    if (GearQueryJson.TryRead(f, out SavedFilter? read)) saved.Add(read!);
+                    else (unread ??= []).Add(f?.DeepClone());
+                }
             var extra = (JsonObject)o.DeepClone();
             foreach (string k in new[] { "version", "folded", "view", "selectedPack" }) extra.Remove(k);
-            return new GearDeckSettings(folded, view, pack) { Extra = extra.Count > 0 ? extra : null };
+            if (hasFilters) extra.Remove("savedFilters");
+            return new GearDeckSettings(folded, view, pack)
+            {
+                Extra = extra.Count > 0 ? extra : null,
+                SavedFilters = saved,
+                UnreadFilters = unread,
+            };
         }
         catch (Exception) { return Default; }
     }
@@ -33,10 +52,38 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
         o["folded"] = Folded;
         o["view"] = View == GearPackView.List ? "list" : "grid";
         o["selectedPack"] = SelectedPack;
+        if (SavedFilters.Count > 0 || UnreadFilters is { Count: > 0 })
+        {
+            var filters = new JsonArray();
+            foreach (SavedFilter f in SavedFilters) filters.Add(GearQueryJson.Write(f));
+            if (UnreadFilters is not null) foreach (JsonNode? f in UnreadFilters) filters.Add(f?.DeepClone());
+            o["savedFilters"] = filters;
+        }
         return o.ToJsonString();
     }
 
+    /// <summary>Saves a filter: a same-named one (ignoring case) is replaced in place; a new one is added up to the cap.</summary>
+    public GearDeckSettings WithSaved(SavedFilter filter)
+    {
+        string name = filter.Name.Trim();
+        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength];
+        if (name.Length == 0) return this;
+        var named = filter with { Name = name };
+        var list = SavedFilters.ToList();
+        int i = list.FindIndex(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (i >= 0) list[i] = named;
+        else if (list.Count >= SavedFilter.MaxCount) return this;
+        else list.Add(named);
+        return this with { SavedFilters = list };
+    }
+
+    public GearDeckSettings WithoutSaved(string name) => this with
+    {
+        SavedFilters = SavedFilters.Where(f => !string.Equals(f.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)).ToList(),
+    };
+
     public bool Equals(GearDeckSettings? other) =>
-        other is not null && Folded == other.Folded && View == other.View && SelectedPack == other.SelectedPack;
-    public override int GetHashCode() => HashCode.Combine(Folded, View, SelectedPack);
+        other is not null && Folded == other.Folded && View == other.View && SelectedPack == other.SelectedPack
+        && SavedFilters.SequenceEqual(other.SavedFilters);
+    public override int GetHashCode() => HashCode.Combine(Folded, View, SelectedPack, SavedFilters.Count);
 }
