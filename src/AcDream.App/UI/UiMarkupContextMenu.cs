@@ -36,6 +36,13 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
     /// scale here, with <see cref="DatFont"/> at the same scale. Read as the menu opens.
     /// </summary>
     public float Scale { get; set; } = 1f;
+
+    /// <summary>
+    /// Points added to every item row (not separators), read as the menu opens. A Modern HUD
+    /// deck whose text is larger than its scale sets the line's growth here so each row holds
+    /// its text; every other menu leaves it at 0.
+    /// </summary>
+    public float RowGrow { get; set; }
     public Func<IReadOnlyList<string>> ItemsSource { get; set; } = static () => Array.Empty<string>();
 
     /// <summary>Per-item enabled flags; null, or an item past the end, is enabled.</summary>
@@ -66,6 +73,7 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
     private bool[] _enabled = Array.Empty<bool>();
     private float[] _rowTops = Array.Empty<float>();   // one more than the items: the last is the bottom
     private float _x, _y, _w, _h;                       // the popup, relative to this menu's origin
+    private float _rowGrow;                            // RowGrow as of the open
     private float _scale = 1f;                          // Scale as of the open
     private int _highlight = -1;
     private UiElement? _returnFocus;
@@ -104,12 +112,13 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         _enabled = new bool[items.Length];
         _rowTops = new float[items.Length + 1];
         _scale = Scale > 0f ? Scale : 1f;
+        _rowGrow = MathF.Max(0f, RowGrow);
         float y = Inset * _scale, textWidth = 0f;
         for (int i = 0; i < items.Length; i++)
         {
             _rowTops[i] = y;
             bool separator = items[i] == Separator;
-            y += (separator ? SeparatorHeight : ItemHeight) * _scale;
+            y += separator ? SeparatorHeight * _scale : ItemHeight * _scale + _rowGrow;
             _enabled[i] = !separator && (flags is null || i >= flags.Count || flags[i]);
             if (!separator)
                 textWidth = MathF.Max(textWidth, MeasureText(items[i]));
@@ -288,7 +297,7 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         ctx.PushAlphaAbsolute(1f);
         try
         {
-            float inset = Inset * _scale, itemHeight = ItemHeight * _scale, separatorHeight = SeparatorHeight * _scale;
+            float inset = Inset * _scale, itemHeight = ItemHeight * _scale + _rowGrow, separatorHeight = SeparatorHeight * _scale;
             if (p is not null)
             {
                 PluginUiStyle.PopupShadow(ctx, _x, _y, _w, _h);

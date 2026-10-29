@@ -32,6 +32,9 @@ internal sealed partial class UiCommandDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly Func<double> _clock;
     private readonly DeckFonts? _fonts;
+    private readonly HudText? _text;
+    private readonly UiMarkupContextMenu _textMenu = new() { ThemePalette = ChatDeckPalette.Menu };
+    private DeckZone _menuZone;
     private DeckGeometry _geometry = DeckGeometry.Default;
     /// <summary>The geometry when the current resize drag started; null between drags.
     /// The root proposes each move's size from the drag start, so each move is
@@ -54,7 +57,8 @@ internal sealed partial class UiCommandDeck : UiElement
         ICommandDeckActions actions,
         EmbeddedSvgSpriteCache? icons,
         Func<double> clock,
-        DeckFonts? fonts = null)
+        DeckFonts? fonts = null,
+        HudText? text = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -70,7 +74,29 @@ internal sealed partial class UiCommandDeck : UiElement
         MaxHeight = MaxWindowHeight;
         Resizable = true;
         ResizableEdges = ResizeEdges.Right;
+        _text = text;
+        _textMenu.Opening = (x, y) =>
+        {
+            _menuZone = _geometry.ZoneAt(_view, x, y);
+            HudTextMenu.StyleMenu(_textMenu, _fonts, _geometry.Scale, TextFactor);
+        };
+        _textMenu.ItemsSource = () => _text is null || IsControl(_menuZone)
+            ? []
+            : HudTextMenu.Labels(_text.Settings, HudDeck.Command);
+        _textMenu.ItemsEnabledSource = HudTextMenu.EnabledFlags;
+        _textMenu.Selected = index =>
+        {
+            if (_text is not null) HudTextMenu.Choose(_text, HudDeck.Command, index);
+        };
+        AddChild(_textMenu);
+        ContextMenu = _textMenu;
     }
+
+    /// <summary>The deck's text factor: its own size or the HUD-wide one (1 without a text size).</summary>
+    internal float TextFactor => _text?.FactorFor(HudDeck.Command) ?? 1f;
+
+    /// <summary>The frame's right-click menu: the Text size block, on any part of the deck that is not a control.</summary>
+    internal UiMarkupContextMenu TextMenu => _textMenu;
 
     // The window's full size range. Scale and stretch together are enforced
     // by ConstrainResize and SyncGeometry, not by these.
@@ -262,7 +288,8 @@ internal sealed partial class UiCommandDeck : UiElement
         try
         {
             HudTooltip.Draw(ctx, tip, TooltipStyle, _geometry.RectFor(_hover),
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts,
+                _geometry.Scale, TextFactor);
         }
         finally { ctx.PopAlpha(); }
     }
@@ -317,6 +344,7 @@ internal sealed partial class UiCommandDeck : UiElement
     {
         _resizeFrom = null;
         _draggingPower = false;
+        _textMenu.Close(restoreFocus: false);
         ReleaseHeldAttack();
         ResetHover();
     }

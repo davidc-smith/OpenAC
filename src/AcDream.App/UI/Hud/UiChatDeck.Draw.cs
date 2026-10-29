@@ -5,8 +5,17 @@ namespace AcDream.App.UI.Hud;
 
 internal sealed partial class UiChatDeck
 {
-    private DeckFace LabelFace => new(_fonts?.Face(LabelPixels, BundledUiFontWeight.Regular));
-    private DeckFace LabelBold => new(_fonts?.Face(LabelPixels, BundledUiFontWeight.SemiBold));
+    /// <summary>The label face for text in <paramref name="box"/>: the deck's text size, dropped to the largest that fits.</summary>
+    private DeckFace LabelIn(DeckRect box) =>
+        DeckFace.In(_fonts, LabelPixels, BundledUiFontWeight.Regular, 1f, TextFactor, box.H);
+
+    private DeckFace LabelBoldIn(DeckRect box) =>
+        DeckFace.In(_fonts, LabelPixels, BundledUiFontWeight.SemiBold, 1f, TextFactor, box.H);
+
+    /// <summary>The label face at the deck's own size: badge widths are measured with it, so badges keep their size.</summary>
+    private DeckFace LabelBase => new(_fonts?.Face(LabelPixels, BundledUiFontWeight.Regular));
+
+    private DeckFace LabelBoldBase => new(_fonts?.Face(LabelPixels, BundledUiFontWeight.SemiBold));
 
     protected override void OnDraw(UiRenderContext ctx)
     {
@@ -19,8 +28,9 @@ internal sealed partial class UiChatDeck
         {
             DeckRect add = _geometry.AddTab;
             ctx.FillRoundedRect(add.X, add.Y, add.W, add.H, 5f, ChatDeckPalette.StudOff);
-            float w = LabelBold.Measure(ctx, "+");
-            DrawLabel(ctx, LabelBold, "+", add.X + (add.W - w) / 2f, add, ChatDeckPalette.LabelInk);
+            DeckFace plus = LabelBoldIn(add);
+            float w = plus.Measure(ctx, "+");
+            DrawLabel(ctx, plus, "+", add.X + (add.W - w) / 2f, add, ChatDeckPalette.LabelInk);
         }
         DrawStud(ctx, _geometry.SettingsStud, HudIcons.Settings, _b.SettingsOpen?.Invoke() == true);
         DrawStud(ctx, _geometry.CollapseStud, HudIcons.Collapse, on: false);
@@ -45,10 +55,11 @@ internal sealed partial class UiChatDeck
             }
 
             string badge = _labels[i].Badge;
-            float badgeW = ChatDeckGeometry.BadgeWidth(badge, s => LabelFace.Measure(ctx, s));
+            float badgeW = ChatDeckGeometry.BadgeWidth(badge, s => LabelBase.Measure(ctx, s));
             float nameRoom = r.W - 2 * ChatDeckGeometry.TabPadX - (badge.Length > 0 ? badgeW + ChatDeckGeometry.BadgeGap : 0f);
-            string name = Fit(ctx, LabelFace, tabs[i].Name, nameRoom);
-            DrawLabel(ctx, LabelFace, name, r.X + ChatDeckGeometry.TabPadX, r,
+            DeckFace nameFace = LabelIn(r);
+            string name = Fit(ctx, nameFace, tabs[i].Name, nameRoom);
+            DrawLabel(ctx, nameFace, name, r.X + ChatDeckGeometry.TabPadX, r,
                 selected ? ChatDeckPalette.TextInk : ChatDeckPalette.LabelInk);
 
             if (badge.Length == 0) continue;
@@ -57,7 +68,12 @@ internal sealed partial class UiChatDeck
                 r.Y + (r.H - ChatDeckGeometry.BadgeHeight) / 2f, badgeW, ChatDeckGeometry.BadgeHeight);
             ctx.FillRoundedRect(pill.X, pill.Y, pill.W, pill.H, pill.H / 2f,
                 alert ? ChatDeckPalette.BadgeRed : ChatDeckPalette.BadgeGold);
-            DrawLabel(ctx, LabelBold, badge, pill.X + ChatDeckGeometry.BadgePadX, pill,
+            DeckFace badgeFace = LabelBoldIn(pill);
+            // The pill is sized with the Regular face and drawn SemiBold, so the room never drops below
+            // the deck's own bold badge: at 100% the badge draws whole, as it always has.
+            float badgeRoom = MathF.Max(pill.W - 2 * ChatDeckGeometry.BadgePadX, LabelBoldBase.Measure(ctx, badge));
+            DrawLabel(ctx, badgeFace, Fit(ctx, badgeFace, badge, badgeRoom),
+                pill.X + ChatDeckGeometry.BadgePadX, pill,
                 alert ? ChatDeckPalette.TextInk : ChatDeckPalette.BadgeInk);
         }
     }
@@ -82,7 +98,9 @@ internal sealed partial class UiChatDeck
     {
         ctx.FillRoundedRect(0f, 0f, w, h, h / 2f, ChatDeckPalette.MarkerFill);
         DrawIcon(ctx, HudIcons.ChevronDown, 8f, (h - 10f) / 2f, 10f, ChatDeckPalette.TabUnderline);
-        DrawLabel(ctx, LabelFace, $"{NewLineCount} new", 22f, new DeckRect(0f, 0f, w, h), ChatDeckPalette.TextInk);
+        var band = new DeckRect(0f, 0f, w, h);
+        DeckFace face = LabelIn(band);
+        DrawLabel(ctx, face, Fit(ctx, face, $"{NewLineCount} new", w - 26f), 22f, band, ChatDeckPalette.TextInk);
     }
 
     private static void DrawLabel(UiRenderContext ctx, DeckFace face, string text, float x, DeckRect band, Vector4 ink) =>

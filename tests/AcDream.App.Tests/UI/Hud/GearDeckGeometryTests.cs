@@ -345,4 +345,22 @@ public sealed class GearDeckGeometryTests
         (x, y) = Mid(big.Chips[0]);
         Assert.Equal(new GearDeckHit(GearZone.Chip, 0), big.HitAt(x, y));
     }
+
+    [Fact]
+    public void TextGrow_GrowsListAndSuggestionRowsOnly()
+    {
+        var input = new GearDeckLayoutInput(false, true, 0, 40, 2, 0, Suggestions: 3);
+        GearDeckGeometry normal = GearDeckGeometry.Create(648f, input, null, 1f);
+        GearDeckGeometry grown = GearDeckGeometry.Create(648f, input, null, 1f, textGrow: 6f);
+
+        Assert.Equal(GearDeckGeometry.ListRowH + 6f, grown.ListRow(0, 0)!.Value.H);
+        Assert.Equal(GearDeckGeometry.SuggestH + 6f, grown.Suggestion(0).H);
+        Assert.Equal(grown.Suggestion(0).Y + grown.Suggestion(0).H, grown.Suggestion(1).Y, 3);
+        Assert.True(grown.VisibleListRows < normal.VisibleListRows);
+        Assert.Equal(normal.Frame, grown.Frame);
+        Assert.Equal(normal.Contents, grown.Contents);
+        Assert.Equal(normal.SortStud, grown.SortStud);
+        Assert.Equal(normal.SidePack(0), grown.SidePack(0));
+        Assert.Equal(normal.GridCell(0, 0), grown.GridCell(0, 0));
+    }
 }

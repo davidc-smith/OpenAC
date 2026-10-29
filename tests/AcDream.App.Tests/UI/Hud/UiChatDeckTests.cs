@@ -43,7 +43,7 @@ public sealed class UiChatDeckTests
         public int EditorToggles;
         public bool EditorIsOpen { get; set; }
 
-        public Harness(bool withModel = true, DeckFonts? fonts = null)
+        public Harness(bool withModel = true, DeckFonts? fonts = null, HudText? text = null)
         {
             if (withModel) Model = new ChatDeckModel(Log, ChatDeckDefaults.Create(), "Davian");
             Deck = new UiChatDeck(
@@ -62,7 +62,8 @@ public sealed class UiChatDeckTests
                     SettingsOpen: () => SettingsIsOpen,
                     OpenEditor: EditorRequests.Add,
                     ToggleEditor: () => EditorToggles++,
-                    EditorOpen: () => EditorIsOpen),
+                    EditorOpen: () => EditorIsOpen,
+                    Text: text),
                 fonts: fonts, icons: null)
             { Width = ChatDeckGeometry.DefaultWidth, Height = ChatDeckGeometry.DefaultHeight };
             Deck.Refresh();

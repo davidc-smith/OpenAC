@@ -2100,4 +2100,67 @@ public sealed class ConfigOptionsPageControllerTests
         Assert.Equal(40, persisted[1].VoiceCount);
     }
 
+    private static OptionsPanelController NewOptionsPanel(ImportedLayout layout) =>
+        OptionsPanelController.Bind(
+            layout,
+            new OptionsPanelController.Callbacks(
+                Toggle: () => { },
+                RequestExitToCharacterSelection: () => { },
+                ExitGame: () => { },
+                UseMouseTurningSettings: () => { },
+                DisplaySystemMessage: _ => { }))!;
+
+    [Fact]
+    public void HudTextBindings_add_a_slider_under_the_modern_hud_row_that_snaps_to_tens()
+    {
+        ImportedLayout layout = FixtureLoader.LoadOptionsPanelHost();
+        OptionsPanelController controller = NewOptionsPanel(layout);
+        int stored = 100;
+        var saves = new List<int>();
+
+        bool bound = ConfigOptionsPageController.Bind(
+            layout,
+            controller.ConfigPage,
+            MakeTemplateResolver(),
+            (_, _) => null,
+            new FakeBindings().ToBindings() with
+            {
+                ModernHud = new ConfigOptionsPageController.ModernHudBindings(Load: () => false, Save: _ => { }),
+                HudText = new ConfigOptionsPageController.HudTextBindings(
+                    Load: () => stored,
+                    Save: value => { stored = value; saves.Add(value); }),
+            });
+
+        Assert.True(bound);
+        Assert.Equal(41, controller.ConfigPage.Rows.Count);
+        Assert.IsType<BoolOptionRow>(controller.ConfigPage.Rows[^2]);
+        var row = Assert.IsType<FloatOptionRow>(controller.ConfigPage.Rows[^1]);
+        Assert.Equal(100f, row.DefaultValue);
+        Assert.Equal(100f, row.Current);
+
+        row.SetCurrentValue(123f);
+
+        Assert.Equal(120, stored);
+        Assert.Equal([120], saves);
+    }
+
+    [Fact]
+    public void HudTextBindings_without_the_modern_hud_row_add_nothing()
+    {
+        ImportedLayout layout = FixtureLoader.LoadOptionsPanelHost();
+        OptionsPanelController controller = NewOptionsPanel(layout);
+
+        bool bound = ConfigOptionsPageController.Bind(
+            layout,
+            controller.ConfigPage,
+            MakeTemplateResolver(),
+            (_, _) => null,
+            new FakeBindings().ToBindings() with
+            {
+                HudText = new ConfigOptionsPageController.HudTextBindings(Load: () => 100, Save: _ => { }),
+            });
+
+        Assert.True(bound);
+        Assert.Equal(39, controller.ConfigPage.Rows.Count);
+    }
 }

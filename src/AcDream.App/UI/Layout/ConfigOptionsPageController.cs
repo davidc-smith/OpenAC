@@ -127,6 +127,9 @@ public static class ConfigOptionsPageController
 
         /// <summary>The Modern HUD row's switch; the row is left out without it.</summary>
         public ModernHudBindings? ModernHud { get; init; }
+
+        /// <summary>The HUD text size row under the Modern HUD row; left out without it (or without Modern HUD).</summary>
+        public HudTextBindings? HudText { get; init; }
     }
 
     /// <summary>
@@ -138,6 +141,9 @@ public static class ConfigOptionsPageController
 
     /// <summary>The Modern HUD switch: Load reads the stored choice, Save stores it.</summary>
     public sealed record ModernHudBindings(Func<bool> Load, Action<bool> Save);
+
+    /// <summary>The Modern HUD's text size in percent: Load reads the HUD-wide size, Save stores and applies it.</summary>
+    public sealed record HudTextBindings(Func<int> Load, Action<int> Save);
 
     /// <summary>
     /// How the mixer rows read and change the mixer settings: the same
@@ -1385,6 +1391,34 @@ public static class ConfigOptionsPageController
                     "Show the Command Deck in place of the retail vitals, "
                     + "combat and jump bars. The retail spell bar is not "
                     + "shown while this is on.");
+
+            // The Modern HUD decks' text size: 80-150% in 10% steps, the decks keep
+            // their size. A deck's own right-click choice overrides it.
+            if (bindings.HudText is { } hudText)
+            {
+                BuildExplicitNumericSliderRow(
+                    listBox,
+                    "HUD text size",
+                    Hud.HudTextSettings.MinPercent,
+                    Hud.HudTextSettings.MaxPercent,
+                    step: Hud.HudTextSettings.StepPercent,
+                    integer: true,
+                    Hud.HudTextSettings.DefaultPercent,
+                    page,
+                    read: () => hudText.Load(),
+                    apply: value =>
+                    {
+                        hudText.Save((int)Math.Round(value));
+                        return true;
+                    },
+                    isCurrent: static () => true,
+                    tooltip:
+                        "How big the Modern HUD's text is, from 80% to 150%. The decks "
+                        + "keep their size: lists grow taller rows and short labels shrink "
+                        + "to fit. Right-click a deck's frame to give it its own size.",
+                    rangeLowText: "80%",
+                    rangeHighText: "150%");
+            }
         }
 
         chat = bindings.LoadChat();

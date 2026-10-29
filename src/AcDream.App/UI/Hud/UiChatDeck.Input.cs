@@ -87,7 +87,8 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         Place(Input, _geometry.Input);
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Input.DatFont = _fonts?.Face(appearance.InputFontSize, BundledUiFontWeight.Regular);
-        _chipMenu.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
+        _chipMenu.DatFont = MenuFont(appearance);
+        _chipMenu.RowGrow = MenuGrow(appearance);
     }
 
     /// <summary>Sends the next line on <paramref name="channel"/> instead of the tab's own (null: the tab's).</summary>
@@ -190,7 +191,13 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         bool overridden = _override is not null;
         ctx.FillRoundedRect(chip.X, chip.Y, chip.W, chip.H, 5f,
             overridden ? ChatDeckPalette.StudOn : ChatDeckPalette.StudOff);
-        DrawLabel(ctx, LabelBold, ChipText, chip.X + ChatDeckGeometry.TabPadX, chip,
+        DeckFace chipFace = LabelBoldIn(chip);
+        // The chip is sized with the Regular face and drawn SemiBold, so the room never drops below
+        // the deck's own bold label: at 100% the label draws whole, as it always has (capped chips included).
+        float chipRoom = MathF.Max(chip.W - ChatDeckGeometry.TabPadX - ChatDeckGeometry.ChipArrow - 4f,
+            LabelBoldBase.Measure(ctx, ChipText));
+        string chipText = Fit(ctx, chipFace, ChipText, chipRoom);
+        DrawLabel(ctx, chipFace, chipText, chip.X + ChatDeckGeometry.TabPadX, chip,
             overridden ? ChatDeckPalette.TextInk : ChatDeckPalette.LabelInk);
         DrawIcon(ctx, HudIcons.ChevronDown, chip.X + chip.W - ChatDeckGeometry.ChipArrow - 2f,
             chip.Y + (chip.H - 10f) / 2f, 10f, ChatDeckPalette.StudOffInk);

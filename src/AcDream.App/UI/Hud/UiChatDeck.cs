@@ -26,7 +26,8 @@ internal sealed record ChatDeckBindings(
     Func<bool>? SettingsOpen = null,
     Action<ChatDeckEditorRequest>? OpenEditor = null,
     Action? ToggleEditor = null,
-    Func<bool>? EditorOpen = null);
+    Func<bool>? EditorOpen = null,
+    HudText? Text = null);
 
 /// <summary>
 /// The Chat Deck window (pinned layout): a tab bar, a transcript of the selected
@@ -55,6 +56,8 @@ internal sealed partial class UiChatDeck : UiElement
     private bool _shown;
     private long? _seenThrough;   // the newest line shown when the view left the bottom
     private int _menuTab = -1;
+    /// <summary>Set as the tab menu opens: the press was on the empty frame, so the menu lists the Text size block.</summary>
+    private bool _menuTextSize;
     private ChatDeckHit _hit;
 
     public UiChatDeck(ChatDeckBindings bindings, DeckFonts? fonts, EmbeddedSvgSpriteCache? icons)
@@ -96,12 +99,25 @@ internal sealed partial class UiChatDeck : UiElement
         SearchField.OnTextChanged = text => _searchText = text.Trim();
         SearchField.OnEscape = CloseSearch;
 
-        _tabMenu.Opening = (x, y) => _menuTab = _geometry.HitAt(x, y) is { Zone: ChatDeckZone.Tab } hit ? hit.Tab : -1;
-        _tabMenu.ItemsSource = () => _menuTab >= 0 ? TabMenuItems : [];
-        _tabMenu.ItemsEnabledSource = () => TabMenuItems
-            .Select(item => item != "Delete" || (_model is { } m && _menuTab > 0 && _menuTab < m.Settings.Tabs.Count))
-            .ToArray();
-        _tabMenu.Selected = ChooseTabMenuItem;
+        _tabMenu.Opening = (x, y) =>
+        {
+            ChatDeckHit hit = _geometry.HitAt(x, y);
+            _menuTab = hit.Zone == ChatDeckZone.Tab ? hit.Tab : -1;
+            _menuTextSize = hit.Zone == ChatDeckZone.Frame && _b.Text is not null && !OverTextArea(x, y);
+        };
+        _tabMenu.ItemsSource = () => _menuTab >= 0
+            ? TabMenuItems
+            : _menuTextSize ? HudTextMenu.Labels(_b.Text!.Settings, HudDeck.Chat) : [];
+        _tabMenu.ItemsEnabledSource = () => _menuTextSize
+            ? HudTextMenu.EnabledFlags()
+            : TabMenuItems
+                .Select(item => item != "Delete" || (_model is { } m && _menuTab > 0 && _menuTab < m.Settings.Tabs.Count))
+                .ToArray();
+        _tabMenu.Selected = index =>
+        {
+            if (_menuTextSize && _b.Text is { } text) HudTextMenu.Choose(text, HudDeck.Chat, index);
+            else ChooseTabMenuItem(index);
+        };
         ContextMenu = _tabMenu;
 
         AddChild(Transcript);
@@ -123,6 +139,22 @@ internal sealed partial class UiChatDeck : UiElement
     }
 
     private static readonly string[] TabMenuItems = ["Rename", "Edit tab…", "-", "Mark as read", "Mark all read", "-", "Delete"];
+
+    /// <summary>The deck's text factor: its own size or the HUD-wide one (1 without a text size).</summary>
+    internal float TextFactor => _b.Text?.FactorFor(HudDeck.Chat) ?? 1f;
+
+    /// <summary>The chip and tab menus' face: the chat font size at the deck's text size (the transcript keeps its own).</summary>
+    private UiDatFont? MenuFont(ChatDeckAppearance a) =>
+        _fonts?.Face(DeckFonts.PixelHeight(a.FontSize, TextFactor), BundledUiFontWeight.Regular);
+
+    private float MenuGrow(ChatDeckAppearance a) =>
+        DeckFonts.RowGrow(_fonts, a.FontSize, BundledUiFontWeight.Regular, 1f, TextFactor);
+
+    /// <summary>The transcript (its blank area too), the input and the open search field: text areas,
+    /// where a right-click lists no Text size block.</summary>
+    private bool OverTextArea(float x, float y) =>
+        _geometry.Transcript.Contains(x, y) || _geometry.Input.Contains(x, y)
+        || (_searchOpen && _geometry.SearchField.Contains(x, y));
 
     internal UiText Transcript { get; }
     internal UiField SearchField { get; }
@@ -215,7 +247,8 @@ internal sealed partial class UiChatDeck : UiElement
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
         Transcript.DatFont = _fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular);
         SearchField.DatFont = _fonts?.Face(appearance.InputFontSize, BundledUiFontWeight.Regular);
-        _tabMenu.DatFont = Transcript.DatFont;
+        _tabMenu.DatFont = MenuFont(appearance);
+        _tabMenu.RowGrow = MenuGrow(appearance);
         Transcript.LineSpacing = appearance.LineSpacing;
 
         RebuildTranscript(appearance);

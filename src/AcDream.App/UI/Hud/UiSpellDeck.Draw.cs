@@ -50,8 +50,9 @@ internal sealed partial class UiSpellDeck
                 string key = KeyLabel(row, slot);
                 if (key.Length > 0)
                 {
-                    DeckFace face = Face(small: true);
-                    face.Draw(ctx, key, s.X + P(2), s.Y + P(2), LabelInk);
+                    DeckFace face = FaceIn(s.H - P(4));
+                    string fitted = UiCommandDeck.FitCastingText(key, t => face.Measure(ctx, t), s.W - P(4));
+                    face.Draw(ctx, fitted, s.X + P(2), s.Y + P(2), LabelInk);
                 }
 
                 if (spell is not uint id) continue;
@@ -137,12 +138,14 @@ internal sealed partial class UiSpellDeck
         }
     }
 
-    private DeckFace Face(bool small) => DeckFace.For(_fonts, _geometry.Scale, small);
+    /// <summary>The small face for text in a box <paramref name="boxHeight"/> tall, at the deck's text size.</summary>
+    private DeckFace FaceIn(float boxHeight) =>
+        DeckFace.In(_fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, _geometry.Scale, TextFactor, boxHeight);
 
     /// <summary>Small text centred on <paramref name="centre"/> and on <paramref name="band"/>'s height.</summary>
     private void DrawTextCentered(UiRenderContext ctx, string text, float centre, DeckRect band, Vector4 ink)
     {
-        DeckFace face = Face(small: true);
+        DeckFace face = FaceIn(band.H);
         face.Draw(ctx, text, centre - face.Measure(ctx, text) / 2f, band.Y + (band.H - face.LineHeight(ctx)) / 2f, ink);
     }
 }

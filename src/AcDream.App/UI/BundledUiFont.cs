@@ -51,7 +51,10 @@ public static class BundledUiFont
     private static UiDatFont Upload(TextureCache textures, Atlas atlas) =>
         atlas.CreateFont(textures.UploadCoverage8(atlas.Coverage, atlas.Width, atlas.Height, nearest: true));
 
-    private const float MaximumPixelHeight = 32f;
+    /// <summary>The smallest pixel height <see cref="Bake"/> accepts.</summary>
+    internal const float MinimumPixelHeight = 8f;
+    /// <summary>The largest pixel height <see cref="Bake"/> accepts.</summary>
+    internal const float MaximumPixelHeight = 32f;
 
     /// <summary>The baked glyphs: <see cref="Coverage"/> holds one byte of
     /// glyph coverage per pixel, drawn as white with that alpha.</summary>
@@ -80,8 +83,9 @@ public static class BundledUiFont
     internal static unsafe Atlas Bake(
         float pixelHeight = DefaultPixelHeight, BundledUiFontWeight weight = BundledUiFontWeight.Regular)
     {
-        if (!float.IsFinite(pixelHeight) || pixelHeight < 8 || pixelHeight > MaximumPixelHeight)
-            throw new ArgumentOutOfRangeException(nameof(pixelHeight), "Font size must be between 8 and 32 pixels.");
+        if (!float.IsFinite(pixelHeight) || pixelHeight < MinimumPixelHeight || pixelHeight > MaximumPixelHeight)
+            throw new ArgumentOutOfRangeException(nameof(pixelHeight),
+                $"Font size must be between {MinimumPixelHeight} and {MaximumPixelHeight} pixels.");
         byte[] fontBytes = ReadEmbeddedFontBytes(weight);
         using var info = StbTrueType.CreateFont(fontBytes, 0)
             ?? throw new InvalidOperationException("Bundled Noto Sans font could not be read.");

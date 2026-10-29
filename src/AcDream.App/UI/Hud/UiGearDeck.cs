@@ -20,7 +20,8 @@ internal sealed record GearDeckBindings(
     Action<string>? Log = null,
     Silk.NET.Input.IKeyboard? Keyboard = null,
     Func<(bool Toggle, bool Range)>? Modifiers = null,
-    IGearSalvage? Salvage = null);
+    IGearSalvage? Salvage = null,
+    HudText? Text = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
@@ -46,6 +47,8 @@ internal sealed partial class UiGearDeck : UiElement
     private GearDeckGeometry _g;
     /// <summary>The deck scale everything is laid out and drawn at: the width's (<see cref="GearDeckGeometry.ScaleForWidth"/>).</summary>
     private float _scale;
+    /// <summary>The deck's text factor: its HUD text size (<see cref="HudText.FactorFor"/>), or 1 without one.</summary>
+    private float _textFactor;
     private int _scrollRow;
     private ulong _lastRevision;
     private ClientObjectTable? _lastTable;
@@ -99,6 +102,7 @@ internal sealed partial class UiGearDeck : UiElement
         _dispatcherTable = _b.Objects();
         _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _actions);
         _scale = 1f;
+        _textFactor = _b.Text?.FactorFor(HudDeck.Gear) ?? 1f;
         Width = GearDeckGeometry.WidthAt(_scale);
         MinWidth = MinWindowWidth;
         MaxWidth = MaxWindowWidth;
@@ -108,11 +112,21 @@ internal sealed partial class UiGearDeck : UiElement
         ResizeX = true;
         ResizeY = true;
         ResizableEdges = AllEdges;
-        _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale);
+        _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale, TextGrow);
         CreateQueryInput();   // UiGearDeck.Query.cs
         CreateMenu();         // UiGearDeck.Menu.cs
         _b.Session.Ended += OnSessionEnded;
+        if (_b.Text is { } text) text.Changed += OnTextSizeChanged;
     }
+
+    /// <summary>The text factor the deck draws at: its HUD text size, or 1 without one.</summary>
+    internal float TextFactor => _textFactor;
+
+    /// <summary>How much the list and suggestion rows grow at the deck's text size.</summary>
+    private float TextGrow => DeckFonts.RowGrow(_fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, _scale, _textFactor);
+
+    /// <summary>A text size change does what a scale change does: drop fitted text, rebuild geometry.</summary>
+    private void OnTextSizeChanged() => SyncGeometry();
 
     /// <summary>The live query is not kept between sessions.</summary>
     private void OnSessionEnded()
@@ -123,7 +137,11 @@ internal sealed partial class UiGearDeck : UiElement
     }
 
     /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
-    internal void Detach() => _b.Session.Ended -= OnSessionEnded;
+    internal void Detach()
+    {
+        _b.Session.Ended -= OnSessionEnded;
+        if (_b.Text is { } text) text.Changed -= OnTextSizeChanged;
+    }
 
     // The window's full width range, one width per scale step; ConstrainResize
     // and SyncScale keep the width on a step.
@@ -297,13 +315,14 @@ internal sealed partial class UiGearDeck : UiElement
     private void SyncGeometry()
     {
         SyncScale();
+        float grow = TextGrow;
         GearDeckLayoutInput input = LayoutInput();
         FitMinHeight(input);
         GearPills pills = Pills();
         if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeightAt(_scale)) != _g.Frame.H
-            || _pillsVersion != _geometryPills || _g.Scale != _scale)
+            || _pillsVersion != _geometryPills || _g.Scale != _scale || _g.TextGrow != grow)
         {
-            _g = GearDeckGeometry.Create(Height, input, pills, _scale);
+            _g = GearDeckGeometry.Create(Height, input, pills, _scale, grow);
             _geometryPills = _pillsVersion;
             ClearFitted();
             Array.Clear(_slotLabels);
@@ -331,7 +350,7 @@ internal sealed partial class UiGearDeck : UiElement
     }
 
     /// <summary>
-    /// Follows the width's scale: a change re-bakes the fields' fonts and drops
+    /// Follows the width's scale and the HUD text size: a change re-bakes the fields' fonts and drops
     /// the text fitted at the old size, and every check puts the width on the
     /// scale's step (a saved or hand-edited layout may restore another), kept
     /// inside the parent. A width that would cross the parent's right side
@@ -341,9 +360,11 @@ internal sealed partial class UiGearDeck : UiElement
     private void SyncScale()
     {
         float scale = GearDeckGeometry.ScaleForWidth(Width);
-        if (scale != _scale)
+        float factor = _b.Text?.FactorFor(HudDeck.Gear) ?? 1f;
+        if (scale != _scale || factor != _textFactor)
         {
             _scale = scale;
+            _textFactor = factor;
             SetFieldFonts();
             SetMenuScale();   // UiGearDeck.Menu.cs
             _pillsFor = null;   // pills are measured with the face at the scale
@@ -352,6 +373,8 @@ internal sealed partial class UiGearDeck : UiElement
             _fittedSalvage = null;
             Array.Clear(_suggestTexts);
             Array.Clear(_slotLabels);
+            Array.Clear(_fittedChips);
+            Array.Clear(_fittedSaved);
             ClearFitted();
         }
         float width = GearDeckGeometry.WidthAt(_scale);

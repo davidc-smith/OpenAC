@@ -82,18 +82,28 @@ internal sealed partial class UiChatDeck
     {
         string badge = index < _labels.Count ? _labels[index].Badge : "";
         if (badge.Length == 0 || _model is null) return;
-        var face = new DeckFace(_fonts?.Face(StripBadgePixels, BundledUiFontWeight.SemiBold));
-        float textW = face.Measure(ctx, badge);
+        var baseFace = new DeckFace(_fonts?.Face(StripBadgePixels, BundledUiFontWeight.SemiBold));
+        float textW = baseFace.Measure(ctx, badge);
         float w = MathF.Max(StripBadgeHeight, textW + 4f);
         var pill = new DeckRect(stud.X + stud.W - w + 6f, stud.Y - 5f, w, StripBadgeHeight);
         bool alert = _model.FindTab(_model.Settings.Tabs[index].Id)?.Alert == true;
         ctx.FillRoundedRect(pill.X, pill.Y, pill.W, pill.H, pill.H / 2f,
             alert ? ChatDeckPalette.BadgeRed : ChatDeckPalette.BadgeGold);
-        DrawLabel(ctx, face, badge, pill.X + (pill.W - textW) / 2f, pill,
+        DeckFace face = DeckFace.In(_fonts, StripBadgePixels, BundledUiFontWeight.SemiBold, 1f, TextFactor, StripBadgeHeight);
+        string fitted = Fit(ctx, face, badge, pill.W - 2f);
+        DrawLabel(ctx, face, fitted, pill.X + (pill.W - face.Measure(ctx, fitted)) / 2f, pill,
             alert ? ChatDeckPalette.TextInk : ChatDeckPalette.BadgeInk);
     }
 
     internal static float PeekRowHeight(ChatDeckAppearance appearance) => appearance.FontSize + 10f;
+
+    /// <summary>A peek line at the deck's text size: its normal height plus the line's growth.</summary>
+    internal float PeekRow(ChatDeckAppearance appearance) =>
+        PeekRowHeight(appearance) + DeckFonts.RowGrow(_fonts, appearance.FontSize, BundledUiFontWeight.Regular, 1f, TextFactor);
+
+    /// <summary>How many peek lines a <paramref name="height"/> tall peek shows at rows <paramref name="row"/> tall.</summary>
+    internal static int PeekLinesFitting(float height, float row) =>
+        row <= 0f ? 0 : (int)MathF.Floor((height + 0.01f) / row);
 
     /// <summary>Beside the strip, its bottom lined up with the strip's.</summary>
     private void PlacePeek(UiRoot root, DeckRect strip)
@@ -112,10 +122,11 @@ internal sealed partial class UiChatDeck
         IReadOnlyList<ChatDeckPeekFeed.Entry> lines = _peek.Lines;
         if (lines.Count == 0) return;
         ChatDeckAppearance appearance = _model?.Settings.Appearance ?? new ChatDeckAppearance();
-        var face = new DeckFace(_fonts?.Face(appearance.FontSize, BundledUiFontWeight.Regular));
-        float row = PeekRowHeight(appearance);
+        var face = new DeckFace(_fonts?.Face(DeckFonts.PixelHeight(appearance.FontSize, TextFactor), BundledUiFontWeight.Regular));
+        float row = PeekRow(appearance);
+        int shown = Math.Min(lines.Count, PeekLinesFitting(height, row));
         float y = height;
-        for (int i = lines.Count - 1; i >= 0; i--)   // newest at the bottom
+        for (int i = lines.Count - 1; i >= lines.Count - shown; i--)   // newest at the bottom
         {
             y -= row;
             float alpha = ChatDeckPeekFeed.Alpha(lines[i].Age);
