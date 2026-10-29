@@ -3878,7 +3878,8 @@ public sealed class RetailUiRuntime : IDisposable
                     SettingsOpen: () => _chatDeckSettings?.IsOpen == true,
                     OpenEditor: OpenChatDeckEditor,
                     ToggleEditor: ToggleChatDeckEditor,
-                    EditorOpen: () => _chatDeckEditor?.IsOpen == true),
+                    EditorOpen: () => _chatDeckEditor?.IsOpen == true,
+                    Text: HudTextSize),
                 _deckFonts,
                 _hudIcons);
 
