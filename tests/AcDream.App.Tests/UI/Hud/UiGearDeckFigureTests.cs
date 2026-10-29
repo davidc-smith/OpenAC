@@ -386,4 +386,44 @@ public sealed class UiGearDeckFigureTests
         SendAt(r.Deck, UiEventType.DropReleased, chest, payload: payload);
         Assert.DoesNotContain(r.Actions.Calls, c => c.StartsWith("wield"));
     }
+
+    private static int SlotIndex(EquipMask mask)
+    {
+        for (int i = 0; i < GearSlotCatalog.Slots.Count; i++)
+            if (GearSlotCatalog.Slots[i].Mask == mask) return i;
+        throw new InvalidOperationException();
+    }
+
+    [Fact]
+    public void HoveringTheHeadSlot_HighlightsTheCap_NotTheShirt()
+    {
+        Rig r = Make();
+        DeckRect head = r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.HeadWear));
+        Send(r.Deck, UiEventType.MouseMove, head);
+        Assert.Equal(EquipMask.HeadWear, r.Deck.HoverFitMask);
+        Assert.True(r.Deck.HoverFits(Cap));
+        Assert.False(r.Deck.HoverFits(Shirt));
+        Assert.False(r.Deck.HoverFits(Helm));   // worn, not a pack item
+    }
+
+    [Fact]
+    public void HoveringTheChest_OnTheFigure_HighlightsTheShirt()
+    {
+        Rig r = Make();
+        SendAt(r.Deck, UiEventType.MouseMove, MapPoint(r.Deck, 50, 80));
+        Assert.True(r.Deck.HoverFits(Shirt));
+        Assert.False(r.Deck.HoverFits(Cap));
+    }
+
+    [Fact]
+    public void SlotsView_HighlightsToo_AndLeavingClears()
+    {
+        Rig r = Make(attach: false);
+        DeckRect head = r.Deck.Geometry.EquipSlot(SlotIndex(EquipMask.HeadWear));
+        Send(r.Deck, UiEventType.MouseMove, head);
+        Assert.True(r.Deck.HoverFits(Cap));
+        r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.HoverLeave));
+        Assert.Equal(EquipMask.None, r.Deck.HoverFitMask);
+        Assert.False(r.Deck.HoverFits(Cap));
+    }
 }

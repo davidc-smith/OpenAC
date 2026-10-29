@@ -362,6 +362,7 @@ internal sealed partial class UiGearDeck
                 if (results) face.Draw(ctx, PackBadge(row), r.X + P(2f), r.Y + P(1f), LabelInk);
                 if (picked) StrokeInside(ctx, r, 5f, Handle);
                 else if (Hover.Zone == GearZone.Item && Hover.Index == i) StrokeInside(ctx, r, 5f, Handle with { W = 0.6f });
+                else if (HoverFits(row.Id)) StrokeInside(ctx, r, 5f, DropAccept with { W = 0.8f });
             }
             finally { ctx.PopAlpha(); }
         }
@@ -393,6 +394,8 @@ internal sealed partial class UiGearDeck
                     ctx.FillRoundedRect(r.X, r.Y, r.W, r.H - rule, P(3f), MenuHighlight);
                 if (Hover.Zone == GearZone.Item && Hover.Index == i)
                     StrokeInside(ctx, r, 3f, Handle with { W = 0.6f }, shrinkH: 1f);
+                else if (!_selection.Contains(row.Id) && HoverFits(row.Id))
+                    StrokeInside(ctx, r, 3f, DropAccept with { W = 0.8f }, shrinkH: 1f);
                 ctx.DrawFill(r.X, r.Y + r.H - rule, r.W, rule, RowRule);
 
                 float iconSize = P(ListIcon);

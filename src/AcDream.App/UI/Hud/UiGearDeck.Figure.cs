@@ -1,6 +1,7 @@
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
 using AcDream.Core.Items;
+using AcDream.Core.Items.Gear;
 
 namespace AcDream.App.UI.Hud;
 
@@ -122,5 +123,41 @@ internal sealed partial class UiGearDeck
         if (_figureAttached || _figureUnavailableLogged || _b.Session.Settings.Equip != GearEquipView.Figure) return;
         _figureUnavailableLogged = true;
         _b.Log?.Invoke("[gear-deck] figure view unavailable; showing Slots");
+    }
+
+    private readonly HashSet<uint> _fits = [];
+    private (EquipMask Mask, ulong Build, int QueryVersion, uint Pack)? _fitsFor;
+
+    /// <summary>The slot or body region the pointer is over, whose fitting pack items are outlined; None elsewhere.</summary>
+    internal EquipMask HoverFitMask => Hover.Zone switch
+    {
+        GearZone.EquipSlot when Hover.Index >= 0 && Hover.Index < GearSlotCatalog.Slots.Count
+            => GearSlotCatalog.Slots[Hover.Index].Mask,
+        GearZone.Figure => (EquipMask)(uint)Hover.Index,
+        _ => EquipMask.None,
+    };
+
+    /// <summary>Whether a shown row could be worn where the pointer is (the drop highlight's rule);
+    /// built once per mask, model, query and pack.</summary>
+    internal bool HoverFits(uint id)
+    {
+        EquipMask mask = HoverFitMask;
+        if (mask == EquipMask.None) return false;
+        IReadOnlyList<GearItemView> rows = Shown;
+        uint pack = SelectedPackId;
+        if (_fitsFor != (mask, _modelBuild, _queryVersion, pack))
+        {
+            _fits.Clear();
+            ClientObjectTable objects = _b.Objects();
+            foreach (GearItemView row in rows)
+            {
+                if (row.Worn || row.IsPack || objects.Get(row.Id) is not { } o) continue;
+                if (ItemEquipRules.IsOffHandWeaponDrop(o, mask)
+                    || ItemEquipRules.ResolvePaperdollDropWieldMask(o, mask) != EquipMask.None)
+                    _fits.Add(row.Id);
+            }
+            _fitsFor = (mask, _modelBuild, _queryVersion, pack);
+        }
+        return _fits.Contains(id);
     }
 }
