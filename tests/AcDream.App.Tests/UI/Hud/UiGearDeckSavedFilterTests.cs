@@ -1,6 +1,7 @@
 using AcDream.App.Rendering;
 using AcDream.App.UI;
 using AcDream.App.UI.Hud;
+using AcDream.App.UI.Layout;
 using AcDream.Core.Items;
 using AcDream.Core.Items.Gear;
 using Xunit;
@@ -299,5 +300,66 @@ public sealed class UiGearDeckSavedFilterTests
         RootClick(root3, naming, naming.Geometry.SaveStud);
         Assert.True(naming.SaveNameInput.Visible);
         DrawInside(naming);
+    }
+
+    /// <summary>A bundled-font stand-in with real glyph widths, so fields and pills measure as they do live.</summary>
+    private static UiDatFont GlyphFont(float px)
+    {
+        var glyphs = new Dictionary<char, DatReaderWriter.Types.FontCharDesc>();
+        for (char c = ' '; c < (char)0x7F; c++)
+            glyphs[c] = new DatReaderWriter.Types.FontCharDesc { Unicode = c, Width = (byte)(px / 2), Height = (byte)px };
+        return new UiDatFont(fgTex: 1, fgW: 256, fgH: 256, bgTex: 0, bgW: 0, bgH: 0,
+            lineHeight: px + 2f, baselineOffset: px, glyphs);
+    }
+
+    /// <summary>The live sequence through the real pointer and key paths: the deck mounted in its window frame,
+    /// the chip added by typing and Enter (so the field holds focus), then a press and release on the star.</summary>
+    [Theory]
+    [MemberData(nameof(WithFonts))]
+    public void TheStar_InTheMountedWindow_AfterTypingAChip_OpensTheNameField_AndEnterSaves(bool withFonts)
+    {
+        ClientObjectTable table = World();
+        var session = new GearDeckSession(null, () => "Davian", () => true, () => 0.0);
+        var keyboard = new AcDream.App.Tests.Plugins.FakeKeyboard();
+        var log = new List<string>();
+        var root = new UiRoot { Width = 1600, Height = 900, Keyboard = keyboard };
+        var deck = new UiGearDeck(
+            new GearDeckBindings(() => table, () => Player, () => 100, (_, _, _, _, _) => 0u, (_, _, _, _, _) => 0u,
+                o => o.Name, session, new NoActions(), _ => false, () => { }, Log: log.Add, Keyboard: keyboard),
+            fonts: withFonts ? new DeckFonts((px, _) => GlyphFont(px)) : null, icons: null, clock: () => 0.0);
+        RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0), UiGearDeck.MountOptions(100, 50));
+        deck.Visible = true;
+        root.Tick(0.016, 0);
+
+        RootClick(root, deck, deck.Geometry.QueryField);
+        Assert.Same(deck.QueryInput, root.KeyboardFocus);
+        foreach (char c in "steel") root.OnChar(c);
+        root.Tick(0.016, 0);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        root.Tick(0.016, 0);
+        Assert.Equal(new[] { GearChip.OfMaterial(Steel) }, deck.Query.Chips);
+        Assert.Same(deck.QueryInput, root.KeyboardFocus);
+
+        var (sx, sy) = Centre(deck, deck.Geometry.SaveStud);
+        root.OnMouseMove(sx, sy);
+        root.Tick(0.016, 0);
+        root.OnMouseDown(UiMouseButton.Left, sx, sy);
+        root.Tick(0.016, 0);   // the client draws frames between the press and the release
+        root.Tick(0.016, 0);
+        root.OnMouseUp(UiMouseButton.Left, sx, sy);
+        Assert.True(deck.SaveNameInput.Visible);
+        Assert.Same(deck.SaveNameInput, root.KeyboardFocus);
+        root.Tick(0.016, 0);
+        deck.Refresh();
+        Assert.True(deck.SaveNameInput.Visible);
+        Assert.Same(deck.SaveNameInput, root.KeyboardFocus);
+        Assert.True(deck.SaveNameInput.Width > 0f && deck.SaveNameInput.Height > 0f);
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        root.Tick(0.016, 0);
+        SavedFilter saved = Assert.Single(deck.Bindings.Session.Settings.SavedFilters);
+        Assert.Equal("Steel", saved.Name);
+        Assert.False(deck.SaveNameInput.Visible);
+        Assert.Equal(new[] { "[gear-deck] save: name field open, focused True", "[gear-deck] save: name field closed (enter) saving" }, log);
     }
 }

@@ -106,9 +106,9 @@ internal sealed partial class UiGearDeck
 
         SaveNameInput.Keyboard = _b.Keyboard;
         SaveNameInput.DatFont = QueryInput.DatFont;
-        SaveNameInput.OnSubmit = text => FinishSave(text);
-        SaveNameInput.OnFocusLost = _ => FinishSave(null);   // like Esc: leaving the field cancels
-        SaveNameInput.OnEscape = () => FinishSave(null);
+        SaveNameInput.OnSubmit = text => FinishSave(text, "enter");
+        SaveNameInput.OnFocusLost = _ => FinishSave(null, "focus lost");   // like Esc: leaving the field cancels
+        SaveNameInput.OnEscape = () => FinishSave(null, "escape");
         AddChild(SaveNameInput);
         PlaceQueryInput();
     }
@@ -116,7 +116,11 @@ internal sealed partial class UiGearDeck
     /// <summary>★: opens the name field, pre-filled from the chip labels and selected. Does nothing while the query is empty.</summary>
     private void StartSave()
     {
-        if (_naming || _query.IsEmpty || _model.Packs.Count == 0) return;
+        if (_naming || _query.IsEmpty || _model.Packs.Count == 0)
+        {
+            _b.Log?.Invoke($"[gear-deck] save: star ignored (naming {_naming}, query empty {_query.IsEmpty}, packs {_model.Packs.Count})");
+            return;
+        }
         _naming = true;
         string name = string.Join(" ", ChipLabels);
         if (name.Length == 0) name = _query.Text;
@@ -126,14 +130,16 @@ internal sealed partial class UiGearDeck
         PlaceQueryInput();
         FindRoot()?.SetKeyboardFocus(SaveNameInput);
         SaveNameInput.SelectAllText();
+        _b.Log?.Invoke($"[gear-deck] save: name field open, focused {SaveNameInput.IsFocused}");
     }
 
     /// <summary>Saves the live query under a non-blank <paramref name="name"/> (null cancels) and hides the field;
-    /// a second call does nothing.</summary>
-    private void FinishSave(string? name)
+    /// a second call does nothing. <paramref name="why"/> goes to the log line, for live checks.</summary>
+    private void FinishSave(string? name, string why)
     {
         if (!_naming) return;
         _naming = false;
+        _b.Log?.Invoke($"[gear-deck] save: name field closed ({why}){(name is null ? "" : " saving")}");
         SaveNameInput.Visible = false;
         if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, SaveNameInput)) root.SetKeyboardFocus(null);
         if (name is not null && name.Trim().Length > 0 && !_query.IsEmpty)
@@ -195,7 +201,7 @@ internal sealed partial class UiGearDeck
         QueryInput.Height = r.H;
         bool shown = _model.Packs.Count > 0;
         QueryInput.Visible = shown && !_naming;
-        if (_naming && (!shown || _query.IsEmpty)) FinishSave(null);   // nothing left to name
+        if (_naming && (!shown || _query.IsEmpty)) FinishSave(null, "nothing to name");
         if (SaveNameInput.Anchors != AnchorEdges.None) SaveNameInput.Anchors = AnchorEdges.None;
         DeckRect q = _g.QueryText;
         SaveNameInput.Left = q.X;

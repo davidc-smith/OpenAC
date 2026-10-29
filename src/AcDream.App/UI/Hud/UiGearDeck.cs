@@ -103,7 +103,7 @@ internal sealed partial class UiGearDeck : UiElement
         CreateMenu();         // UiGearDeck.Menu.cs
         _b.Session.Ended += () =>   // the live query is not kept between sessions
         {
-            FinishSave(null);
+            FinishSave(null, "session ended");
             SetQuery(GearQuery.Empty);
             QueryInput.SetText("");
         };
