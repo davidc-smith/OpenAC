@@ -54,7 +54,7 @@ internal sealed partial class UiGearDeck
 
     protected override bool OnHitTest(float localX, float localY)
     {
-        _hit = _g.HitAt(localX, localY);
+        _hit = HitAt(localX, localY);
         // A control owns its press, so it never drags the window; a drag source must not
         // claim it, or a locked UI (which skips the drag-source check) never starts the drag.
         CapturesPointerDrag = IsControl(_hit.Zone) && DragItem(_hit) is null;
@@ -67,7 +67,7 @@ internal sealed partial class UiGearDeck
         {
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
-                _press = _g.HitAt(e.Data1, e.Data2);
+                _press = HitAt(e.Data1, e.Data2);
                 _starCloses = _namingClosedByStar && _press.Zone == GearZone.SaveStud;   // UiGearDeck.Query.cs
                 _namingClosedByStar = false;
                 // Empty contents space is no control, so no Click follows it: clear on the press.
@@ -76,13 +76,20 @@ internal sealed partial class UiGearDeck
                 // or the field gives it back, so the rows stay up until the click acts.
                 if (_press.Zone is GearZone.Suggestion or GearZone.QueryField)
                     FindRoot()?.SetKeyboardFocus(QueryInput);
+                // A press on the figure where nothing is worn turns it; a worn part lifts instead.
+                _turnFromX = _press.Zone == GearZone.Figure && WornAt(_press) is null ? e.Data1 : null;
                 return false;   // the window drag, the item drag or the click has the press
+            case UiEventType.MouseUp:
+            case UiEventType.CaptureChanged:
+                _turnFromX = null;
+                return false;
             case UiEventType.Click:
                 return ReleasedOnPress(e, out GearDeckHit clicked) ? Click(clicked) : IsControl(clicked.Zone);
             case UiEventType.DoubleClick:
                 return ReleasedOnPress(e, out GearDeckHit doubled) ? DoubleClick(doubled) : IsControl(doubled.Zone);
             case UiEventType.MouseMove:
-                SetHover(_g.HitAt(e.Data1, e.Data2));
+                if (TurnTo(e.Data1)) return true;
+                SetHover(HitAt(e.Data1, e.Data2));
                 return Hover.Zone != GearZone.None;
             case UiEventType.HoverLeave:
                 // The root stops hit-testing the deck once the pointer is elsewhere, so the last hit is stale.
@@ -90,9 +97,15 @@ internal sealed partial class UiGearDeck
                 SetHover(NoHit);
                 return true;
             case UiEventType.Scroll:
+                if (_g.Input.Figure && _g.Figure.Contains(e.Data1, e.Data2))
+                {
+                    FigurePose = FigurePose.Zoomed(e.Data0);   // +1 per notch up: in
+                    SetHover(HitAt(e.Data1, e.Data2));
+                    return true;
+                }
                 if (!_g.Contents.Contains(e.Data1, e.Data2)) return false;
                 ScrollTo(_scrollRow - e.Data0);   // Data0 is +1 per notch up
-                SetHover(_g.HitAt(e.Data1, e.Data2));
+                SetHover(HitAt(e.Data1, e.Data2));
                 return true;
             case UiEventType.DragBegin:
                 if (e.Payload is ItemDragPayload lifted)
@@ -238,7 +251,7 @@ internal sealed partial class UiGearDeck
     /// released over another (the close box, say) does nothing.</summary>
     private bool ReleasedOnPress(in UiEvent e, out GearDeckHit hit)
     {
-        hit = _g.HitAt(e.Data1, e.Data2);
+        hit = HitAt(e.Data1, e.Data2);
         return hit == _press;
     }
 
@@ -374,12 +387,16 @@ internal sealed partial class UiGearDeck
             case GearZone.EquipSlot or GearZone.WornCell:
                 if (WornAt(hit) is uint worn) Dispatcher.TakeOff(worn);
                 return true;
+            case GearZone.Figure:
+                if (WornAt(hit) is uint onBody) Dispatcher.TakeOff(onBody);
+                else ResetFigurePose();   // nothing worn here: stand the figure back up
+                return true;
             default:
                 return IsControl(hit.Zone);   // each click already acted
         }
     }
 
-    /// <summary>The item worn in an equipment slot or folded worn cell, or null.</summary>
+    /// <summary>The item worn in an equipment slot, a folded worn cell or a figure body region, or null.</summary>
     private uint? WornAt(GearDeckHit hit)
     {
         if (hit.Index < 0) return null;
@@ -387,6 +404,7 @@ internal sealed partial class UiGearDeck
             return SlotOccupant(hit.Index) is var id && id != 0u ? id : null;
         if (hit.Zone == GearZone.WornCell && hit.Index < _model.Worn.Count)
             return _model.Worn[hit.Index].ObjectId;
+        if (hit.Zone == GearZone.Figure) return WornOnBody((EquipMask)(uint)hit.Index);
         return null;
     }
 
@@ -412,7 +430,9 @@ internal sealed partial class UiGearDeck
     public override bool IsDragSource => DragItem(_hit) is not null;
 
     public override object? GetDragPayload() =>
-        DragItem(_press) is { } lifted ? new ItemDragPayload(lifted.Id, lifted.Kind, _press.Index, null) : null;
+        DragItem(_press) is { } lifted
+            ? new ItemDragPayload(lifted.Id, lifted.Kind, _press.Zone == GearZone.Figure ? -1 : _press.Index, null)
+            : null;
 
     public override (uint tex, int w, int h)? GetDragGhost()
     {
@@ -432,7 +452,7 @@ internal sealed partial class UiGearDeck
     private GearDeckHit? DropTargetAt(float x, float y)
     {
         if (_model.Packs.Count == 0) return null;
-        GearDeckHit hit = _g.HitAt(x, y);
+        GearDeckHit hit = HitAt(x, y);
         return hit.Zone switch
         {
             GearZone.SidePack when hit.Index < _model.Packs.Count => hit,
@@ -551,6 +571,7 @@ internal sealed partial class UiGearDeck
         SetHover(NoHit);
         _tooltipSuppressed = false;
         _press = NoHit;
+        _turnFromX = null;
         ClearDropHighlight();
     }
 
@@ -586,6 +607,8 @@ internal sealed partial class UiGearDeck
                 return WornAt(hit) is uint worn ? Caption(worn) : GearSlotCatalog.Slots[hit.Index].Label;
             case GearZone.WornCell when WornAt(hit) is uint cell:
                 return Caption(cell);
+            case GearZone.Figure when WornAt(hit) is uint body:
+                return Caption(body);
             case GearZone.SidePack when hit.Index < _model.Packs.Count && !_model.Packs[hit.Index].IsMain:
                 return Caption(_model.Packs[hit.Index].Id);
             case GearZone.Chip:

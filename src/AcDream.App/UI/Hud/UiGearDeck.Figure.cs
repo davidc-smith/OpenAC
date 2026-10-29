@@ -1,5 +1,6 @@
 using AcDream.App.Rendering;
 using AcDream.App.Rendering.Gpu;
+using AcDream.Core.Items;
 
 namespace AcDream.App.UI.Hud;
 
@@ -54,6 +55,52 @@ internal sealed partial class UiGearDeck
         width = (int)MathF.Round(_g.Figure.W);
         height = (int)MathF.Round(_g.Figure.H);
         return width > 0 && height > 0;
+    }
+
+    /// <summary>Radians the figure turns per point dragged, at scale 1.</summary>
+    internal const float TurnPerPoint = 0.012f;
+
+    /// <summary>The pointer x the last turn step was measured from, while a press on the figure turns it.</summary>
+    private float? _turnFromX;
+
+    /// <summary>
+    /// The geometry's hit with the body filled in: a Figure hit's Index is the
+    /// body region under the point as its <see cref="EquipMask"/> bits (0 for
+    /// none), so a move to another region is a new hover, and a press keeps
+    /// the region it landed on.
+    /// </summary>
+    internal GearDeckHit HitAt(float x, float y)
+    {
+        GearDeckHit hit = _g.HitAt(x, y);
+        return hit.Zone == GearZone.Figure ? hit with { Index = (int)FigureRegionAt(x, y) } : hit;
+    }
+
+    /// <summary>The body region at a deck point through the retail click map, sampled 1:1 at scale 1;
+    /// none without a map, off the map, or while the figure is turned or zoomed.</summary>
+    private EquipMask FigureRegionAt(float x, float y)
+    {
+        if (_b.ClickMap is not { } map || !FigurePose.IsDefault) return EquipMask.None;
+        DeckRect m = _g.ClickMap;
+        if (!m.Contains(x, y)) return EquipMask.None;
+        return map.GetBodyLocation((int)((x - m.X) / _scale), (int)((y - m.Y) / _scale));
+    }
+
+    /// <summary>The item worn outermost on a body region, as the retail doll picks it; null for none or bare skin.</summary>
+    private uint? WornOnBody(EquipMask region)
+    {
+        if (region == EquipMask.None) return null;
+        uint player = _b.PlayerGuid();
+        uint id = PaperdollSelectionPolicy.GetUpperInventoryObject(_b.Objects(), player, region);
+        return id == 0u || id == player ? null : id;
+    }
+
+    /// <summary>Turns the figure as a held press moves; true while a turn is under way.</summary>
+    private bool TurnTo(float x)
+    {
+        if (_turnFromX is not float from) return false;
+        FigurePose = FigurePose.Turned((x - from) / _scale * TurnPerPoint);
+        _turnFromX = x;
+        return true;
     }
 
     private void ResetFigurePose() => FigurePose = PaperdollPose.Default;

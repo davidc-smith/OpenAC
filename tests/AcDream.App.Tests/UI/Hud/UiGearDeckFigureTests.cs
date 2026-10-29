@@ -211,4 +211,126 @@ public sealed class UiGearDeckFigureTests
         Assert.False(r.Deck.FigureTexture.IsAssigned);
         Assert.False(r.Deck.Geometry.Input.Figure);
     }
+
+    private static void SendAt(UiGearDeck deck, int type, (float X, float Y) at, int data0 = 0, object? payload = null)
+    {
+        deck.HitTestLocal(at.X, at.Y);
+        deck.OnEvent(new UiEvent(0, deck, type, Data0: data0, Data1: (int)at.X, Data2: (int)at.Y, Payload: payload));
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void TheHead_IsTheHelm_AtAnyScale(float scale)
+    {
+        Rig r = Make(scale: scale);
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.MouseMove, head);
+        Assert.Equal(GearZone.Figure, r.Deck.Hover.Zone);
+        Assert.Equal((int)EquipMask.HeadWear, r.Deck.Hover.Index);
+        r.Now = 10;
+        Assert.Equal("Helm", r.Deck.VisibleTooltip?.Title);
+    }
+
+    [Fact]
+    public void ABareRegion_AndUnmappedSpace_NameNothingWorn()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);     // mapped, nothing worn there
+        SendAt(r.Deck, UiEventType.MouseMove, chest);
+        Assert.Equal((int)(EquipMask.ChestWear | EquipMask.ChestArmor), r.Deck.Hover.Index);
+        r.Now = 10;
+        Assert.Null(r.Deck.VisibleTooltip);
+        var gap = MapPoint(r.Deck, 50, 50);       // white: unmapped
+        SendAt(r.Deck, UiEventType.MouseMove, gap);
+        Assert.Equal(0, r.Deck.Hover.Index);
+    }
+
+    [Fact]
+    public void APressOnTheHelm_LiftsIt()
+    {
+        var log = new List<string>();
+        Rig r = Make(log: log);
+        var head = MapPoint(r.Deck, 50, 10);
+        Assert.True(r.Deck.HitTestLocal(head.X, head.Y));
+        Assert.True(r.Deck.IsDragSource);
+        SendAt(r.Deck, UiEventType.MouseDown, head);
+        var p = Assert.IsType<ItemDragPayload>(r.Deck.GetDragPayload());
+        Assert.Equal((Helm, ItemDragSource.Equipment, -1), (p.ObjId, p.SourceKind, p.SourceSlot));
+        SendAt(r.Deck, UiEventType.DragBegin, head, payload: p);
+        Assert.Single(log, l => l.StartsWith($"[gear-deck] drag 0x{Helm:X8} from Figure"));
+    }
+
+    [Fact]
+    public void DoubleClickTheHelm_TakesItOff()
+    {
+        Rig r = Make();
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.MouseDown, head);
+        SendAt(r.Deck, UiEventType.Click, head);
+        SendAt(r.Deck, UiEventType.MouseDown, head);
+        SendAt(r.Deck, UiEventType.Click, head);
+        SendAt(r.Deck, UiEventType.DoubleClick, head);
+        Assert.Contains(r.Actions.Calls, c => c.StartsWith($"put {Helm:X} "));
+    }
+
+    [Fact]
+    public void DragWhereNothingIsWorn_Turns_AndTheMapGoesQuiet()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        Assert.True(r.Deck.HitTestLocal(chest.X, chest.Y));
+        Assert.False(r.Deck.IsDragSource);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
+        Assert.Equal(0.6f, r.Deck.FigurePose.Yaw, 3);
+        SendAt(r.Deck, UiEventType.MouseUp, (chest.X + 50f, chest.Y));
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 90f, chest.Y));
+        Assert.Equal(0.6f, r.Deck.FigurePose.Yaw, 3);   // released: no more turning
+
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.MouseMove, head);
+        Assert.Equal(0, r.Deck.Hover.Index);            // turned: no region
+        Assert.True(r.Deck.HitTestLocal(head.X, head.Y));
+        Assert.False(r.Deck.IsDragSource);
+    }
+
+    [Fact]
+    public void TheWheel_ZoomsTheFigure_AndDoubleClickResets()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.Scroll, chest, data0: 2);
+        Assert.Equal(1.12f * 1.12f, r.Deck.FigurePose.Zoom, 3);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.Click, chest);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.Click, chest);
+        SendAt(r.Deck, UiEventType.DoubleClick, chest);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void HidingOrFolding_StandsTheFigureUp()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
+        r.Deck.OnHidden();
+        Assert.True(r.Deck.FigurePose.IsDefault);
+        SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
+        Click(r.Deck, r.Deck.Geometry.FoldStud);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void TheSlotsStud_StandsTheFigureUp()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        Click(r.Deck, r.Deck.Geometry.SlotsStud);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
 }
