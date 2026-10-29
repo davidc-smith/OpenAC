@@ -212,6 +212,78 @@ public sealed class GearDeckGeometryTests
     }
 
     [Fact]
+    public void FitPills_NoPills_NoMore()
+    {
+        var (rects, more, hidden) = GearDeckGeometry.FitPills([], 10f, 5f, 100f, 18f);
+        Assert.Empty(rects);
+        Assert.Null(more);
+        Assert.Equal(0, hidden);
+    }
+
+    [Fact]
+    public void FitPills_TheLastPillNeedsNoRoomForMore_SoItFitsExactly()
+    {
+        var (rects, more, hidden) = GearDeckGeometry.FitPills([100f], 10f, 5f, 100f, 18f);
+        Assert.Equal([new DeckRect(10f, 5f, 100f, 18f)], rects);
+        Assert.Null(more);
+        Assert.Equal(0, hidden);
+
+        (rects, more, hidden) = GearDeckGeometry.FitPills([100.5f], 10f, 5f, 100f, 18f);
+        Assert.Empty(rects);
+        Assert.Equal(new DeckRect(10f, 5f, GearDeckGeometry.MoreW, 18f), more);
+        Assert.Equal(1, hidden);
+    }
+
+    [Fact]
+    public void FitPills_APillWithOthersAfterIt_KeepsRoomForTheMorePill()
+    {
+        float gap = GearDeckGeometry.PillGap, moreW = GearDeckGeometry.MoreW;
+        float room = 40f + gap + moreW;   // the first pill and a "+N" exactly
+        var (rects, more, hidden) = GearDeckGeometry.FitPills([40f, 10f, 10f], 0f, 0f, room, 18f);
+        Assert.Single(rects);
+        Assert.Equal(new DeckRect(40f + gap, 0f, moreW, 18f), more);
+        Assert.Equal(2, hidden);
+
+        (rects, more, _) = GearDeckGeometry.FitPills([40f, 10f], 0f, 0f, room - 0.5f, 18f);
+        Assert.Empty(rects);   // no room for the first and the "+N" after it
+        Assert.Equal(new DeckRect(0f, 0f, moreW, 18f), more);
+    }
+
+    [Fact]
+    public void FitPills_AtAScale_TheGapAndMorePillScale()
+    {
+        float gap = GearDeckGeometry.PillGap * 2f, moreW = GearDeckGeometry.MoreW * 2f;
+        var (rects, more, hidden) = GearDeckGeometry.FitPills([40f, 10f, 10f], 0f, 0f, 40f + gap + moreW, 36f, scale: 2f);
+        Assert.Single(rects);   // at 1x the gap and "+N" would leave room for the second as well
+        Assert.Equal(new DeckRect(40f + gap, 0f, moreW, 36f), more);
+        Assert.Equal(2, hidden);
+    }
+
+    [Fact]
+    public void Suggestions_HitBeforeTheSavedStudsTheyCover()
+    {
+        var input = new GearDeckLayoutInput(false, false, 0, 30, 7, 0, SavedCount: 2, Suggestions: 3);
+        var g = GearDeckGeometry.Create(620f, input, new GearPills([], ["Steel", "Kits"], Six));
+        DeckRect stud = g.SavedStuds[0];
+        float x = stud.X + 2, y = stud.Y + 2;
+        int covering = Enumerable.Range(0, 3).First(i => g.Suggestion(i).Contains(x, y));
+        Assert.Equal(new GearDeckHit(GearZone.Suggestion, covering), g.HitAt(x, y));
+
+        var closed = GearDeckGeometry.Create(620f, input with { Suggestions = 0 }, new GearPills([], ["Steel", "Kits"], Six));
+        Assert.Equal(new GearDeckHit(GearZone.SavedFilter, 0), closed.HitAt(x, y));
+    }
+
+    [Fact]
+    public void TheFooterButton_HitsBeforeTheFooterText_OnlyWhileShown()
+    {
+        var on = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0, SalvageButton: true));
+        DeckRect b = on.FooterButton;
+        Assert.True(on.Footer.Contains(b.X + 2, b.Y + 2));   // the button sits in the footer band
+        Assert.Equal(GearZone.FooterButton, on.HitAt(b.X + 2, b.Y + 2).Zone);
+        Assert.Equal(GearZone.Frame, on.HitAt(on.Footer.X + 2, on.Footer.Y + 2).Zone);
+    }
+
+    [Fact]
     public void FooterButton_OnlyWhenShown()
     {
         var off = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0));
