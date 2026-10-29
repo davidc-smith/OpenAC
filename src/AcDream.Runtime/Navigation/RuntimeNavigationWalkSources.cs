@@ -515,6 +515,9 @@ internal sealed class RuntimeNavigationGoalSource : INavigationGoalSource
         _runtime.InventoryOwner.Objects.Get(objectId) is { } item
         && ((PublicWeenieFlags)(item.PublicWeenieBitfield ?? 0u) & PublicWeenieFlags.Player) != 0;
 
+    public string? NameOf(uint objectId) =>
+        _runtime.InventoryOwner.Objects.Get(objectId) is { Name.Length: > 0 } item ? item.Name : null;
+
     /// <summary>The portal the client knows of nearest a point, by where it stands.</summary>
     public bool TryFindPortal(Vector3 near, float radius, out uint portalId, out Vector3 position)
     {

@@ -87,7 +87,8 @@ internal sealed partial class NavigationWalkController
         Vector3 goal = active.Goal;
         float arrival = PlanningRadius(active.ArrivalMeters);
         bool onGoalFloor = active.Place is not null;
-        NavAvoidance[] keepOut = [.. active.CorridorKeepOut];
+        // A way round keeps out of portals as each stage does, so no stage is aimed through one.
+        NavAvoidance[] keepOut = [.. active.CorridorKeepOut, .. Portals(originX, originY, size, body, active.GoalObjectId, goal)];
         float cell = CorridorCellSize(size);
         _corridorFor = active;
         NavLeapAbility? leaps = sample.Leaps;

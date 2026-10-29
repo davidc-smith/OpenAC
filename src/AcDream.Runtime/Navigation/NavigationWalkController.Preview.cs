@@ -69,7 +69,7 @@ internal sealed partial class NavigationWalkController
         var centre = new Vector3(originX + half, originY + half, 0f);
         float reach = half * MathF.Sqrt(2f);
         NavAvoidance[] portals = _goals.FindPortals(centre, reach, objectId, goal)
-            .Select(spot => spot with { Radius = spot.Radius + body.Radius }).ToArray();
+            .Select(spot => KeptOutOfPortal(spot, body)).ToArray();
         NavAvoidance[] obstacles = _goals.FindObstacles(centre, reach, objectId, geometry.ObjectIds)
             .Select(spot => spot with { Radius = spot.Radius + body.Radius }).ToArray();
         return Task.Run(() =>
@@ -142,7 +142,7 @@ internal sealed partial class NavigationWalkController
             : new Vector3(originX + half, originY + half, 0f);
         float reach = half * MathF.Sqrt(2f);
         NavAvoidance[] portals = _goals.FindPortals(centre, reach, objectId, goal)
-            .Select(spot => spot with { Radius = spot.Radius + body.Radius }).ToArray();
+            .Select(spot => KeptOutOfPortal(spot, body)).ToArray();
         NavAvoidance[] obstacles = _goals.FindObstacles(centre, reach, objectId, round?.ObjectIds ?? geometry!.ObjectIds)
             .Select(spot => spot with { Radius = spot.Radius + body.Radius }).ToArray();
         return Task.Run(() =>
