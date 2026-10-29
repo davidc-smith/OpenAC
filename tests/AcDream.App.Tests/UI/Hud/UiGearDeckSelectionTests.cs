@@ -197,4 +197,46 @@ public sealed class UiGearDeckSelectionTests
         ClickItem(rig, 0);
         Assert.EndsWith(" · 1 selected", rig.Deck.FooterLeftText);
     }
+
+    [Fact]
+    public void ARangeClickAfterAPackChange_HasNoAnchorAndSelectsOnlyTheClickedItem()
+    {
+        var (root, rig) = Rooted();
+        ClickItem(rig, 2);
+        uint other = rig.Deck.Model.Packs[1].Id;
+        rig.Deck.Bindings.Session.Update(s => s with { SelectedPack = other });
+        Assert.Empty(rig.Deck.Selection);
+        ClickItem(rig, 0, range: true);
+        Assert.Equal(new[] { Id(rig, 0) }, rig.Deck.Selection);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ShowInPack_ScrollsAnOffScreenRowIntoView(bool list)
+    {
+        Rig rig = Make(list: list);
+        // Fill the bag past what the contents area shows; the target is the last row.
+        var t = rig.Deck.Bindings.Objects();
+        for (int i = 0; i < 80; i++)
+            Place(t, new ClientObject { ObjectId = 0x900u + (uint)i, Name = $"Bolt {i}", Type = ItemType.Misc }, Bag, 1 + i);
+        const uint Last = 0x999;
+        Place(t, Steely(Last), Bag, 90);
+        rig.Deck.Refresh();
+        rig.Deck.SetQuery(GearQuery.Empty.With(GearChip.OfMaterial(Steel)));
+        var root = new UiRoot { Width = 1200, Height = 900 };
+        root.AddChild(rig.Deck);
+        int at = rig.Deck.Shown.ToList().FindIndex(r => r.Id == Last);
+        DeckRect cell = list ? rig.Deck.Geometry.ListRow(at, rig.Deck.ScrollRow)!.Value
+                             : rig.Deck.Geometry.GridCell(at, rig.Deck.ScrollRow)!.Value;
+        RightClick(root, rig.Deck, cell);
+        rig.Deck.Menu.Selected!(0);
+
+        int index = rig.Deck.Shown.ToList().FindIndex(r => r.Id == Last);
+        int line = list ? index : index / GearDeckGeometry.Columns;
+        int visible = list ? rig.Deck.Geometry.VisibleListRows : rig.Deck.Geometry.VisibleGridRows;
+        Assert.True(index >= visible, "the target must start off-screen");
+        Assert.InRange(line, rig.Deck.ScrollRow, rig.Deck.ScrollRow + visible - 1);
+        Assert.Equal(new[] { Last }, rig.Deck.Selection);
+    }
 }

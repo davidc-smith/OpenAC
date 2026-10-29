@@ -20,6 +20,8 @@ internal sealed partial class UiGearDeck
     /// <summary>For <see cref="MenuKind.Item"/>: the clicked row and whether Show in pack applies, as of the open.</summary>
     private GearItemView? _menuRow;
     private bool _menuCanShow;
+    /// <summary>For <see cref="MenuKind.Item"/>: the selected ids in <see cref="Shown"/> order when the menu opened.</summary>
+    private uint[] _menuSelection = [];
 
     /// <summary>The sort menu's fields, in the order it lists them.</summary>
     private static readonly GearSortField[] SortFields =
@@ -54,6 +56,7 @@ internal sealed partial class UiGearDeck
         _menuChips = [];
         _menuLabels = [];
         _menuSaved = [];
+        _menuSelection = [];
         if (_menuKind == MenuKind.SavedFilter)
             _menuSaved = [_b.Session.Settings.SavedFilters[hit.Index]];
         else if (_menuKind == MenuKind.SavedMore)
@@ -64,6 +67,10 @@ internal sealed partial class UiGearDeck
             GearItemView clicked = Shown[hit.Index];
             _menuRow = clicked;
             if (!_selection.Contains(clicked.Id)) SelectOnly(hit.Index);
+            var picked = new List<uint>(_selection.Count);
+            foreach (GearItemView row in Shown)
+                if (_selection.Contains(row.Id)) picked.Add(row.Id);
+            _menuSelection = picked.ToArray();
             _menuCanShow = ShowsResults && _selection.Count == 1 && !clicked.Worn && !clicked.IsPack;
         }
         if (_menuKind != MenuKind.HiddenChips) return;
@@ -96,7 +103,8 @@ internal sealed partial class UiGearDeck
         }
     }
 
-    private static readonly string[] ItemMenuItems = ["Show in pack", UiMarkupContextMenu.Separator, "Select all", "Clear selection"];
+    private const string ShowInPackLabel = "Show in pack", SelectAllLabel = "Select all", ClearSelectionLabel = "Clear selection";
+    private static readonly string[] ItemMenuItems = [ShowInPackLabel, UiMarkupContextMenu.Separator, SelectAllLabel, ClearSelectionLabel];
 
     private bool[] MenuEnabled()
     {
@@ -105,8 +113,13 @@ internal sealed partial class UiGearDeck
         Array.Fill(flags, true);
         if (_menuKind == MenuKind.Item)
         {
-            flags[0] = _menuCanShow;
-            flags[3] = _selection.Count > 0;
+            for (int i = 0; i < count; i++)
+                flags[i] = ItemMenuItems[i] switch
+                {
+                    ShowInPackLabel => _menuCanShow,
+                    ClearSelectionLabel => _menuSelection.Length > 0,
+                    _ => true,
+                };
         }
         return flags;
     }
@@ -130,14 +143,13 @@ internal sealed partial class UiGearDeck
             case MenuKind.SavedMore when index >= 0 && index < _menuSaved.Length:
                 ApplySaved(_menuSaved[index]);
                 break;
-            case MenuKind.Item when index == 0 && _menuCanShow && _menuRow is not null:
-                ShowInPack(_menuRow);
-                break;
-            case MenuKind.Item when index == 2:
-                SelectAll();
-                break;
-            case MenuKind.Item when index == 3:
-                ClearSelection();
+            case MenuKind.Item when index >= 0 && index < ItemMenuItems.Length:
+                switch (ItemMenuItems[index])
+                {
+                    case ShowInPackLabel when _menuCanShow && _menuRow is not null: ShowInPack(_menuRow); break;
+                    case SelectAllLabel: SelectAll(); break;
+                    case ClearSelectionLabel: ClearSelection(); break;
+                }
                 break;
         }
     }

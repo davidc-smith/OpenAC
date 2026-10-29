@@ -114,10 +114,20 @@ internal sealed partial class UiGearDeck
     private readonly HashSet<uint> _selection = [];
     /// <summary>The <see cref="Shown"/> index a range click spans from, or -1.</summary>
     private int _anchor = -1;
+    /// <summary>The anchor row's id; <see cref="_anchor"/> is re-found from it when <see cref="Shown"/> is rebuilt,
+    /// so a pack or query change that drops the row drops the anchor.</summary>
+    private uint _anchorId;
     private int _selectionVersion;
 
     /// <summary>The selected item ids; always a subset of <see cref="Shown"/>.</summary>
-    internal IReadOnlyCollection<uint> Selection => _selection;
+    internal IReadOnlyCollection<uint> Selection
+    {
+        get
+        {
+            _ = Shown;   // a stale list prunes here, so the ids read are always shown ones
+            return _selection;
+        }
+    }
 
     /// <summary>Bumped on every selection change, for the caches that follow it.</summary>
     internal int SelectionVersion => _selectionVersion;
@@ -131,6 +141,7 @@ internal sealed partial class UiGearDeck
     private void ClearSelection()
     {
         _anchor = -1;
+        _anchorId = 0u;
         if (_selection.Count == 0) return;
         _selection.Clear();
         _selectionVersion++;
@@ -140,14 +151,24 @@ internal sealed partial class UiGearDeck
     {
         _selection.Clear();
         _selection.Add(Shown[index].Id);
-        _anchor = index;
+        SetAnchor(index);
         _selectionVersion++;
+    }
+
+    private void SetAnchor(int index)
+    {
+        _anchor = index;
+        _anchorId = index >= 0 ? Shown[index].Id : 0u;
     }
 
     /// <summary>Drops the ids a rebuilt <see cref="Shown"/> no longer holds.</summary>
     private void PruneSelection(IReadOnlyList<GearItemView> rows)
     {
-        if (_anchor >= rows.Count) _anchor = -1;
+        _anchor = -1;
+        if (_anchorId != 0u)
+            for (int i = 0; i < rows.Count; i++)
+                if (rows[i].Id == _anchorId) { _anchor = i; break; }
+        if (_anchor < 0) _anchorId = 0u;
         if (_selection.Count == 0) return;
         int before = _selection.Count;
         var live = new HashSet<uint>(rows.Count);
@@ -172,7 +193,7 @@ internal sealed partial class UiGearDeck
         {
             uint id = rows[index].Id;
             if (!_selection.Remove(id)) _selection.Add(id);
-            _anchor = index;
+            SetAnchor(index);
             _selectionVersion++;
         }
         else SelectOnly(index);
@@ -182,7 +203,7 @@ internal sealed partial class UiGearDeck
     {
         _selection.Clear();
         foreach (GearItemView row in Shown) _selection.Add(row.Id);
-        _anchor = Shown.Count > 0 ? 0 : -1;
+        SetAnchor(Shown.Count > 0 ? 0 : -1);
         _selectionVersion++;
     }
 

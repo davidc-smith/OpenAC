@@ -339,6 +339,7 @@ internal sealed partial class UiGearDeck : UiElement
     {
         get
         {
+            _ = Shown;   // prune the selection first, so the count is of shown items
             if (_footerLeftFor != (_modelBuild, _queryVersion, _selectionVersion, ShowsResults))
             {
                 string picked = _selection.Count > 0
