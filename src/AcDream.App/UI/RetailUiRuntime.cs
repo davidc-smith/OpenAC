@@ -3699,7 +3699,8 @@ public sealed class RetailUiRuntime : IDisposable
             actions,
             _hudIcons,
             () => clock.Elapsed.TotalSeconds,
-            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache),
+            HudTextSize);
 
         RetailWindowFrame.Mount(
             Host.Root,
