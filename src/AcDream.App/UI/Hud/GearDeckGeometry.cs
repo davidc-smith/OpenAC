@@ -37,8 +37,8 @@ internal sealed class GearDeckGeometry
     public const int RingRows = 6;
 
     /// <summary>Each <see cref="AcDream.Core.Items.Gear.GearSlotCatalog.Slots"/> entry's ring cell in Figure view
-    /// (column 0-3 left to right, row 0-5 top down): armour outer left, clothes inner left, jewellery inner
-    /// right, Aetheria and weapons outer right; each column runs head to foot.</summary>
+    /// (column 0-3 left to right, row 0-5 top down): head, torso and arms outer left; cloak, clothes, legs and
+    /// feet inner left; jewellery inner right; Aetheria and weapons outer right; each column runs head to foot.</summary>
     internal static readonly (int Col, int Row)[] RingCells =
     [
         (0, 0), (2, 0), (1, 0),            // Head, Neck, Cloak
@@ -174,7 +174,9 @@ internal sealed class GearDeckGeometry
         var figure = figureShown
             ? new DeckRect(equipment.X + (equipment.W - S(FigureW)) / 2f, equipment.Y, S(FigureW), S(FigureH))
             : new DeckRect(equipment.X, equipment.Y, 0f, 0f);
-        var clickMap = new DeckRect(figure.X + figure.W / 2f - S(MapLeftOfCentre), figure.Y, S(MapW), S(MapH));
+        var clickMap = figureShown
+            ? new DeckRect(figure.X + figure.W / 2f - S(MapLeftOfCentre), figure.Y, S(MapW), S(MapH))
+            : new DeckRect(equipment.X, equipment.Y, 0f, 0f);
 
         var packsHeader = new DeckRect(pad, y, inner, S(HeaderH));
         studY = y + (S(HeaderH) - S(StudH)) / 2f;

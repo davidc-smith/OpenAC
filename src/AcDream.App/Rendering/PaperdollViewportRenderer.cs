@@ -22,6 +22,7 @@ public sealed class PaperdollViewportRenderer :
         IEntityTextureLifetime textureLifetime,
         IWbMeshAdapter meshAdapter)
     {
+        _baseFov = _camera.FovRadians;
         _renderer = new PrivateEntityViewportRenderer(
             scope,
             device,
@@ -39,8 +40,8 @@ public sealed class PaperdollViewportRenderer :
 
     public void SetHeritage(uint heritageId) => _camera.SetHeritage(heritageId);
 
-    /// <summary>The camera's field of view at zoom 1 (<see cref="DollCamera"/>'s default).</summary>
-    private const float BaseFov = MathF.PI / 4f;
+    /// <summary>The camera's field of view at zoom 1 (the camera's own default, read at construction).</summary>
+    private readonly float _baseFov;
 
     private WorldEntity? _doll;
     private System.Numerics.Quaternion _dollBaseRotation = System.Numerics.Quaternion.Identity;
@@ -66,7 +67,7 @@ public sealed class PaperdollViewportRenderer :
     private void ApplyPose()
     {
         if (_doll is not null) _doll.Rotation = _pose.Apply(_dollBaseRotation);
-        _camera.FovRadians = _pose.Fov(BaseFov);
+        _camera.FovRadians = _pose.Fov(_baseFov);
     }
 
     public void Prepare() => _renderer.Prepare();

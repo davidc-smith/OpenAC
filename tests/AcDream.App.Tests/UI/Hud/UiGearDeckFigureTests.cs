@@ -308,6 +308,22 @@ public sealed class UiGearDeckFigureTests
     }
 
     [Fact]
+    public void ReleasingAfterATurn_CatchesTheHoverUp()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.MouseMove, chest);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.MouseUp, head);
+        Assert.Equal(GearZone.Figure, r.Deck.Hover.Zone);
+        Assert.Equal(0, r.Deck.Hover.Index);            // turned: no region
+        Assert.Equal(EquipMask.None, r.Deck.HoverFitMask);
+    }
+
+    [Fact]
     public void AClickWobble_DoesNotTurn()
     {
         Rig r = Make();

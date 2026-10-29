@@ -449,8 +449,10 @@ public sealed class GearDeckGeometryTests
         Assert.Equal(baseMin + 50f, GearDeckGeometry.MinHeightFor(slots with { Figure = true }), 3);
 
         Assert.Equal(0f, GearDeckGeometry.Create(800f, slots).Figure.W);
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, slots).ClickMap.W);
         var folded = GearDeckGeometry.Create(800f, FigureInput(folded: true));
         Assert.Equal(0f, folded.Figure.W);
+        Assert.Equal(0f, folded.ClickMap.W);
         Assert.Equal(GearDeckGeometry.WornCellSize, folded.Equipment.H, 3);
     }
 }

@@ -34,7 +34,7 @@
 
 **Plan-3 scope notes (decided while planning; flag at review if wrong):**
 - **Figure is the default view**, as the retail paper doll's doll view is. A saved setting without the new `equip` key loads as Figure, so plan-1/2 users see the figure on first open after this lands. "slots" is saved once they pick Slots.
-- **The ring holds all 24 slots** in 4 columns of 6 rows of 30-point cells, two columns each side of a 140 × 214 figure: armour (outer left), clothes (inner left), jewellery (inner right), then Aetheria and weapons (outer right). The order is in `GearDeckGeometry.RingCells`.
+- **The ring holds all 24 slots** in 4 columns of 6 rows of 30-point cells, two columns each side of a 140 × 214 figure: head, torso and arms (outer left), cloak, clothes, legs and feet (inner left), jewellery (inner right), then Aetheria and weapons (outer right), each column running head to foot. The order is in `GearDeckGeometry.RingCells`.
 - **The click map only holds at rest.** While the figure is turned or zoomed, a point on it names no body region. Lift, hover, tooltip and double-click then do nothing there, and a drop wears the item retail's way (all its valid locations). Double-clicking the figure where nothing is worn resets it. Folding, switching to Slots and hiding the deck reset it too, so each open starts at rest.
 - **Drag to turn only where nothing is worn.** A press on a worn body part lifts that item, as retail's doll does. A press anywhere else on the figure turns it.
 - **A drop on the body:** if the region under the pointer fits the item, it goes through `DropOnSlot` with that region's mask. Otherwise, as retail's `HandleDollDrop` does, an auto-wear item is worn at all its valid locations, and anything else is refused.

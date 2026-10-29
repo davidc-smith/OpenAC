@@ -82,7 +82,11 @@ internal sealed partial class UiGearDeck
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
             case UiEventType.CaptureChanged:
+                bool wasTurning = _turning;
                 _turnFromX = null;
+                _turning = false;
+                // A turn's moves skipped the hover; catch it up to where the press ended.
+                if (wasTurning && e.Type == UiEventType.MouseUp) SetHover(HitAt(e.Data1, e.Data2));
                 return false;
             case UiEventType.Click:
                 return ReleasedOnPress(e, out GearDeckHit clicked) ? Click(clicked) : IsControl(clicked.Zone);

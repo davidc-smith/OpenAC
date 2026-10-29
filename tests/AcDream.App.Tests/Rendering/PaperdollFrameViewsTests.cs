@@ -81,6 +81,21 @@ public sealed class PaperdollFrameViewsTests
     }
 
     [Fact]
+    public void DeckPose_DoesNotLeakIntoTheRetailDoll()
+    {
+        var retail = new View { Visible = true };
+        var deck = new View { Visible = true, Pose = new PaperdollPose(0.5f, 1.5f) };
+        var views = new PaperdollFrameViews(retail, deck);
+        Assert.True(views.TryGetVisibleSize(out _, out _));
+        Assert.Equal(PaperdollPose.Default, views.Pose);
+
+        var renderer = new Renderer();
+        var presenter = new PaperdollFramePresenter(renderer, views, new Factory(), new Heritage());
+        presenter.Render();
+        Assert.Equal("pose 0.00 1.00", renderer.Calls[0]);
+    }
+
+    [Fact]
     public void Presenter_AppliesTheViewPose_BeforeRendering()
     {
         var renderer = new Renderer();
