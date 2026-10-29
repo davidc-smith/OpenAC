@@ -44,6 +44,16 @@ internal sealed partial class UiGearDeck : UiElement
     private uint _lastPlayer;
     private int? _lastStrength;
     private bool _built;
+    /// <summary>Counts model rebuilds, so <see cref="Shown"/> knows when its rows are stale.</summary>
+    private ulong _modelBuild;
+
+    /// <summary>The model as flat rows: what a query searches and what <see cref="Shown"/> indexes.</summary>
+    private GearProjection _projection = GearProjection.Empty;
+    private GearQuery _query = GearQuery.Empty;
+    /// <summary>Bumped by each query change; the caches that follow the query key on it.</summary>
+    private int _queryVersion;
+    private IReadOnlyList<GearItemView> _shown = [];
+    private (ulong Build, int QueryVersion, uint Pack)? _shownFor;
 
     // Built with the model (Refresh's gated rebuild) so a frame does no table scans or string work.
     /// <summary>Each <see cref="GearSlotCatalog.Slots"/> entry's occupant id, or 0.</summary>
@@ -53,6 +63,13 @@ internal sealed partial class UiGearDeck : UiElement
     private string[] _badges = [];
     private string _footer = "";
     private uint _footerFor;
+    private string _matchText = "";
+    private (ulong Build, int QueryVersion)? _matchFor;
+    /// <summary>The results list's value columns for <see cref="_columnsFor"/>'s query version.</summary>
+    private (GearSortField? A, GearSortField? B) _columns;
+    private int _columnsFor = -1;
+    /// <summary>Results-list column texts fitted to their slot, by item and field; cleared with <see cref="_fittedNames"/>.</summary>
+    private readonly Dictionary<(uint Id, GearSortField Field), string> _columnTexts = [];
     /// <summary>Stack corner texts by stack size; cleared with the model.</summary>
     private readonly Dictionary<int, string> _stackTexts = [];
     /// <summary>List names fitted to their row, by item id; cleared with the model and the geometry.</summary>
@@ -77,6 +94,7 @@ internal sealed partial class UiGearDeck : UiElement
         ResizeX = false;
         ResizeY = true;
         _g = GearDeckGeometry.Create(Height, LayoutInput());
+        _b.Session.Ended += () => SetQuery(GearQuery.Empty);   // the live query is not kept between sessions
     }
 
     /// <summary>How the runtime mounts the deck: imported chrome, 300 wide, resized from the top or bottom, hidden.</summary>
@@ -126,10 +144,46 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>The loose items of the selected pack, in slot order.</summary>
     internal IReadOnlyList<ClientObject> Items => _model.Contents(SelectedPackId);
 
-    /// <summary>The rows the selected view holds for <see cref="Items"/>.</summary>
+    /// <summary>The live query; an empty one shows the selected pack.</summary>
+    internal GearQuery Query => _query;
+
+    /// <summary>A non-empty query shows its matches from every pack instead of the selected pack.</summary>
+    internal bool ShowsResults => !_query.IsEmpty;
+
+    /// <summary>Sets the live query and shows its first row; the same query changes nothing.</summary>
+    internal void SetQuery(GearQuery q)
+    {
+        ArgumentNullException.ThrowIfNull(q);
+        if (q.Equals(_query)) return;
+        _query = q;
+        _queryVersion++;
+        ClearFitted();   // the results list fits its names around the query's columns
+        ScrollTo(0);
+    }
+
+    /// <summary>
+    /// The rows the contents area shows and every item hit indexes: the query's
+    /// matches across all packs while <see cref="ShowsResults"/>, else the selected
+    /// pack's rows in slot order. Rebuilt only when the model, query or pack changed.
+    /// </summary>
+    internal IReadOnlyList<GearItemView> Shown
+    {
+        get
+        {
+            uint pack = SelectedPackId;
+            if (_shownFor != (_modelBuild, _queryVersion, pack))
+            {
+                _shown = ShowsResults ? GearQueryEngine.Run(_projection.All, _query) : _projection.ForPack(pack);
+                _shownFor = (_modelBuild, _queryVersion, pack);
+            }
+            return _shown;
+        }
+    }
+
+    /// <summary>The rows the selected view holds for <see cref="Shown"/>.</summary>
     private int ContentRows => _b.Session.Settings.View == GearPackView.List
-        ? Items.Count
-        : (Items.Count + GearDeckGeometry.Columns - 1) / GearDeckGeometry.Columns;
+        ? Shown.Count
+        : (Shown.Count + GearDeckGeometry.Columns - 1) / GearDeckGeometry.Columns;
 
     private int VisibleRows => _b.Session.Settings.View == GearPackView.List ? _g.VisibleListRows : _g.VisibleGridRows;
 
@@ -160,6 +214,8 @@ internal sealed partial class UiGearDeck : UiElement
             || player != _lastPlayer || strength != _lastStrength)
         {
             _model = GearInventoryModel.Build(table, player, strength);
+            _projection = GearProjection.Build(_model, table, _b.DisplayName);
+            _modelBuild++;
             RebuildCaches(table, player);
             _lastTable = table;
             _lastRevision = table.MutationRevision;
@@ -181,7 +237,7 @@ internal sealed partial class UiGearDeck : UiElement
         _b.Session.Settings.Folded,
         _b.Session.Settings.View == GearPackView.List,
         _model.Worn.Count,
-        Items.Count,
+        Shown.Count,
         _model.SidePackSlots,
         _scrollRow);
 
@@ -192,7 +248,7 @@ internal sealed partial class UiGearDeck : UiElement
         if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H)
         {
             _g = GearDeckGeometry.Create(Height, input);
-            _fittedNames.Clear();
+            ClearFitted();
             Array.Clear(_slotLabels);
         }
     }
@@ -231,7 +287,50 @@ internal sealed partial class UiGearDeck : UiElement
         _footer = "";
         _footerFor = 0;
         _stackTexts.Clear();
+        ClearFitted();
+    }
+
+    /// <summary>Forgets the list names and column texts fitted to their rows.</summary>
+    private void ClearFitted()
+    {
         _fittedNames.Clear();
+        _columnTexts.Clear();
+    }
+
+    /// <summary>A results row's pack badge: "M", "2"…"8", or "W" for a worn item.</summary>
+    private string PackBadge(GearItemView row) =>
+        row.Worn ? "W" : row.PackIndex >= 0 && row.PackIndex < _badges.Length ? _badges[row.PackIndex] : "";
+
+    /// <summary>"3 of 102 match": the results against every pack item.</summary>
+    internal string MatchText
+    {
+        get
+        {
+            if (_matchFor != (_modelBuild, _queryVersion))
+            {
+                _matchText = $"{Shown.Count.ToString(CultureInfo.InvariantCulture)} of {_projection.PackItemCount.ToString(CultureInfo.InvariantCulture)} match";
+                _matchFor = (_modelBuild, _queryVersion);
+            }
+            return _matchText;
+        }
+    }
+
+    /// <summary>The results list's value columns: the sort field when it is not Name, then
+    /// the first range chip's field when that differs from the sort.</summary>
+    private (GearSortField? A, GearSortField? B) ResultColumns
+    {
+        get
+        {
+            if (_columnsFor == _queryVersion) return _columns;
+            GearSortField? sort = _query.Sort.Field == GearSortField.Name ? null : _query.Sort.Field;
+            GearSortField? range = null;
+            foreach (GearChip chip in _query.Chips)
+                if (chip.IsRange) { range = GearChipText.SortFieldOf(chip.Field); break; }
+            if (range == sort) range = null;
+            _columns = sort is null ? (range, null) : (sort, range);
+            _columnsFor = _queryVersion;
+            return _columns;
+        }
     }
 
     /// <summary>The occupant drawn in slot <paramref name="index"/> of <see cref="GearSlotCatalog.Slots"/>, or 0.</summary>

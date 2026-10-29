@@ -39,6 +39,16 @@ public static class GearChipText
         _ => "",
     };
 
+    /// <summary>The sort field a range chip's column shows.</summary>
+    public static GearSortField? SortFieldOf(GearField field) => field switch
+    {
+        GearField.Workmanship => GearSortField.Workmanship,
+        GearField.Value => GearSortField.Value,
+        GearField.Burden => GearSortField.Burden,
+        GearField.Stack => GearSortField.Stack,
+        _ => null,
+    };
+
     private static string RangeLabel(GearChip chip)
     {
         string name = chip.Field == GearField.Workmanship ? "Work" : chip.Field.ToString();

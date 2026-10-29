@@ -22,6 +22,8 @@ internal sealed partial class UiGearDeck
     private static readonly Vector4 DropReject = Rgb(0xE0505E);
 
     private const float ListIcon = 18f;
+    /// <summary>A results-list value column and the pack badge slot after it.</summary>
+    private const float ColumnW = 44f, BadgeW = 16f;
     /// <summary>How far the frame is drawn inside the element, so its dark edge stays inside too.</summary>
     private const float FrameInset = 2f;
 
@@ -48,14 +50,19 @@ internal sealed partial class UiGearDeck
         ctx.PushClip(c.X, c.Y, c.W, c.H);
         try
         {
-            if (g.Input.List) DrawList(ctx);
-            else DrawGrid(ctx);
+            if (g.Input.List) DrawList(ctx, objects);
+            else DrawGrid(ctx, objects);
         }
         finally { ctx.PopClip(); }
 
         DrawSideColumn(ctx, objects);
-        string footer = FooterText;
-        DrawText(ctx, Small, footer, g.Footer.X + g.Footer.W - Small.Measure(ctx, footer), g.Footer, LabelInk);
+        if (ShowsResults)
+            DrawText(ctx, Small, MatchText, g.Footer.X, g.Footer, LabelInk);
+        else
+        {
+            string footer = FooterText;
+            DrawText(ctx, Small, footer, g.Footer.X + g.Footer.W - Small.Measure(ctx, footer), g.Footer, LabelInk);
+        }
 
         if (DropHighlight is { } drop && RectFor(drop.Hit) is { } target)
             StrokeAround(ctx, target, drop.Accept ? DropAccept : DropReject);
@@ -240,14 +247,17 @@ internal sealed partial class UiGearDeck
 
     // ---- pack contents ----
 
-    private void DrawGrid(UiRenderContext ctx)
+    /// <summary>The grid: each row's icon and stack, and in results its pack badge top-left.</summary>
+    private void DrawGrid(UiRenderContext ctx, ClientObjectTable objects)
     {
-        IReadOnlyList<ClientObject> items = Items;
+        IReadOnlyList<GearItemView> rows = Shown;
+        bool results = ShowsResults;
         DeckFace face = Small;
-        for (int i = _scrollRow * GearDeckGeometry.Columns; i < items.Count; i++)
+        for (int i = _scrollRow * GearDeckGeometry.Columns; i < rows.Count; i++)
         {
             if (_g.GridCell(i, _scrollRow) is not { } r) break;
-            ClientObject o = items[i];
+            GearItemView row = rows[i];
+            if (objects.Get(row.Id) is not { } o) continue;   // gone since the model was built
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
             try
             {
@@ -259,6 +269,7 @@ internal sealed partial class UiGearDeck
                     float lh = face.LineHeight(ctx);
                     face.Draw(ctx, stack, r.X + r.W - 2f - face.Measure(ctx, stack), r.Y + r.H - lh, TextInk);
                 }
+                if (results) face.Draw(ctx, PackBadge(row), r.X + 2f, r.Y + 1f, LabelInk);
                 if (Hover.Zone == GearZone.Item && Hover.Index == i)
                     ctx.StrokeRoundedRect(r.X + 0.5f, r.Y + 0.5f, r.W - 1f, r.H - 1f, 5f, Handle with { W = 0.6f }, 1f);
             }
@@ -266,15 +277,18 @@ internal sealed partial class UiGearDeck
         }
     }
 
-    /// <summary>The list view: icon, name shortened to fit, and the stack count right-aligned.</summary>
-    private void DrawList(UiRenderContext ctx)
+    /// <summary>The list view: icon, name shortened to fit, and the stack count right-aligned;
+    /// in results, up to two value columns and the pack badge in place of the stack.</summary>
+    private void DrawList(UiRenderContext ctx, ClientObjectTable objects)
     {
-        IReadOnlyList<ClientObject> items = Items;
+        IReadOnlyList<GearItemView> rows = Shown;
+        bool results = ShowsResults;
         DeckFace face = Small;
-        for (int i = _scrollRow; i < items.Count; i++)
+        for (int i = _scrollRow; i < rows.Count; i++)
         {
             if (_g.ListRow(i, _scrollRow) is not { } r) break;
-            ClientObject o = items[i];
+            GearItemView row = rows[i];
+            if (objects.Get(row.Id) is not { } o) continue;   // gone since the model was built
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
             try
             {
@@ -284,6 +298,11 @@ internal sealed partial class UiGearDeck
 
                 var icon = new DeckRect(r.X + 2f, r.Y + (r.H - ListIcon) / 2f, ListIcon, ListIcon);
                 DrawIcon(ctx, IconFor(o), icon);
+                if (results)
+                {
+                    DrawResultColumns(ctx, face, row, r, icon.X + icon.W + 6f);
+                    continue;
+                }
 
                 string stack = CachedStackText(o.StackSize);
                 float stackW = stack.Length > 0 ? face.Measure(ctx, stack) : 0f;
@@ -300,10 +319,39 @@ internal sealed partial class UiGearDeck
         }
     }
 
+    /// <summary>A results row after its icon: the name, the value columns right-aligned in
+    /// <see cref="ColumnW"/> slots, then the pack badge centred in its <see cref="BadgeW"/> slot.</summary>
+    private void DrawResultColumns(UiRenderContext ctx, DeckFace face, GearItemView row, DeckRect r, float nameX)
+    {
+        var badge = new DeckRect(r.X + r.W - 2f - BadgeW, r.Y, BadgeW, r.H);
+        DrawCentred(ctx, face, PackBadge(row), badge, LabelInk);
+
+        (GearSortField? a, GearSortField? b) = ResultColumns;
+        float right = badge.X;
+        if (b is GearSortField second) right = DrawColumn(ctx, face, row, second, r, right);
+        if (a is GearSortField first) right = DrawColumn(ctx, face, row, first, r, right);
+
+        float nameW = right - 6f - nameX;
+        if (!_fittedNames.TryGetValue(row.Id, out string? name))
+            _fittedNames[row.Id] = name = Fit(ctx, face, row.Name, nameW);
+        DrawText(ctx, face, name, nameX, r, TextInk);
+    }
+
+    /// <summary>One value column ending at <paramref name="right"/>; returns the column's left edge.</summary>
+    private float DrawColumn(UiRenderContext ctx, DeckFace face, GearItemView row, GearSortField field, DeckRect r, float right)
+    {
+        float room = ColumnW - 4f;
+        if (!_columnTexts.TryGetValue((row.Id, field), out string? text))
+            _columnTexts[(row.Id, field)] = text = Fit(ctx, face, GearChipText.Value(field, row), room);
+        if (text.Length > 0) DrawText(ctx, face, text, right - 4f - face.Measure(ctx, text), r, LabelInk);
+        return right - ColumnW;
+    }
+
     // ---- side column ----
 
     /// <summary>The main pack, then each side pack, then empty side-pack slots up to the
-    /// character's container slots; the selected pack outlined in <see cref="DeckChrome.Handle"/>.</summary>
+    /// character's container slots; the selected pack outlined in <see cref="DeckChrome.Handle"/>.
+    /// While results are shown the packs with a Pack chip are outlined instead (none: every pack).</summary>
     private void DrawSideColumn(UiRenderContext ctx, ClientObjectTable objects)
     {
         uint selected = SelectedPackId;
@@ -328,7 +376,7 @@ internal sealed partial class UiGearDeck
             DrawIcon(ctx, texture, r);
             string badge = _badges[i];
             face.Draw(ctx, badge, r.X + r.W - 2f - face.Measure(ctx, badge), r.Y + r.H - face.LineHeight(ctx), LabelInk);
-            if (pack.Id == selected) StrokeAround(ctx, r, Handle);
+            if (ShowsResults ? HasPackChip(pack.Id) : pack.Id == selected) StrokeAround(ctx, r, Handle);
         }
     }
 

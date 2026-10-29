@@ -26,7 +26,7 @@ internal sealed partial class UiGearDeck
     /// <summary>The payload of a drag over the deck (DragEnter to leave or drop); null otherwise.</summary>
     private object? _dropPayload;
     private readonly HudTooltipLayoutCache _tooltipLayout = new();
-    private (GearDeckHit Hit, ulong Revision, uint Pack, HudTooltipContent? Content)? _tooltipCache;
+    private (GearDeckHit Hit, ulong Revision, uint Pack, int QueryVersion, HudTooltipContent? Content)? _tooltipCache;
 
     /// <summary>Every drop and take-off goes through the one dispatcher, over the current table.</summary>
     private GearDropDispatcher Dispatcher
@@ -135,7 +135,8 @@ internal sealed partial class UiGearDeck
                 SetView(GearPackView.List);
                 return true;
             case GearZone.SidePack when hit.Index < _model.Packs.Count:
-                SelectPack(_model.Packs[hit.Index]);
+                if (ShowsResults) TogglePackChip(_model.Packs[hit.Index]);
+                else SelectPack(_model.Packs[hit.Index]);
                 return true;
             case GearZone.FigureStud:   // Figure is plan 3
                 return true;
@@ -164,12 +165,32 @@ internal sealed partial class UiGearDeck
         if (!pack.IsMain) _b.Actions.OpenPack(pack.Id);
     }
 
+    /// <summary>While results are shown a pack cell narrows the search: it adds a Pack chip
+    /// for that pack, or removes the one it has. Several are OR'd; none means every pack.</summary>
+    private void TogglePackChip(GearPack pack)
+    {
+        int i = -1;
+        for (int c = 0; c < _query.Chips.Count; c++)
+            if (_query.Chips[c] is { Field: GearField.Pack } chip && chip.Id == pack.Id) { i = c; break; }
+        SetQuery(i >= 0 ? _query.Without(i) : _query.With(GearChip.InPack(pack.Id)));
+    }
+
+    /// <summary>Whether the query has a Pack chip for <paramref name="packId"/> (the side column outlines it).</summary>
+    private bool HasPackChip(uint packId)
+    {
+        foreach (GearChip chip in _query.Chips)
+            if (chip.Field == GearField.Pack && chip.Id == packId) return true;
+        return false;
+    }
+
     private bool DoubleClick(GearDeckHit hit)
     {
         switch (hit.Zone)
         {
-            case GearZone.Item when hit.Index < Items.Count:
-                _b.Actions.Activate(Items[hit.Index].ObjectId);
+            case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
+                GearItemView row = Shown[hit.Index];
+                if (row.Worn) Dispatcher.TakeOff(row.Id);   // a worn result comes off, as its slot does
+                else _b.Actions.Activate(row.Id);
                 return true;
             case GearZone.EquipSlot or GearZone.WornCell:
                 if (WornAt(hit) is uint worn) Dispatcher.TakeOff(worn);
@@ -193,11 +214,15 @@ internal sealed partial class UiGearDeck
     // ---- drag source ----
 
     /// <summary>The item a press on <paramref name="hit"/> would lift, and where it leaves from.
-    /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.</summary>
+    /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.
+    /// A worn result row lifts as equipment, as its slot does.</summary>
     private (uint Id, ItemDragSource Kind)? DragItem(GearDeckHit hit)
     {
-        if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Items.Count)
-            return (Items[hit.Index].ObjectId, ItemDragSource.Inventory);
+        if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Shown.Count)
+        {
+            GearItemView row = Shown[hit.Index];
+            return (row.Id, row.Worn ? ItemDragSource.Equipment : ItemDragSource.Inventory);
+        }
         if (hit.Zone == GearZone.SidePack && hit.Index >= 1 && hit.Index < _model.Packs.Count
             && !_model.Packs[hit.Index].IsMain)
             return (_model.Packs[hit.Index].Id, ItemDragSource.Inventory);
@@ -223,7 +248,8 @@ internal sealed partial class UiGearDeck
         payload is ItemDragPayload { SourceKind: not ItemDragSource.ShortcutBar, ObjId: not 0u } p ? p : null;
 
     /// <summary>What a drop at a point lands on: a pack, an item, an equipment slot or worn
-    /// cell, or (as <see cref="GearZone.Frame"/>) the empty contents area; null anywhere else.</summary>
+    /// cell, or (as <see cref="GearZone.Frame"/>) the empty contents area; null anywhere else.
+    /// Results come from many packs, so their empty space is not a target.</summary>
     private GearDeckHit? DropTargetAt(float x, float y)
     {
         if (_model.Packs.Count == 0) return null;
@@ -231,13 +257,16 @@ internal sealed partial class UiGearDeck
         return hit.Zone switch
         {
             GearZone.SidePack when hit.Index < _model.Packs.Count => hit,
-            GearZone.Item when hit.Index < Items.Count => hit,
+            GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => hit,
             GearZone.EquipSlot when hit.Index < GearSlotCatalog.Slots.Count => hit,
             GearZone.WornCell when hit.Index < _model.Worn.Count => hit,
-            GearZone.Frame when _g.Contents.Contains(x, y) => hit,
+            GearZone.Frame when !ShowsResults && _g.Contents.Contains(x, y) => hit,
             _ => null,
         };
     }
+
+    /// <summary>Where a worn item is worn, for a drop on its result row.</summary>
+    private EquipMask WornMask(uint id) => _b.Objects().Get(id)?.CurrentlyEquippedLocation ?? EquipMask.None;
 
     /// <summary>The slot mask a drop on an equipment slot or worn cell asks for.</summary>
     private EquipMask SlotMaskAt(GearDeckHit hit) => hit.Zone == GearZone.EquipSlot
@@ -257,9 +286,27 @@ internal sealed partial class UiGearDeck
                 Dispatcher.DropOnPack(p.ObjId, _model.Packs[hit.Index].Id, fromGround);
                 break;
             case GearZone.Item:
-                action = nameof(GearDropDispatcher.DropOnCell);
-                Dispatcher.DropOnCell(p.ObjId, SelectedPackId, Items[hit.Index].ObjectId, hit.Index, fromGround);
+            {
+                // In the pack view the row is in the selected pack at its own index; a result
+                // row names its own pack and slot, or is a side pack or a worn item.
+                GearItemView row = Shown[hit.Index];
+                if (row.Worn)
+                {
+                    action = nameof(GearDropDispatcher.DropOnSlot);
+                    Dispatcher.DropOnSlot(p.ObjId, WornMask(row.Id));
+                }
+                else if (row.IsPack)
+                {
+                    action = nameof(GearDropDispatcher.DropOnPack);
+                    Dispatcher.DropOnPack(p.ObjId, row.Id, fromGround);
+                }
+                else
+                {
+                    action = nameof(GearDropDispatcher.DropOnCell);
+                    Dispatcher.DropOnCell(p.ObjId, row.PackId, row.Id, row.Slot, fromGround);
+                }
                 break;
+            }
             case GearZone.Frame:   // empty grid space: after the last item, as retail's list does
                 action = nameof(GearDropDispatcher.DropOnCell);
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, 0u, -1, fromGround);
@@ -341,9 +388,10 @@ internal sealed partial class UiGearDeck
     private HudTooltipContent? CachedTooltip(GearDeckHit hit)
     {
         uint pack = SelectedPackId;
-        if (_tooltipCache is { } c && c.Hit == hit && c.Revision == _lastRevision && c.Pack == pack) return c.Content;
+        if (_tooltipCache is { } c && c.Hit == hit && c.Revision == _lastRevision && c.Pack == pack
+            && c.QueryVersion == _queryVersion) return c.Content;
         HudTooltipContent? content = TooltipFor(hit) is { } text ? new HudTooltipContent(text, null, null, null) : null;
-        _tooltipCache = (hit, _lastRevision, pack, content);
+        _tooltipCache = (hit, _lastRevision, pack, _queryVersion, content);
         return content;
     }
 
@@ -353,8 +401,8 @@ internal sealed partial class UiGearDeck
         if (hit.Index < 0) return null;
         switch (hit.Zone)
         {
-            case GearZone.Item when hit.Index < Items.Count:
-                return Caption(Items[hit.Index].ObjectId);
+            case GearZone.Item when hit.Index < Shown.Count:
+                return Caption(Shown[hit.Index].Id);
             case GearZone.EquipSlot when hit.Index < GearSlotCatalog.Slots.Count:
                 return WornAt(hit) is uint worn ? Caption(worn) : GearSlotCatalog.Slots[hit.Index].Label;
             case GearZone.WornCell when WornAt(hit) is uint cell:
