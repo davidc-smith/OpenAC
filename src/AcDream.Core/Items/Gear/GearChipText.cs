@@ -1,5 +1,4 @@
 using System.Globalization;
-using AcDream.Core.Items;
 
 namespace AcDream.Core.Items.Gear;
 
