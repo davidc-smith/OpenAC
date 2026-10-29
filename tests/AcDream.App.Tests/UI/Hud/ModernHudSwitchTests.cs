@@ -13,6 +13,7 @@ public sealed class ModernHudSwitchTests
         public readonly Dictionary<string, bool> Held = [];
         public bool Mounted = true;
         public bool ChatMounted = true;
+        public bool GearMounted = true;
         public bool Gameplay = true;
         public int Resyncs;
         public int DeckHidden;
@@ -21,7 +22,7 @@ public sealed class ModernHudSwitchTests
         public int SpellDeckHidden;
         public ModernHudSwitch Switch = null!;
 
-        public Harness(bool withChat = false)
+        public Harness(bool withChat = false, bool withGear = false)
         {
             var replacements = new List<ModernHudReplacement>
             {
@@ -32,6 +33,10 @@ public sealed class ModernHudSwitchTests
                 replacements.Add(new("Chat Deck", WindowNames.ChatDeck, ModernHudSwitch.ChatDeckRetailWindows,
                     () => ChatMounted, OnShown: () => Calls.Add("chat shown"), OnHidden: () => Calls.Add("chat hidden"),
                     HoldsRetailVisibility: true));
+            if (withGear)
+                replacements.Add(new("Gear Deck", WindowNames.GearDeck, [WindowNames.Inventory],
+                    () => GearMounted, OnShown: () => Calls.Add("gear shown"), OnHidden: () => Calls.Add("gear hidden"),
+                    HoldsRetailVisibility: true, OnDemand: true));
             Switch = new ModernHudSwitch(
                 show: n => Visible.Add(n),
                 hide: n => Visible.Remove(n),
@@ -266,5 +271,106 @@ public sealed class ModernHudSwitchTests
         h.Gameplay = true;
         h.Switch.Tick();
         Assert.Equal(["chat shown", "chat hidden", "chat shown"], h.Calls);
+    }
+
+    [Fact]
+    public void OnDemand_StaysClosedUntilOpened()
+    {
+        var h = new Harness(withGear: true);
+        h.Switch.Apply(true);
+        Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
+
+        Assert.True(h.Switch.SetOpen(WindowNames.GearDeck, true));
+        h.Switch.Tick();
+        Assert.Contains(WindowNames.GearDeck, h.Visible);
+        Assert.Contains("gear shown", h.Calls);
+
+        h.Switch.ToggleOpen(WindowNames.GearDeck);
+        h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
+        Assert.False(h.Switch.IsOpen(WindowNames.GearDeck));
+    }
+
+    [Fact]
+    public void OnDemand_HiddenOutsideGameplay_ReturnsAfter()
+    {
+        var h = new Harness(withGear: true);
+        h.Switch.Apply(true);
+        h.Switch.SetOpen(WindowNames.GearDeck, true);
+        h.Gameplay = false;
+        h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
+        h.Gameplay = true;
+        h.Switch.Tick();
+        Assert.Contains(WindowNames.GearDeck, h.Visible);
+    }
+
+    [Fact]
+    public void RedirectTarget_OnlyWhileInForce()
+    {
+        var h = new Harness(withGear: true);
+        Assert.Null(h.Switch.RedirectTarget(WindowNames.Inventory));
+        h.Switch.Apply(true);
+        Assert.Equal(WindowNames.GearDeck, h.Switch.RedirectTarget(WindowNames.Inventory));
+        Assert.Null(h.Switch.RedirectTarget(WindowNames.Chat));
+        h.Switch.Apply(false);
+        Assert.Null(h.Switch.RedirectTarget(WindowNames.Inventory));
+    }
+
+    [Fact]
+    public void RedirectTarget_NullWhenDeckDidNotMount()
+    {
+        var h = new Harness(withGear: true);
+        h.GearMounted = false;
+        h.Switch.Apply(true);
+        Assert.Null(h.Switch.RedirectTarget(WindowNames.Inventory));
+    }
+
+    [Fact]
+    public void OnDemand_RetailShownAnyway_BecomesDeck()
+    {
+        var h = new Harness(withGear: true);
+        h.Switch.Apply(true);
+        h.Visible.Add(WindowNames.Inventory);      // e.g. the indicator bar opened it directly
+        h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.Inventory, h.Visible);
+        Assert.True(h.Switch.IsOpen(WindowNames.GearDeck));
+        Assert.Contains(WindowNames.GearDeck, h.Visible);
+    }
+
+    [Fact]
+    public void OnDemand_OffClosesDeck_ReleasesTheHold_WithoutReopeningRetail()
+    {
+        var h = new Harness(withGear: true);
+        h.Visible.Add(WindowNames.Inventory);
+        h.Switch.Apply(true);                      // holds "inventory was open"
+        h.Switch.SetOpen(WindowNames.GearDeck, true);
+        h.Switch.Tick();
+        h.Switch.Apply(false);
+        Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
+        // The retail inventory would take the Options panel's shared slot, where the
+        // player is turning Modern HUD off; it stays closed, and its hold is released.
+        Assert.DoesNotContain(WindowNames.Inventory, h.Visible);
+        Assert.Empty(h.Held);
+        Assert.False(h.Switch.IsOpen(WindowNames.GearDeck));
+    }
+
+    [Fact]
+    public void CloseAllOnDemand_ClosesGear()
+    {
+        var h = new Harness(withGear: true);
+        h.Switch.Apply(true);
+        h.Switch.SetOpen(WindowNames.GearDeck, true);
+        h.Switch.CloseAllOnDemand();
+        h.Switch.Tick();
+        Assert.DoesNotContain(WindowNames.GearDeck, h.Visible);
+    }
+
+    [Fact]
+    public void SetOpen_FalseForAlwaysOnReplacement()
+    {
+        var h = new Harness(withChat: true);
+        h.Switch.Apply(true);
+        Assert.False(h.Switch.SetOpen(WindowNames.ChatDeck, true));
     }
 }

@@ -22,6 +22,7 @@ public static class WindowNames
     public const string SpellDeck = "spell-deck";
     public const string ChatDeck = "chat-deck";
     public const string TargetDeck = "target-deck";
+    public const string GearDeck = "gear-deck";
     public const string Spellbook = "spellbook";
     public const string Indicators = "indicators";
     public const string PositiveEffects = "effects-positive";
