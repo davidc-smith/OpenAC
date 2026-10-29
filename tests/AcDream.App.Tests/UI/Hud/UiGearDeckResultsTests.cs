@@ -344,6 +344,16 @@ public sealed class UiGearDeckResultsTests
         Assert.False(r.Deck.ShowsResults);
     }
 
+    [Fact]
+    public void ADetachedDeck_NoLongerFollowsTheSession()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(SteelBy(GearSort.Default));
+        r.Deck.Detach();
+        r.Session.EndSession();
+        Assert.True(r.Deck.ShowsResults);
+    }
+
     private static void DrawInside(UiGearDeck deck)
     {
         var renderer = MarkupDrawProbe.Draw(deck, GearDeckGeometry.Width, deck.Height);

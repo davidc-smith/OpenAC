@@ -6495,6 +6495,7 @@ public sealed class RetailUiRuntime : IDisposable
                 UnmountTargetDeck();
                 _gearDeck?.OnHidden();
                 _gearDeckSession?.EndSession();   // writes a pending settings change
+                _gearDeck?.Detach();
                 _gearDeckSession = null;
                 _hudIcons?.Dispose();
                 _hudIcons = null;

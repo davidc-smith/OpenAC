@@ -109,13 +109,19 @@ internal sealed partial class UiGearDeck : UiElement
         _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale);
         CreateQueryInput();   // UiGearDeck.Query.cs
         CreateMenu();         // UiGearDeck.Menu.cs
-        _b.Session.Ended += () =>   // the live query is not kept between sessions
-        {
-            FinishSave(null, "session ended");
-            SetQuery(GearQuery.Empty);
-            QueryInput.SetText("");
-        };
+        _b.Session.Ended += OnSessionEnded;
     }
+
+    /// <summary>The live query is not kept between sessions.</summary>
+    private void OnSessionEnded()
+    {
+        FinishSave(null, "session ended");
+        SetQuery(GearQuery.Empty);
+        QueryInput.SetText("");
+    }
+
+    /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
+    internal void Detach() => _b.Session.Ended -= OnSessionEnded;
 
     /// <summary>How the runtime mounts the deck: imported chrome, <paramref name="width"/> wide (the deck's width
     /// at its scale), resized from the top or bottom, hidden.</summary>

@@ -130,6 +130,26 @@ public sealed class GearDeckSessionTests
     }
 
     [Fact]
+    public void EndSession_RaisesEnded_AfterThePendingChangeIsSaved_AndTheDefaultsAreBack()
+    {
+        var store = new FakeStore();
+        var s = new GearDeckSession(store, () => "Davian", () => true, () => 0);
+        s.Tick();
+        s.Update(x => x with { Folded = true });   // pending: not yet idle long enough to save
+        Assert.False(store.Saved.ContainsKey("Davian"));
+        string? savedAtEnd = null;
+        GearDeckSettings? settingsAtEnd = null;
+        s.Ended += () =>
+        {
+            savedAtEnd = store.Saved.GetValueOrDefault("Davian");
+            settingsAtEnd = s.Settings;
+        };
+        s.EndSession();
+        Assert.True(GearDeckSettings.FromJson(savedAtEnd).Folded);
+        Assert.Equal(GearDeckSettings.Default, settingsAtEnd);
+    }
+
+    [Fact]
     public void EndSession_RaisesEnded()
     {
         var session = new GearDeckSession(null, () => "", () => false);
