@@ -105,6 +105,38 @@ public sealed class GearQueryEngineTests
     }
 
     [Fact]
+    public void SortByMaterial_RowsWithoutOneLastBothWays()
+    {
+        var all = Q(GearChip.Range(GearField.Value, 0, null));   // the four pack rows; the apple has no material
+        Assert.Equal([3u, 1, 2, 4], Ids(all with { Sort = new GearSort(GearSortField.Material, false) }));   // Iron, Steel, Steel
+        Assert.Equal([1u, 2, 3, 4], Ids(all with { Sort = new GearSort(GearSortField.Material, true) }));
+    }
+
+    [Fact]
+    public void Ties_InOnePack_FallToTheSlot()
+    {
+        GearItemView[] rows = [Row(7, "Gem", slot: 5), Row(8, "Gem", slot: 2), Row(9, "Gem", slot: 3)];
+        Assert.Equal([8u, 9, 7], GearQueryEngine.Run(rows, Q(GearChip.Range(GearField.Value, 0, null))).Select(v => v.Id));
+    }
+
+    [Fact]
+    public void APackChipWithTheWornChip_MatchesNothing_ForWornRowsAreInNoPack()
+    {
+        Assert.Empty(Ids(Q(GearChip.InPack(Main), GearChip.WornOnly)));
+        Assert.Equal([5u], Ids(Q(GearChip.WornOnly)));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    [InlineData(99)]
+    public void Without_AnIndexOutOfRange_ChangesNothing(int index)
+    {
+        GearQuery q = Q(GearChip.OfMaterial(64));
+        Assert.Same(q, q.Without(index));
+    }
+
+    [Fact]
     public void DefaultDirections()
     {
         Assert.True(GearSort.DefaultFor(GearSortField.Workmanship).Descending);

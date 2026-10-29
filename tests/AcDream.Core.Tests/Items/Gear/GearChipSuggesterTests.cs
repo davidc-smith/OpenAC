@@ -56,9 +56,12 @@ public sealed class GearChipSuggesterTests
     [Fact]
     public void AtMostFive_NameAlwaysLast()
     {
-        var s = GearChipSuggester.Suggest("gar");   // Black/Green/Red/Yellow Garnet contain "gar"
-        Assert.True(s.Count <= GearChipSuggester.MaxSuggestions);
-        Assert.Equal(GearChip.NameContains("gar"), s[^1]);
+        // "sto" offers more than four chips (Mana stones by its alias, then the stone materials), so the cap bites.
+        var s = GearChipSuggester.Suggest("sto");
+        Assert.Equal(GearChipSuggester.MaxSuggestions, s.Count);
+        Assert.Equal(GearChip.OfType(GearTypeGroup.ManaStones), s[0]);
+        Assert.Equal(GearChip.NameContains("sto"), s[^1]);
+        Assert.Equal(s.Count, s.Distinct().Count());
     }
 
     [Fact]

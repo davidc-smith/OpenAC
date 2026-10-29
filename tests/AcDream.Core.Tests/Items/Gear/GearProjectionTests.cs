@@ -69,6 +69,38 @@ public sealed class GearProjectionTests
     }
 
     [Fact]
+    public void SeveralSidePacks_EachGetARow_InSideColumnOrder_WithTheirOwnContents()
+    {
+        ClientObjectTable t = World();
+        Place(t, new ClientObject { ObjectId = 0xB2, Type = ItemType.Container, ItemsCapacity = 24, Name = "Sack" }, Player, 1);
+        Place(t, new ClientObject { ObjectId = 0xA3, Name = "Ruby", Type = ItemType.Gem }, 0xB2, 0);
+        GearInventoryModel model = GearInventoryModel.Build(t, Player, 100);
+        GearProjection p = GearProjection.Build(model, t, o => o.Name);
+
+        uint[] sides = model.Packs.Skip(1).Select(k => k.Id).ToArray();
+        Assert.Equal(2, sides.Length);
+        Assert.Equal(sides, p.All.Where(v => v.IsPack).Select(v => v.Id));
+        Assert.All(p.All.Where(v => v.IsPack), v => Assert.Equal((Player, 0, -1), (v.PackId, v.PackIndex, v.Slot)));
+        GearItemView ruby = Assert.Single(p.ForPack(0xB2));
+        Assert.Equal((0xA3u, 0xB2u, Array.IndexOf(model.Packs.Select(k => k.Id).ToArray(), 0xB2u), 0),
+            (ruby.Id, ruby.PackId, ruby.PackIndex, ruby.Slot));
+        Assert.Equal(4, p.PackItemCount);
+    }
+
+    [Fact]
+    public void ASidePackMissingFromTheTable_HasNoPackRow_ButItsContentsStay()
+    {
+        ClientObjectTable t = World();
+        GearInventoryModel model = GearInventoryModel.Build(t, Player, 100);
+        var lookup = World();   // the same world without the bag object, as a table read mid-update can be
+        Assert.True(lookup.Remove(Bag));
+        GearProjection p = GearProjection.Build(model, lookup, o => o.Name);
+        Assert.DoesNotContain(p.All, v => v.IsPack);
+        Assert.Equal([0xA2u], p.ForPack(Bag).Select(v => v.Id));
+        Assert.Equal(3, p.PackItemCount);
+    }
+
+    [Fact]
     public void EmptyModel_IsEmpty()
     {
         GearProjection p = GearProjection.Build(GearInventoryModel.Empty, new ClientObjectTable(), o => o.Name);

@@ -29,6 +29,27 @@ public sealed class GearTypeGroupTests
     public void Classify_WritableWithSpell_IsScroll() =>
         Assert.Equal(GearTypeGroup.Scrolls, GearTypeGroups.Classify(ItemType.Writable, "Inscription", spellId: 42u));
 
+    // Several bits (or a bit and a name rule) at once: the earlier rule wins.
+    [Theory]
+    [InlineData(ItemType.TinkeringMaterial | ItemType.ManaStone, "Odd", GearTypeGroup.Salvage)]
+    [InlineData(ItemType.ManaStone | ItemType.Gem, "Stone", GearTypeGroup.ManaStones)]
+    [InlineData(ItemType.Food, "Healing Kit Biscuit", GearTypeGroup.HealingKits)]   // the name rule outranks Food
+    [InlineData(ItemType.Food | ItemType.Gem, "Candied Gem", GearTypeGroup.Food)]
+    [InlineData(ItemType.Gem | ItemType.Jewelry, "Gem Ring", GearTypeGroup.Gems)]
+    [InlineData(ItemType.Writable | ItemType.Key, "Scroll Key", GearTypeGroup.Scrolls)]
+    [InlineData(ItemType.Writable | ItemType.Key, "Note Key", GearTypeGroup.Keys)]  // no scroll: falls through
+    [InlineData(ItemType.Key | ItemType.Armor, "Key Plate", GearTypeGroup.Keys)]
+    [InlineData(ItemType.Armor | ItemType.MeleeWeapon, "Spiked Shield", GearTypeGroup.Armour)]
+    [InlineData(ItemType.MeleeWeapon | ItemType.Jewelry, "Ring Blade", GearTypeGroup.Weapons)]
+    [InlineData(ItemType.Jewelry | ItemType.Clothing, "Amulet Cloak", GearTypeGroup.Jewellery)]
+    [InlineData(ItemType.Clothing | ItemType.Container, "Pocketed Robe", GearTypeGroup.Clothing)]
+    public void Classify_Precedence(ItemType type, string name, GearTypeGroup expected) =>
+        Assert.Equal(expected, GearTypeGroups.Classify(type, name, spellId: null));
+
+    [Fact]
+    public void Classify_NullName_IsReadAsEmpty() =>
+        Assert.Equal(GearTypeGroup.Other, GearTypeGroups.Classify(ItemType.Writable, null!, spellId: null));
+
     [Fact]
     public void Labels_AreFriendly()
     {

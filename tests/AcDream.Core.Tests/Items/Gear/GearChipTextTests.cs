@@ -29,6 +29,24 @@ public sealed class GearChipTextTests
         Assert.Equal("Material: Steel", GearChipText.Suggestion(GearChip.OfMaterial(64)));
         Assert.Equal("Name contains \"kit\"", GearChipText.Suggestion(GearChip.NameContains("kit")));
         Assert.Equal("Worn items", GearChipText.Suggestion(GearChip.WornOnly));
+        Assert.Equal("Work >= 7.5", GearChipText.Suggestion(GearChip.Range(GearField.Workmanship, 7.5, null)));
+        Assert.Equal("Stack = 20", GearChipText.Suggestion(GearChip.Range(GearField.Stack, 20, 20)));
+        Assert.Equal("Pack", GearChipText.Suggestion(GearChip.InPack(7)));
+    }
+
+    [Fact]
+    public void ARangeWithNoBounds_IsItsFieldName() =>
+        Assert.Equal("Value", L(GearChip.Range(GearField.Value, null, null)));
+
+    [Fact]
+    public void SortFieldOf_NamesTheRangeFieldsOnly()
+    {
+        Assert.Equal(GearSortField.Workmanship, GearChipText.SortFieldOf(GearField.Workmanship));
+        Assert.Equal(GearSortField.Value, GearChipText.SortFieldOf(GearField.Value));
+        Assert.Equal(GearSortField.Burden, GearChipText.SortFieldOf(GearField.Burden));
+        Assert.Equal(GearSortField.Stack, GearChipText.SortFieldOf(GearField.Stack));
+        Assert.Null(GearChipText.SortFieldOf(GearField.Material));
+        Assert.Null(GearChipText.SortFieldOf(GearField.Name));
     }
 
     [Fact]
@@ -43,5 +61,10 @@ public sealed class GearChipTextTests
         Assert.Equal("Salvage", GearChipText.Value(GearSortField.Type, row));
         Assert.Equal("", GearChipText.Value(GearSortField.Name, row));
         Assert.Equal("", GearChipText.Value(GearSortField.Workmanship, row with { Workmanship = 0 }));
+        Assert.Equal("50", GearChipText.Value(GearSortField.Burden, row));
+        Assert.Equal("3", GearChipText.Value(GearSortField.Stack, row));
+        Assert.Equal("", GearChipText.Value(GearSortField.Material, row with { Material = 0 }));
+        Assert.Equal("Burden", GearChipText.SortLabel(GearSortField.Burden));
+        Assert.Equal("Name", GearChipText.SortLabel(GearSortField.Name));
     }
 }
