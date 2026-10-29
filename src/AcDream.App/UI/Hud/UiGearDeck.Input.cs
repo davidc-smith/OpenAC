@@ -68,6 +68,8 @@ internal sealed partial class UiGearDeck
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
                 _press = _g.HitAt(e.Data1, e.Data2);
+                // Empty contents space is no control, so no Click follows it: clear on the press.
+                if (_press.Zone == GearZone.Frame && _g.Contents.Contains(e.Data1, e.Data2)) ClearSelection();
                 // The root took the focus from the field for this press; a press on a suggestion
                 // or the field gives it back, so the rows stay up until the click acts.
                 if (_press.Zone is GearZone.Suggestion or GearZone.QueryField)
@@ -107,6 +109,103 @@ internal sealed partial class UiGearDeck
         }
     }
 
+    // ---- selection ----
+
+    private readonly HashSet<uint> _selection = [];
+    /// <summary>The <see cref="Shown"/> index a range click spans from, or -1.</summary>
+    private int _anchor = -1;
+    private int _selectionVersion;
+
+    /// <summary>The selected item ids; always a subset of <see cref="Shown"/>.</summary>
+    internal IReadOnlyCollection<uint> Selection => _selection;
+
+    /// <summary>Bumped on every selection change, for the caches that follow it.</summary>
+    internal int SelectionVersion => _selectionVersion;
+
+    private (bool Toggle, bool Range) ReadModifiers()
+    {
+        if (_b.Modifiers is { } modifiers) return modifiers();
+        return FindRoot() is { } root ? (root.CopyModifierHeld, root.ShiftHeld) : (false, false);
+    }
+
+    private void ClearSelection()
+    {
+        _anchor = -1;
+        if (_selection.Count == 0) return;
+        _selection.Clear();
+        _selectionVersion++;
+    }
+
+    private void SelectOnly(int index)
+    {
+        _selection.Clear();
+        _selection.Add(Shown[index].Id);
+        _anchor = index;
+        _selectionVersion++;
+    }
+
+    /// <summary>Drops the ids a rebuilt <see cref="Shown"/> no longer holds.</summary>
+    private void PruneSelection(IReadOnlyList<GearItemView> rows)
+    {
+        if (_anchor >= rows.Count) _anchor = -1;
+        if (_selection.Count == 0) return;
+        int before = _selection.Count;
+        var live = new HashSet<uint>(rows.Count);
+        foreach (GearItemView row in rows) live.Add(row.Id);
+        _selection.IntersectWith(live);
+        if (_selection.Count != before) _selectionVersion++;
+    }
+
+    /// <summary>A click on an item: plain selects only it, toggle adds or removes it, range selects
+    /// everything between the anchor and it.</summary>
+    private void ClickItem(int index)
+    {
+        (bool toggle, bool range) = ReadModifiers();
+        IReadOnlyList<GearItemView> rows = Shown;
+        if (range && _anchor >= 0 && _anchor < rows.Count)
+        {
+            _selection.Clear();
+            for (int i = Math.Min(_anchor, index); i <= Math.Max(_anchor, index); i++) _selection.Add(rows[i].Id);
+            _selectionVersion++;
+        }
+        else if (toggle)
+        {
+            uint id = rows[index].Id;
+            if (!_selection.Remove(id)) _selection.Add(id);
+            _anchor = index;
+            _selectionVersion++;
+        }
+        else SelectOnly(index);
+    }
+
+    private void SelectAll()
+    {
+        _selection.Clear();
+        foreach (GearItemView row in Shown) _selection.Add(row.Id);
+        _anchor = Shown.Count > 0 ? 0 : -1;
+        _selectionVersion++;
+    }
+
+    /// <summary>The menu's Show in pack: leaves the search, opens the row's pack, scrolls to the row and selects it.</summary>
+    private void ShowInPack(GearItemView row)
+    {
+        SetQuery(GearQuery.Empty);
+        QueryInput.SetText("");
+        foreach (GearPack pack in _model.Packs)
+            if (pack.Id == row.PackId) { SelectPack(pack); break; }
+        IReadOnlyList<GearItemView> rows = Shown;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Id != row.Id) continue;
+            bool list = _b.Session.Settings.View == GearPackView.List;
+            int line = list ? i : i / GearDeckGeometry.Columns;
+            if (line < _scrollRow || line >= _scrollRow + Math.Max(1, VisibleRows)) ScrollTo(line);
+            SelectOnly(i);
+            return;
+        }
+        ClearSelection();
+    }
+
     // ---- clicks ----
 
     /// <summary>A click acts on the zone it was pressed on only: a press on one stud
@@ -141,6 +240,9 @@ internal sealed partial class UiGearDeck
             case GearZone.SidePack when hit.Index < _model.Packs.Count:
                 if (ShowsResults) TogglePackChip(_model.Packs[hit.Index]);
                 else SelectPack(_model.Packs[hit.Index]);
+                return true;
+            case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
+                ClickItem(hit.Index);
                 return true;
             case GearZone.FigureStud:   // Figure is plan 3
                 return true;

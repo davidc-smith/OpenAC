@@ -17,6 +17,9 @@ internal sealed partial class UiGearDeck
     /// <summary>For <see cref="MenuKind.SavedFilter"/> (the one clicked) and <see cref="MenuKind.SavedMore"/> (the hidden
     /// ones): the filters when the menu opened, so a choice acts on them by value, never by a shifted index.</summary>
     private SavedFilter[] _menuSaved = [];
+    /// <summary>For <see cref="MenuKind.Item"/>: the clicked row and whether Show in pack applies, as of the open.</summary>
+    private GearItemView? _menuRow;
+    private bool _menuCanShow;
 
     /// <summary>The sort menu's fields, in the order it lists them.</summary>
     private static readonly GearSortField[] SortFields =
@@ -30,7 +33,7 @@ internal sealed partial class UiGearDeck
         _menu.DatFont = _fonts?.Face(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular);
         _menu.Opening = (x, y) => PickMenu(_g.HitAt(x, y));
         _menu.ItemsSource = MenuItems;
-        _menu.ItemsEnabledSource = () => Enumerable.Repeat(true, MenuItems().Count).ToArray();
+        _menu.ItemsEnabledSource = MenuEnabled;
         _menu.Selected = ChooseMenuItem;
         AddChild(_menu);
         ContextMenu = _menu;
@@ -45,6 +48,7 @@ internal sealed partial class UiGearDeck
             GearZone.SortStud => MenuKind.Sort,
             GearZone.SavedFilter when hit.Index >= 0 && hit.Index < _b.Session.Settings.SavedFilters.Count => MenuKind.SavedFilter,
             GearZone.SavedMore when _g.HiddenSaved > 0 => MenuKind.SavedMore,
+            GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => MenuKind.Item,
             _ => MenuKind.None,
         };
         _menuChips = [];
@@ -54,6 +58,14 @@ internal sealed partial class UiGearDeck
             _menuSaved = [_b.Session.Settings.SavedFilters[hit.Index]];
         else if (_menuKind == MenuKind.SavedMore)
             _menuSaved = _b.Session.Settings.SavedFilters.Skip(_g.SavedStuds.Count).ToArray();
+        if (_menuKind == MenuKind.Item)
+        {
+            // An item outside the selection becomes the selection, as in a file list.
+            GearItemView clicked = Shown[hit.Index];
+            _menuRow = clicked;
+            if (!_selection.Contains(clicked.Id)) SelectOnly(hit.Index);
+            _menuCanShow = ShowsResults && _selection.Count == 1 && !clicked.Worn && !clicked.IsPack;
+        }
         if (_menuKind != MenuKind.HiddenChips) return;
         int first = _g.Chips.Count;
         IReadOnlyList<string> labels = ChipLabels;
@@ -77,9 +89,26 @@ internal sealed partial class UiGearDeck
                 return ["Delete"];
             case MenuKind.SavedMore:
                 return _menuSaved.Select(f => f.Name).ToArray();
+            case MenuKind.Item:
+                return ItemMenuItems;
             default:
                 return [];
         }
+    }
+
+    private static readonly string[] ItemMenuItems = ["Show in pack", UiMarkupContextMenu.Separator, "Select all", "Clear selection"];
+
+    private bool[] MenuEnabled()
+    {
+        int count = MenuItems().Count;
+        var flags = new bool[count];
+        Array.Fill(flags, true);
+        if (_menuKind == MenuKind.Item)
+        {
+            flags[0] = _menuCanShow;
+            flags[3] = _selection.Count > 0;
+        }
+        return flags;
     }
 
     private void ChooseMenuItem(int index)
@@ -100,6 +129,15 @@ internal sealed partial class UiGearDeck
                 break;
             case MenuKind.SavedMore when index >= 0 && index < _menuSaved.Length:
                 ApplySaved(_menuSaved[index]);
+                break;
+            case MenuKind.Item when index == 0 && _menuCanShow && _menuRow is not null:
+                ShowInPack(_menuRow);
+                break;
+            case MenuKind.Item when index == 2:
+                SelectAll();
+                break;
+            case MenuKind.Item when index == 3:
+                ClearSelection();
                 break;
         }
     }

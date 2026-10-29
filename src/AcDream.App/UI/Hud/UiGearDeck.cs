@@ -18,7 +18,8 @@ internal sealed record GearDeckBindings(
     Func<uint, bool> IsPending,
     Action Close,
     Action<string>? Log = null,
-    Silk.NET.Input.IKeyboard? Keyboard = null);
+    Silk.NET.Input.IKeyboard? Keyboard = null,
+    Func<(bool Toggle, bool Range)>? Modifiers = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
@@ -66,6 +67,8 @@ internal sealed partial class UiGearDeck : UiElement
     private uint _footerFor;
     private string _matchText = "";
     private (ulong Build, int QueryVersion)? _matchFor;
+    private string _footerLeft = "";
+    private (ulong Build, int QueryVersion, int Selection, bool Results)? _footerLeftFor;
     /// <summary>The results list's value columns for <see cref="_columnsFor"/>'s query version.</summary>
     private (GearSortField? A, GearSortField? B) _columns;
     private int _columnsFor = -1;
@@ -183,6 +186,7 @@ internal sealed partial class UiGearDeck : UiElement
             {
                 _shown = ShowsResults ? GearQueryEngine.Run(_projection.All, _query) : _projection.ForPack(pack);
                 _shownFor = (_modelBuild, _queryVersion, pack);
+                PruneSelection(_shown);
             }
             return _shown;
         }
@@ -326,6 +330,23 @@ internal sealed partial class UiGearDeck : UiElement
                 _matchFor = (_modelBuild, _queryVersion);
             }
             return _matchText;
+        }
+    }
+
+    /// <summary>The footer's left text: the match text and " · k selected" in results, "k selected" alone
+    /// in the pack view, and empty when nothing is selected there. Cached per model, query and selection.</summary>
+    internal string FooterLeftText
+    {
+        get
+        {
+            if (_footerLeftFor != (_modelBuild, _queryVersion, _selectionVersion, ShowsResults))
+            {
+                string picked = _selection.Count > 0
+                    ? _selection.Count.ToString(CultureInfo.InvariantCulture) + " selected" : "";
+                _footerLeft = !ShowsResults ? picked : picked.Length == 0 ? MatchText : MatchText + " · " + picked;
+                _footerLeftFor = (_modelBuild, _queryVersion, _selectionVersion, ShowsResults);
+            }
+            return _footerLeft;
         }
     }
 

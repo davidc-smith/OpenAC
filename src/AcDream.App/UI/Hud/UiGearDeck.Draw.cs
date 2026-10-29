@@ -57,9 +57,8 @@ internal sealed partial class UiGearDeck
         finally { ctx.PopClip(); }
 
         DrawSideColumn(ctx, objects);
-        if (ShowsResults)
-            DrawText(ctx, Small, MatchText, g.Footer.X, g.Footer, LabelInk);
-        else
+        DrawText(ctx, Small, FooterLeftText, g.Footer.X, g.Footer, LabelInk);
+        if (!ShowsResults)
         {
             string footer = FooterText;
             DrawText(ctx, Small, footer, g.Footer.X + g.Footer.W - Small.Measure(ctx, footer), g.Footer, LabelInk);
@@ -269,7 +268,9 @@ internal sealed partial class UiGearDeck
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
             try
             {
+                bool picked = _selection.Contains(row.Id);
                 DrawCell(ctx, r, CellFill, CellEdge, 5f);
+                if (picked) ctx.FillRoundedRect(r.X, r.Y, r.W, r.H, 5f, MenuHighlight);
                 DrawIcon(ctx, IconFor(o), r);
                 string stack = CachedStackText(o.StackSize);
                 if (stack.Length > 0)
@@ -278,7 +279,9 @@ internal sealed partial class UiGearDeck
                     face.Draw(ctx, stack, r.X + r.W - 2f - face.Measure(ctx, stack), r.Y + r.H - lh, TextInk);
                 }
                 if (results) face.Draw(ctx, PackBadge(row), r.X + 2f, r.Y + 1f, LabelInk);
-                if (Hover.Zone == GearZone.Item && Hover.Index == i)
+                if (picked)
+                    ctx.StrokeRoundedRect(r.X + 0.5f, r.Y + 0.5f, r.W - 1f, r.H - 1f, 5f, Handle, 1f);
+                else if (Hover.Zone == GearZone.Item && Hover.Index == i)
                     ctx.StrokeRoundedRect(r.X + 0.5f, r.Y + 0.5f, r.W - 1f, r.H - 1f, 5f, Handle with { W = 0.6f }, 1f);
             }
             finally { ctx.PopAlpha(); }
@@ -300,8 +303,10 @@ internal sealed partial class UiGearDeck
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
             try
             {
-                if (Hover.Zone == GearZone.Item && Hover.Index == i)
+                if (_selection.Contains(row.Id))
                     ctx.FillRoundedRect(r.X, r.Y, r.W, r.H - 1f, 3f, MenuHighlight);
+                if (Hover.Zone == GearZone.Item && Hover.Index == i)
+                    ctx.StrokeRoundedRect(r.X + 0.5f, r.Y + 0.5f, r.W - 1f, r.H - 2f, 3f, Handle with { W = 0.6f }, 1f);
                 ctx.DrawFill(r.X, r.Y + r.H - 1f, r.W, 1f, RowRule);
 
                 var icon = new DeckRect(r.X + 2f, r.Y + (r.H - ListIcon) / 2f, ListIcon, ListIcon);
