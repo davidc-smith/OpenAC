@@ -147,10 +147,40 @@ public sealed class UiGearDeckDrawTests
         var root = new UiRoot { Width = 2560, Height = 1330 };
         UiGearDeck deck = Deck(World(), scale: () => 1.5f);
         RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0),
-            UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Width));
+            UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Scale));
         Assert.Equal(450f, deck.MinWidth);
         Assert.Equal(450f, deck.MaxWidth);
+        Assert.True(deck.MinHeight >= GearDeckGeometry.MinHeightAt(1.5f), "the mount's minimum is at the scale too");
         Assert.Equal(root.Width - 450f - 10f, deck.Left);
+    }
+
+    [Fact]
+    public void MountedAt1x_ThenScaledUp_KeepsItsRightEdge_SoTheEdgeMarginStays()
+    {
+        float scale = 1f;
+        var root = new UiRoot { Width = 1600, Height = 1200 };
+        UiGearDeck deck = Deck(World(), scale: () => scale);
+        RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0),
+            UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Scale));
+        Assert.Equal(root.Width - 300f - 10f, deck.Left);
+
+        scale = 1.5f;   // the Command Deck's saved size arrives after the first mount
+        deck.Refresh();
+        Assert.Equal(450f, deck.Width);
+        Assert.Equal(root.Width - 450f - 10f, deck.Left);
+    }
+
+    [Fact]
+    public void WithoutFonts_ChipPillsStillScale()
+    {
+        UiGearDeck one = Deck(World());
+        UiGearDeck big = Deck(World(), scale: () => 1.5f);
+        GearQuery q = GearQuery.Empty.With(GearChip.WornOnly);
+        one.SetQuery(q);
+        big.SetQuery(q);
+        one.Refresh();
+        big.Refresh();
+        Assert.Equal(one.Geometry.Chips[0].W * 1.5f, big.Geometry.Chips[0].W, 0.5f);
     }
 
     [Fact]
@@ -372,6 +402,8 @@ public sealed class UiGearDeckDrawTests
     public void MountOptions_AreHeightOnlyAndHidden()
     {
         var o = UiGearDeck.MountOptions(10f, 120f);
+        Assert.Equal(GearDeckGeometry.Width, o.MinWidth);
+        Assert.Equal(GearDeckGeometry.Width, o.MaxWidth);
         Assert.Equal(WindowNames.GearDeck, o.WindowName);
         Assert.Equal(RetailWindowChrome.Imported, o.Chrome);
         Assert.True(o.Resizable);

@@ -3989,7 +3989,7 @@ public sealed class RetailUiRuntime : IDisposable
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
-                Hud.UiGearDeck.MountOptions(GearDeckDefaultLeft(Host.Root.Width, deck.Width), GearDeckDefaultTop, deck.Width));
+                Hud.UiGearDeck.MountOptions(GearDeckDefaultLeft(Host.Root.Width, deck.Width), GearDeckDefaultTop, deck.Scale));
         }
         catch (Exception ex)
         {

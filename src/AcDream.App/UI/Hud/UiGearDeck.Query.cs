@@ -244,7 +244,8 @@ internal sealed partial class UiGearDeck
         var names = new string[saved.Count];
         for (int i = 0; i < names.Length; i++) names[i] = saved[i].Name;
         DeckFace bold = Bold;
-        _pills = new GearPills(chips, names, t => bold.Font?.MeasureWidth(t) ?? t.Length * 6f);
+        float fallback = 6f * _scale;   // the fontless estimate at the scale, as the faces are
+        _pills = new GearPills(chips, names, t => bold.Font?.MeasureWidth(t) ?? t.Length * fallback);
         _pillsFor = (chipsNow, saved, build);
         _pillsVersion++;
         _fittedChips = new string?[chips.Length];

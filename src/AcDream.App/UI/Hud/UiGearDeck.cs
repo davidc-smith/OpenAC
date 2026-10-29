@@ -123,9 +123,9 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
     internal void Detach() => _b.Session.Ended -= OnSessionEnded;
 
-    /// <summary>How the runtime mounts the deck: imported chrome, <paramref name="width"/> wide (the deck's width
-    /// at its scale), resized from the top or bottom, hidden.</summary>
-    internal static RetailWindowFrame.Options MountOptions(float left, float top, float width = GearDeckGeometry.Width) => new()
+    /// <summary>How the runtime mounts the deck: imported chrome, as wide as the deck at <paramref name="scale"/>
+    /// (its <see cref="Scale"/>) with the minimum height at that scale, resized from the top or bottom, hidden.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top, float scale = 1f) => new()
     {
         WindowName = WindowNames.GearDeck,
         Chrome = RetailWindowChrome.Imported,
@@ -136,9 +136,9 @@ internal sealed partial class UiGearDeck : UiElement
         ResizeY = true,
         ResizableEdges = ResizeEdges.Top | ResizeEdges.Bottom,
         ConstrainResizeToParent = true,
-        MinWidth = width,
-        MaxWidth = width,
-        MinHeight = GearDeckGeometry.MinHeight,
+        MinWidth = GearDeckGeometry.WidthAt(scale),
+        MaxWidth = GearDeckGeometry.WidthAt(scale),
+        MinHeight = GearDeckGeometry.MinHeightAt(scale),
         Visible = false,
         ContentClickThrough = false,
     };
@@ -300,8 +300,10 @@ internal sealed partial class UiGearDeck : UiElement
     /// Follows the bound scale: a change re-bakes the fields' fonts and drops
     /// the text fitted at the old size, and every check sets the width to the
     /// scale's (a saved layout may restore another), kept inside the parent.
-    /// The height is left to <see cref="FitMinHeight"/>, which grows it to
-    /// the new minimum.
+    /// A width that would cross the parent's right side keeps the old right
+    /// edge instead, so a deck mounted at 1x a margin in from the screen edge
+    /// keeps that margin when the Command Deck's scale arrives. The height is
+    /// left to <see cref="FitMinHeight"/>, which grows it to the new minimum.
     /// </summary>
     private void SyncScale()
     {
@@ -320,9 +322,11 @@ internal sealed partial class UiGearDeck : UiElement
         }
         float width = GearDeckGeometry.WidthAt(_scale);
         if (Width == width && MinWidth == width && MaxWidth == width) return;
+        float right = Left + Width;
         MinWidth = MaxWidth = width;
         Width = width;
-        if (Parent is { } parent && Left + Width > parent.Width) Left = MathF.Max(0f, parent.Width - Width);
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = MathF.Max(0f, MathF.Min(right, parent.Width) - Width);
         ResetAnchorCapture();
         FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
     }
