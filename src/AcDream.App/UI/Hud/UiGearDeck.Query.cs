@@ -154,7 +154,7 @@ internal sealed partial class UiGearDeck
         if (!_naming) return;
         _naming = false;
         // The root hit-tests a press before it moves the focus, so _hit is the press's zone here.
-        _namingClosedByStar = why == "focus lost" && _hit.Zone == GearZone.SaveStud;
+        _namingClosedByStar = why == "focus lost" && _hit.Zone == GearZone.SaveStud && FindRoot() is { LeftButtonDown: true };
         _b.Log?.Invoke($"[gear-deck] save: name field closed ({why}){(name is null ? "" : " saving")}");
         SaveNameInput.Visible = false;
         if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, SaveNameInput)) root.SetKeyboardFocus(null);
