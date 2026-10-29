@@ -25,10 +25,11 @@ internal static class FakeDeckFonts
         return fonts;
     }
 
-    public static UiDatFont Font(float pixels)
+    /// <summary>A face <paramref name="pixels"/> tall whose glyphs are <paramref name="widthRatio"/> of that wide.</summary>
+    public static UiDatFont Font(float pixels, float widthRatio = 0.6f)
     {
         var glyphs = new Dictionary<char, FontCharDesc>();
-        byte w = (byte)Math.Max(1, (int)MathF.Round(pixels * 0.6f)), h = (byte)Math.Max(1, (int)pixels);
+        byte w = (byte)Math.Max(1, (int)MathF.Round(pixels * widthRatio)), h = (byte)Math.Max(1, (int)pixels);
         for (char c = ' '; c <= '~'; c++)
             glyphs[c] = new FontCharDesc { Unicode = c, Width = w, Height = h };
         return new UiDatFont(fgTex: 1u, fgW: 256, fgH: 256, bgTex: 0, bgW: 0, bgH: 0,

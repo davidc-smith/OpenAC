@@ -51,6 +51,36 @@ public sealed class UiChatDeckTextSizeTests
         Assert.True(UiChatDeck.PeekLinesFitting(height, large.Deck.PeekRow(a)) < ChatDeckPeekFeed.MaxLines);
     }
 
+    /// <summary>The glyph quads (the fake fonts' texture) drawn inside <paramref name="box"/>.</summary>
+    private static int GlyphsIn(AcDream.App.Rendering.TextRenderer renderer, DeckRect box)
+    {
+        int count = 0;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 1u) continue;
+            for (int q = 0; q + 48 <= s.Verts.Count; q += 48)
+            {
+                float x = s.Verts[q], y = s.Verts[q + 1];
+                if (x >= box.X - 0.5f && x <= box.X + box.W + 0.5f && y >= box.Y - 0.5f && y <= box.Y + box.H + 0.5f)
+                    count++;
+            }
+        }
+        return count;
+    }
+
+    [Fact]
+    public void AtNormalText_TheChipLabelDrawsWhole_ThoughSemiBoldIsWiderThanTheFaceItIsSizedWith()
+    {
+        // The chip is sized with the Regular face and drawn SemiBold; make SemiBold much wider so the
+        // Regular-sized room cannot hold it. At 100% the label still draws whole, as it did before text sizes.
+        var fonts = new DeckFonts((px, weight) =>
+            FakeDeckFonts.Font(px, weight == BundledUiFontWeight.SemiBold ? 0.9f : 0.6f));
+        var h = new Harness(fonts: fonts);
+        string label = h.Deck.ChipLabel;
+        AcDream.App.Rendering.TextRenderer renderer = MarkupDrawProbe.Draw(h.Deck, h.Deck.Width, h.Deck.Height);
+        Assert.Equal(label.Length, GlyphsIn(renderer, h.Deck.Geometry.Chip with { W = h.Deck.Geometry.Chip.W + 200f }));
+    }
+
     [Fact]
     public void AtLargeText_TabsChipAndBadgesFitTheirBoxes()
     {

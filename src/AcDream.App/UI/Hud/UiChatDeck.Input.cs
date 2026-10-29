@@ -192,7 +192,11 @@ internal sealed partial class UiChatDeck : IChatEntryTarget
         ctx.FillRoundedRect(chip.X, chip.Y, chip.W, chip.H, 5f,
             overridden ? ChatDeckPalette.StudOn : ChatDeckPalette.StudOff);
         DeckFace chipFace = LabelBoldIn(chip);
-        string chipText = Fit(ctx, chipFace, ChipText, chip.W - ChatDeckGeometry.TabPadX - ChatDeckGeometry.ChipArrow - 4f);
+        // The chip is sized with the Regular face and drawn SemiBold, so the room never drops below
+        // the deck's own bold label: at 100% the label draws whole, as it always has (capped chips included).
+        float chipRoom = MathF.Max(chip.W - ChatDeckGeometry.TabPadX - ChatDeckGeometry.ChipArrow - 4f,
+            LabelBoldBase.Measure(ctx, ChipText));
+        string chipText = Fit(ctx, chipFace, ChipText, chipRoom);
         DrawLabel(ctx, chipFace, chipText, chip.X + ChatDeckGeometry.TabPadX, chip,
             overridden ? ChatDeckPalette.TextInk : ChatDeckPalette.LabelInk);
         DrawIcon(ctx, HudIcons.ChevronDown, chip.X + chip.W - ChatDeckGeometry.ChipArrow - 2f,
