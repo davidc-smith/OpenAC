@@ -99,6 +99,7 @@ internal sealed partial class UiGearDeck : UiElement
         CreateMenu();         // UiGearDeck.Menu.cs
         _b.Session.Ended += () =>   // the live query is not kept between sessions
         {
+            FinishSave(null);
             SetQuery(GearQuery.Empty);
             QueryInput.SetText("");
         };
@@ -247,6 +248,7 @@ internal sealed partial class UiGearDeck : UiElement
         Shown.Count,
         _model.SidePackSlots,
         _scrollRow,
+        SavedCount: _b.Session.Settings.SavedFilters.Count,
         Suggestions: VisibleSuggestions);
 
     private void SyncGeometry()

@@ -34,6 +34,21 @@ internal sealed partial class UiGearDeck
         ClearOnSubmit = false, RecordHistory = false, MaxCharacters = 40,
     };
 
+    /// <summary>The ★ flow's inline name field, over <see cref="GearDeckGeometry.QueryText"/> while a filter is being named.</summary>
+    internal UiField SaveNameInput { get; } = new()
+    {
+        OneLine = true, Selectable = true,
+        BackgroundColor = ChatDeckPalette.FieldFill, TextColor = DeckChrome.TextInk,
+        ClearOnSubmit = false, RecordHistory = false, Visible = false,
+        MaxCharacters = SavedFilter.MaxNameLength,
+    };
+
+    private bool _naming;
+    private string?[] _fittedSaved = [];
+    private string _savedMoreText = "";
+    private int _savedMoreFor = -1;
+    private (GearSortField Field, string Text)? _sortText;
+
     /// <summary>The chips the typed text suggests, best first (the name chip last).</summary>
     internal IReadOnlyList<GearChip> Suggestions => _suggestions;
 
@@ -69,7 +84,65 @@ internal sealed partial class UiGearDeck
         QueryInput.OnFocusGained = SyncGeometry;   // the suggestions show (losing focus waits for the tick, so
                                                    // a press on a suggestion still finds its row)
         AddChild(QueryInput);
+
+        SaveNameInput.Keyboard = _b.Keyboard;
+        SaveNameInput.DatFont = QueryInput.DatFont;
+        SaveNameInput.OnSubmit = text => FinishSave(text);
+        SaveNameInput.OnFocusLost = _ => FinishSave(null);   // like Esc: leaving the field cancels
+        SaveNameInput.OnEscape = () => FinishSave(null);
+        AddChild(SaveNameInput);
         PlaceQueryInput();
+    }
+
+    /// <summary>★: opens the name field, pre-filled from the chip labels and selected. Does nothing while the query is empty.</summary>
+    private void StartSave()
+    {
+        if (_naming || _query.IsEmpty || _model.Packs.Count == 0) return;
+        _naming = true;
+        string name = string.Join(" ", ChipLabels);
+        if (name.Length == 0) name = _query.Text;
+        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength];
+        SaveNameInput.SetText(name);
+        SaveNameInput.Visible = true;
+        PlaceQueryInput();
+        FindRoot()?.SetKeyboardFocus(SaveNameInput);
+        SaveNameInput.SelectAllText();
+    }
+
+    /// <summary>Saves the live query under a non-blank <paramref name="name"/> (null cancels) and hides the field;
+    /// a second call does nothing.</summary>
+    private void FinishSave(string? name)
+    {
+        if (!_naming) return;
+        _naming = false;
+        SaveNameInput.Visible = false;
+        if (FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, SaveNameInput)) root.SetKeyboardFocus(null);
+        if (name is not null && name.Trim().Length > 0 && !_query.IsEmpty)
+        {
+            GearQuery query = _query;
+            _b.Session.Update(s => s.WithSaved(new SavedFilter(name, query)));
+        }
+        SyncGeometry();
+    }
+
+    /// <summary>Makes <paramref name="filter"/>'s query the live one and empties the field.</summary>
+    private void ApplySaved(SavedFilter filter)
+    {
+        QueryInput.SetText("");   // first: its change handler would strip the filter's own text
+        SetQuery(filter.Query);
+    }
+
+    /// <summary>A click on saved stud <paramref name="index"/>: applies it, or clears the query when it is already lit.</summary>
+    private void ClickSaved(int index)
+    {
+        IReadOnlyList<SavedFilter> saved = _b.Session.Settings.SavedFilters;
+        if (index < 0 || index >= saved.Count) return;
+        if (_query.Equals(saved[index].Query))
+        {
+            QueryInput.SetText("");
+            SetQuery(GearQuery.Empty);
+        }
+        else ApplySaved(saved[index]);
     }
 
     private void MoveSuggestion(int step)
@@ -99,7 +172,14 @@ internal sealed partial class UiGearDeck
         QueryInput.Width = MathF.Max(0f, r.W - 4f);
         QueryInput.Height = r.H;
         bool shown = _model.Packs.Count > 0;
-        QueryInput.Visible = shown;
+        QueryInput.Visible = shown && !_naming;
+        if (_naming && (!shown || _query.IsEmpty)) FinishSave(null);   // nothing left to name
+        if (SaveNameInput.Anchors != AnchorEdges.None) SaveNameInput.Anchors = AnchorEdges.None;
+        DeckRect q = _g.QueryText;
+        SaveNameInput.Left = q.X;
+        SaveNameInput.Top = q.Y;
+        SaveNameInput.Width = q.W;
+        SaveNameInput.Height = q.H;
         // A hidden field must not keep typing into a query nobody can see.
         if (!shown && QueryInput.IsFocused && FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, QueryInput))
             root.SetKeyboardFocus(null);
@@ -125,6 +205,7 @@ internal sealed partial class UiGearDeck
         _pillsFor = (chipsNow, saved, build);
         _pillsVersion++;
         _fittedChips = new string?[chips.Length];
+        _fittedSaved = new string?[names.Length];
         return _pills;
     }
 

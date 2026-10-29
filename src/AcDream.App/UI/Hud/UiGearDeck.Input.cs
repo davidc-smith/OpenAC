@@ -150,6 +150,21 @@ internal sealed partial class UiGearDeck
             case GearZone.ChipMore when _g.ChipMore is { } more:
                 OpenMenuAt(more);   // UiGearDeck.Menu.cs
                 return true;
+            case GearZone.SortStud:
+                OpenMenuAt(_g.SortStud);
+                return true;
+            case GearZone.DirStud:
+                SetQuery(_query with { Sort = _query.Sort with { Descending = !_query.Sort.Descending } });
+                return true;
+            case GearZone.SaveStud:
+                StartSave();   // UiGearDeck.Query.cs
+                return true;
+            case GearZone.SavedFilter:
+                ClickSaved(hit.Index);
+                return true;
+            case GearZone.SavedMore when _g.SavedMore is { } savedMore:
+                OpenMenuAt(savedMore);
+                return true;
             case GearZone.Suggestion:
                 TakeSuggestion(hit.Index);
                 return true;

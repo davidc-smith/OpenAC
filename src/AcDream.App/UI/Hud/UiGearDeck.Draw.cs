@@ -125,7 +125,7 @@ internal sealed partial class UiGearDeck
         ctx.FillRoundedRect(h.X, h.Y, h.W, h.H, 5f, HeaderFill);
 
         Vector4 ink = DeckChrome.DrawStud(ctx, g.FoldStud, 1f, on: false);
-        DrawChevron(ctx, g.FoldStud, down: !g.Input.Folded, ink);
+        DrawChevron(ctx, g.FoldStud, g.Input.Folded ? Chevron.Right : Chevron.Down, ink);
         DrawText(ctx, Bold, "Equipment", g.FoldStud.X + g.FoldStud.W + 6f, h, LabelInk);
 
         DrawLabelledStud(ctx, g.FigureStud, "Figure", on: false, dim: true);
@@ -153,15 +153,22 @@ internal sealed partial class UiGearDeck
         DrawCentred(ctx, Bold, label, r, ink);   // fixed labels that fit their studs
     }
 
-    /// <summary>A ▾ (<paramref name="down"/>) or ▸ drawn as two strokes on the stud's centre.</summary>
-    private static void DrawChevron(UiRenderContext ctx, DeckRect r, bool down, Vector4 ink)
+    private enum Chevron { Down, Right, Up }
+
+    /// <summary>A ▾, ▸ or ▴ drawn as two strokes on the stud's centre.</summary>
+    private static void DrawChevron(UiRenderContext ctx, DeckRect r, Chevron direction, Vector4 ink)
     {
         float cx = r.X + r.W / 2f, cy = r.Y + r.H / 2f;
         const float arm = 4f, depth = 2f;
-        if (down)
+        if (direction == Chevron.Down)
         {
             ctx.DrawLine(cx - arm, cy - depth, cx, cy + depth, ink, 1.5f);
             ctx.DrawLine(cx, cy + depth, cx + arm, cy - depth, ink, 1.5f);
+        }
+        else if (direction == Chevron.Up)
+        {
+            ctx.DrawLine(cx - arm, cy + depth, cx, cy - depth, ink, 1.5f);
+            ctx.DrawLine(cx, cy - depth, cx + arm, cy + depth, ink, 1.5f);
         }
         else
         {
@@ -373,6 +380,74 @@ internal sealed partial class UiGearDeck
         {
             DrawCell(ctx, more, HeaderFill, CellEdge, 5f);
             DrawCentred(ctx, Bold, MoreText, more, Hover.Zone == GearZone.ChipMore ? TextInk : LabelInk);
+        }
+        DrawQueryStuds(ctx);
+        DrawSavedRow(ctx);
+    }
+
+    /// <summary>The ★, sort and direction studs. Sort applies to results only, so the sort pair is dim
+    /// (but live) while none are shown; ★ is dim while the query is empty.</summary>
+    private void DrawQueryStuds(UiRenderContext ctx)
+    {
+        GearDeckGeometry g = _g;
+        Vector4 star = DeckChrome.DrawStud(ctx, g.SaveStud, 1f, on: _naming, dim: _query.IsEmpty);
+        DrawStar(ctx, g.SaveStud, star);
+
+        bool dim = !ShowsResults;
+        GearSortField field = _query.Sort.Field;
+        Vector4 ink = DeckChrome.DrawStud(ctx, g.SortStud, 1f, on: false, dim);
+        if (_sortText is not { } cached || cached.Field != field)
+            _sortText = cached = (field, Fit(ctx, Bold, GearChipText.SortLabel(field), g.SortStud.W - 6f));
+        DrawCentred(ctx, Bold, cached.Text, g.SortStud, ink);
+
+        ink = DeckChrome.DrawStud(ctx, g.DirStud, 1f, on: false, dim);
+        DrawChevron(ctx, g.DirStud, _query.Sort.Descending ? Chevron.Down : Chevron.Up, ink);
+    }
+
+    /// <summary>A five-point star: five strokes, each joining every second point of a pentagon of radius 5.</summary>
+    private static void DrawStar(UiRenderContext ctx, DeckRect r, Vector4 ink)
+    {
+        float cx = r.X + r.W / 2f, cy = r.Y + r.H / 2f;
+        const float radius = 5f;
+        Span<Vector2> p = stackalloc Vector2[5];
+        for (int i = 0; i < 5; i++)
+        {
+            float a = -MathF.PI / 2f + i * 2f * MathF.PI / 5f;
+            p[i] = new Vector2(cx + radius * MathF.Cos(a), cy + radius * MathF.Sin(a));
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            Vector2 from = p[i], to = p[(i + 2) % 5];
+            ctx.DrawLine(from.X, from.Y, to.X, to.Y, ink, 1.2f);
+        }
+    }
+
+    /// <summary>One stud per saved filter (lit while it is the live query) and a "+N" pill for the rest.</summary>
+    private void DrawSavedRow(UiRenderContext ctx)
+    {
+        GearDeckGeometry g = _g;
+        IReadOnlyList<string> names = Pills().Saved;
+        IReadOnlyList<SavedFilter> saved = _b.Session.Settings.SavedFilters;
+        for (int i = 0; i < g.SavedStuds.Count && i < names.Count && i < saved.Count; i++)
+        {
+            DeckRect r = g.SavedStuds[i];
+            bool hot = Hover.Zone == GearZone.SavedFilter && Hover.Index == i;
+            Vector4 ink = DeckChrome.DrawStud(ctx, r, 1f, on: _query.Equals(saved[i].Query));
+            string text = i < _fittedSaved.Length && _fittedSaved[i] is { } fitted
+                ? fitted
+                : Fit(ctx, Bold, names[i], MathF.Max(0f, r.W - 2f * GearDeckGeometry.PillPadX));
+            if (i < _fittedSaved.Length) _fittedSaved[i] = text;
+            DrawCentred(ctx, Bold, text, r, hot ? TextInk : ink);
+        }
+        if (g.SavedMore is { } more)
+        {
+            if (_savedMoreFor != g.HiddenSaved)
+            {
+                _savedMoreText = "+" + g.HiddenSaved.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                _savedMoreFor = g.HiddenSaved;
+            }
+            DrawCell(ctx, more, HeaderFill, CellEdge, 5f);
+            DrawCentred(ctx, Bold, _savedMoreText, more, Hover.Zone == GearZone.SavedMore ? TextInk : LabelInk);
         }
     }
 

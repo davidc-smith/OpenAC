@@ -14,6 +14,14 @@ internal sealed partial class UiGearDeck
     /// A choice removes its chip by value, so chips that change while the menu is open never shift it.</summary>
     private GearChip[] _menuChips = [];
     private string[] _menuLabels = [];
+    /// <summary>For <see cref="MenuKind.SavedFilter"/> (the one clicked) and <see cref="MenuKind.SavedMore"/> (the hidden
+    /// ones): the filters when the menu opened, so a choice acts on them by value, never by a shifted index.</summary>
+    private SavedFilter[] _menuSaved = [];
+
+    /// <summary>The sort menu's fields, in the order it lists them.</summary>
+    private static readonly GearSortField[] SortFields =
+        [GearSortField.Name, GearSortField.Type, GearSortField.Material, GearSortField.Workmanship,
+         GearSortField.Value, GearSortField.Burden, GearSortField.Stack];
 
     internal UiMarkupContextMenu Menu => _menu;
 
@@ -22,6 +30,7 @@ internal sealed partial class UiGearDeck
         _menu.DatFont = _fonts?.Face(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular);
         _menu.Opening = (x, y) => PickMenu(_g.HitAt(x, y));
         _menu.ItemsSource = MenuItems;
+        _menu.ItemsEnabledSource = () => Enumerable.Repeat(true, MenuItems().Count).ToArray();
         _menu.Selected = ChooseMenuItem;
         AddChild(_menu);
         ContextMenu = _menu;
@@ -33,10 +42,18 @@ internal sealed partial class UiGearDeck
         _menuKind = hit.Zone switch
         {
             GearZone.ChipMore when _g.HiddenChips > 0 => MenuKind.HiddenChips,
+            GearZone.SortStud => MenuKind.Sort,
+            GearZone.SavedFilter when hit.Index >= 0 && hit.Index < _b.Session.Settings.SavedFilters.Count => MenuKind.SavedFilter,
+            GearZone.SavedMore when _g.HiddenSaved > 0 => MenuKind.SavedMore,
             _ => MenuKind.None,
         };
         _menuChips = [];
         _menuLabels = [];
+        _menuSaved = [];
+        if (_menuKind == MenuKind.SavedFilter)
+            _menuSaved = [_b.Session.Settings.SavedFilters[hit.Index]];
+        else if (_menuKind == MenuKind.SavedMore)
+            _menuSaved = _b.Session.Settings.SavedFilters.Skip(_g.SavedStuds.Count).ToArray();
         if (_menuKind != MenuKind.HiddenChips) return;
         int first = _g.Chips.Count;
         IReadOnlyList<string> labels = ChipLabels;
@@ -51,6 +68,15 @@ internal sealed partial class UiGearDeck
         {
             case MenuKind.HiddenChips:
                 return _menuLabels;
+            case MenuKind.Sort:
+                var labels = new string[SortFields.Length];
+                for (int i = 0; i < labels.Length; i++)
+                    labels[i] = (SortFields[i] == _query.Sort.Field ? "* " : "") + GearChipText.SortLabel(SortFields[i]);
+                return labels;
+            case MenuKind.SavedFilter:
+                return ["Delete"];
+            case MenuKind.SavedMore:
+                return _menuSaved.Select(f => f.Name).ToArray();
             default:
                 return [];
         }
@@ -63,6 +89,17 @@ internal sealed partial class UiGearDeck
             case MenuKind.HiddenChips when index >= 0 && index < _menuChips.Length:
                 int at = IndexOfChip(_menuChips[index]);
                 if (at >= 0) SetQuery(_query.Without(at));   // gone since the menu opened: nothing to remove
+                break;
+            case MenuKind.Sort when index >= 0 && index < SortFields.Length:
+                SetQuery(_query with { Sort = GearSort.DefaultFor(SortFields[index]) });
+                break;
+            case MenuKind.SavedFilter when index == 0 && _menuSaved.Length == 1:
+                string name = _menuSaved[0].Name;
+                _b.Session.Update(s => s.WithoutSaved(name));
+                SyncGeometry();
+                break;
+            case MenuKind.SavedMore when index >= 0 && index < _menuSaved.Length:
+                ApplySaved(_menuSaved[index]);
                 break;
         }
     }
