@@ -28,14 +28,14 @@ public static class GearQueryJson
             ["name"] = filter.Name,
             ["chips"] = chips,
             ["text"] = filter.Query.Text,
-            ["sort"] = SortKeys.First(k => k.Field == filter.Query.Sort.Field).Key,
+            ["sort"] = KeyOf(SortKeys, filter.Query.Sort.Field),
             ["desc"] = filter.Query.Sort.Descending,
         };
     }
 
     private static JsonObject WriteChip(GearChip c)
     {
-        var o = new JsonObject { ["f"] = FieldKeys.First(k => k.Field == c.Field).Key };
+        var o = new JsonObject { ["f"] = KeyOf(FieldKeys, c.Field) };
         switch (c.Field)
         {
             case GearField.Name: o["text"] = c.Text; break;
@@ -48,6 +48,14 @@ public static class GearQueryJson
                 break;
         }
         return o;
+    }
+
+    /// <summary>A field's key; a field with none (a new one this table missed) is named in the exception.</summary>
+    private static string KeyOf<T>((T Field, string Key)[] keys, T field) where T : struct, Enum
+    {
+        foreach ((T f, string key) in keys)
+            if (EqualityComparer<T>.Default.Equals(f, field)) return key;
+        throw new ArgumentOutOfRangeException(nameof(field), field, $"No saved-filter key for {typeof(T).Name} {field}.");
     }
 
     public static bool TryRead(JsonNode? node, out SavedFilter? filter)
@@ -94,8 +102,9 @@ public static class GearQueryJson
         {
             case GearField.Name: return GearChip.NameContains((string?)o["text"] ?? "");
             case GearField.Type:
+                // A group name only: Enum.TryParse also takes numbers (" 3" trimmed) and comma lists ("Salvage, Food").
                 string g = (string?)o["group"] ?? "";
-                return g.Length > 0 && !char.IsDigit(g[0]) && Enum.TryParse(g, ignoreCase: true, out GearTypeGroup group)
+                return g.Length > 0 && g.All(char.IsAsciiLetter) && Enum.TryParse(g, ignoreCase: true, out GearTypeGroup group)
                     && Enum.IsDefined(group) ? GearChip.OfType(group) : null;
             case GearField.Material: return o["id"] is { } m ? GearChip.OfMaterial(m.GetValue<uint>()) : null;
             case GearField.Pack: return o["id"] is { } p ? GearChip.InPack(p.GetValue<uint>()) : null;

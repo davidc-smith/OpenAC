@@ -38,10 +38,23 @@ public sealed class GearQueryJsonTests
     [InlineData("{\"name\":\"a\"}")]
     [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"armourLevel\",\"min\":300}]}")]
     [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"type\",\"group\":\"3\"}]}")]
+    [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"type\",\"group\":\" 3\"}]}")]          // Enum.TryParse trims it to 3
+    [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"type\",\"group\":\"Salvage, Food\"}]}")]  // 0 | 3 parses as Food
+    [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"type\",\"group\":3}]}")]
+    [InlineData("{\"name\":\"a\",\"chips\":[null]}")]
+    [InlineData("{\"name\":\"a\",\"chips\":[],\"sort\":\"name\",\"desc\":\"yes\"}")]
     [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"type\",\"group\":\"Shoes\"}]}")]
     [InlineData("{\"name\":\"a\",\"chips\":[],\"sort\":\"damage\"}")]
     [InlineData("{\"name\":\"a\",\"chips\":[{\"f\":\"material\",\"id\":\"steel\"}]}")]
     public void Unreadable(string json) => Assert.False(GearQueryJson.TryRead(JsonNode.Parse(json), out _));
+
+    [Fact]
+    public void Write_OfAFieldItHasNoKeyFor_SaysWhich()
+    {
+        var filter = new SavedFilter("a", GearQuery.Empty with { Sort = new GearSort((GearSortField)99, false) });
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => GearQueryJson.Write(filter));
+        Assert.Contains("99", ex.Message);
+    }
 
     [Fact]
     public void MissingTextAndSort_Default()
