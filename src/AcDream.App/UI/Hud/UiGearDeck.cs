@@ -316,6 +316,7 @@ internal sealed partial class UiGearDeck : UiElement
             _pillsFor = null;   // pills are measured with the face at the scale
             _sortText = null;
             _fittedFooter = null;
+            _fittedSalvage = null;
             Array.Clear(_suggestTexts);
             Array.Clear(_slotLabels);
             ClearFitted();

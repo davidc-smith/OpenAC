@@ -89,12 +89,19 @@ internal sealed partial class UiGearDeck
         return _fittedFooter;
     }
 
+    /// <summary>The salvage label fitted to the footer button, by label and width (labels are built once per N).</summary>
+    private (string Src, float Width, string Text)? _fittedSalvage;
+
     /// <summary>The footer's lit "Add N to salvage" stud.</summary>
     private void DrawSalvageButton(UiRenderContext ctx)
     {
         DeckRect r = _g.FooterButton;
         Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: true);
-        DrawCentred(ctx, Small, Fit(ctx, Small, SalvageText(SalvageCount), r.W - P(8f)), r, ink);
+        string label = SalvageButtonText;
+        float room = r.W - P(8f);
+        if (_fittedSalvage is not { } f || !ReferenceEquals(f.Src, label) || f.Width != room)
+            _fittedSalvage = f = (label, room, Fit(ctx, Small, label, room));
+        DrawCentred(ctx, Small, f.Text, r, ink);
     }
 
     // ---- text and cells ----

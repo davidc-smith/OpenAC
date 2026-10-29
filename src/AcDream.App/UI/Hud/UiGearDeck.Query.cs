@@ -18,7 +18,9 @@ internal sealed partial class UiGearDeck
 
     // The pills the geometry was built with: rebuilt when the chips, the saved names or the packs change.
     private GearPills _pills = new([], [], static t => t.Length * 6f);
-    private (IReadOnlyList<GearChip> Chips, IReadOnlyList<SavedFilter> Saved, ulong Build)? _pillsFor;
+    private (IReadOnlyList<GearChip> Chips, IReadOnlyList<SavedFilter> Saved)? _pillsFor;
+    /// <summary>The pack ids, in side-column order, the Pack chip labels were built with (empty without one).</summary>
+    private uint[] _pillsPacks = [];
     private int _pillsVersion;
     private int _geometryPills = -1;
     /// <summary>Chip labels fitted to their pills, by chip; cleared with the geometry.</summary>
@@ -233,11 +235,13 @@ internal sealed partial class UiGearDeck
     {
         IReadOnlyList<GearChip> chipsNow = _query.Chips;
         IReadOnlyList<SavedFilter> saved = _b.Session.Settings.SavedFilters;
-        // Only a Pack chip's label ("Pack N") follows the model; any other leaves the pills alone.
-        ulong build = 0;
+        // Only a Pack chip's label ("Pack N", a place in the side column) follows the model, and only
+        // through the packs: any other table change leaves the pills, and so the geometry, alone.
+        bool packChip = false;
         for (int i = 0; i < chipsNow.Count; i++)
-            if (chipsNow[i].Field == GearField.Pack) { build = _modelBuild; break; }
-        if (_pillsFor is { } k && ReferenceEquals(k.Chips, chipsNow) && ReferenceEquals(k.Saved, saved) && k.Build == build)
+            if (chipsNow[i].Field == GearField.Pack) { packChip = true; break; }
+        if (_pillsFor is { } k && ReferenceEquals(k.Chips, chipsNow) && ReferenceEquals(k.Saved, saved)
+            && (packChip ? SamePacks(_pillsPacks) : _pillsPacks.Length == 0))
             return _pills;
         var chips = new string[_query.Chips.Count];
         for (int i = 0; i < chips.Length; i++) chips[i] = GearChipText.Label(_query.Chips[i], PackName);
@@ -246,11 +250,28 @@ internal sealed partial class UiGearDeck
         DeckFace bold = Bold;
         float fallback = 6f * _scale;   // the fontless estimate at the scale, as the faces are
         _pills = new GearPills(chips, names, t => bold.Font?.MeasureWidth(t) ?? t.Length * fallback);
-        _pillsFor = (chipsNow, saved, build);
+        _pillsFor = (chipsNow, saved);
+        _pillsPacks = packChip ? PackIds() : [];
         _pillsVersion++;
         _fittedChips = new string?[chips.Length];
         _fittedSaved = new string?[names.Length];
         return _pills;
+    }
+
+    private bool SamePacks(uint[] ids)
+    {
+        IReadOnlyList<GearPack> packs = _model.Packs;
+        if (packs.Count != ids.Length) return false;
+        for (int i = 0; i < ids.Length; i++)
+            if (packs[i].Id != ids[i]) return false;
+        return true;
+    }
+
+    private uint[] PackIds()
+    {
+        var ids = new uint[_model.Packs.Count];
+        for (int i = 0; i < ids.Length; i++) ids[i] = _model.Packs[i].Id;
+        return ids;
     }
 
     /// <summary>A Pack chip's label: "Main", "Pack N" by its place in the side column, or "Pack ?" when gone.</summary>

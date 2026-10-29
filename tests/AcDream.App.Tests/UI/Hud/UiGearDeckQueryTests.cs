@@ -51,9 +51,9 @@ public sealed class UiGearDeckQueryTests
     }
 
     private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null, Func<uint>? player = null,
-        Func<float>? scale = null)
+        Func<float>? scale = null, ClientObjectTable? world = null)
     {
-        ClientObjectTable table = World();
+        ClientObjectTable table = world ?? World();
         var session = new GearDeckSession(null, () => "", () => false);
         var b = new GearDeckBindings(
             Objects: () => table,
@@ -379,6 +379,25 @@ public sealed class UiGearDeckQueryTests
         RootClick(root, deck, deck.Geometry.SidePack(0));
         Assert.Equal(new[] { GearChip.OfMaterial(Steel), GearChip.InPack(Bag), GearChip.InPack(Player) }, deck.Query.Chips);
         Assert.Equal(new[] { "Steel", "Pack 2", "Main" }, deck.ChipLabels);
+    }
+
+    [Fact]
+    public void APackChip_KeepsThePillsAndGeometry_ThroughATableChangeThatLeavesThePacks_ButFollowsAPackGoing()
+    {
+        ClientObjectTable table = World();
+        UiGearDeck deck = Make(world: table);
+        deck.SetQuery(GearQuery.Empty.With(GearChip.OfMaterial(Steel)).With(GearChip.InPack(Bag)));
+        deck.Refresh();
+        GearDeckGeometry before = deck.Geometry;
+        Assert.Equal(new[] { "Steel", "Pack 2" }, deck.ChipLabels);
+
+        Place(table, new ClientObject { ObjectId = 0xE01, Name = "Apple", Type = ItemType.Food }, Player, 6);   // no match
+        deck.Refresh();
+        Assert.Same(before, deck.Geometry);
+
+        Assert.True(table.Remove(Bag));
+        deck.Refresh();
+        Assert.Equal(new[] { "Steel", "Pack ?" }, deck.ChipLabels);
     }
 
     [Fact]
