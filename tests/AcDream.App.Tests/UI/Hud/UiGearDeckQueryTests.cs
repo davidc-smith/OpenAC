@@ -51,7 +51,7 @@ public sealed class UiGearDeckQueryTests
     }
 
     private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null, Func<uint>? player = null,
-        Func<float>? scale = null, ClientObjectTable? world = null)
+        float? scale = null, ClientObjectTable? world = null)
     {
         ClientObjectTable table = world ?? World();
         var session = new GearDeckSession(null, () => "", () => false);
@@ -65,15 +65,15 @@ public sealed class UiGearDeckQueryTests
             Session: session,
             Actions: new NoActions(),
             IsPending: _ => false,
-            Close: () => { },
-            Scale: scale);
+            Close: () => { });
         var deck = new UiGearDeck(b, fonts, null, clock ?? (() => 0.0));
+        if (scale is { } s) deck.SetScale(s);
         deck.Refresh();
         return deck;
     }
 
     /// <summary>A deck at the root's origin, so its screen and local points agree.</summary>
-    private static (UiRoot Root, UiGearDeck Deck) Rooted(DeckFonts? fonts = null, Func<float>? scale = null)
+    private static (UiRoot Root, UiGearDeck Deck) Rooted(DeckFonts? fonts = null, float? scale = null)
     {
         var root = new UiRoot { Width = 1200, Height = 900 };
         UiGearDeck deck = Make(fonts, scale: scale);
@@ -276,7 +276,7 @@ public sealed class UiGearDeckQueryTests
     [InlineData(1.5f)]
     public void TheSortMenu_FollowsTheDeckScale_InSizeAndHitTesting(float scale)
     {
-        var (root, deck) = Rooted(scale: () => scale);
+        var (root, deck) = Rooted(scale: scale);
         deck.SetQuery(GearQuery.Empty.With(GearChip.WornOnly));
         RootClick(root, deck, deck.Geometry.SortStud);
         Assert.True(deck.Menu.IsOpen);

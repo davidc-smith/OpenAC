@@ -20,15 +20,14 @@ internal sealed record GearDeckBindings(
     Action<string>? Log = null,
     Silk.NET.Input.IKeyboard? Keyboard = null,
     Func<(bool Toggle, bool Range)>? Modifiers = null,
-    IGearSalvage? Salvage = null,
-    Func<float>? Scale = null);
+    IGearSalvage? Salvage = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
-/// points × the deck scale wide that the player resizes in height only. The
-/// scale is the Command Deck's (<see cref="GearDeckBindings.Scale"/>), so the
-/// decks' text matches; a change resizes the width and redraws everything at
-/// the new size. Each tick it rebuilds its
+/// points × its own scale wide. Dragging the left or right edge scales the
+/// whole deck in the decks' steps (the width is always 300 × the scale, so the
+/// scale is read back from the width, and a saved layout restores it); the
+/// top and bottom edges change the height only. Each tick it rebuilds its
 /// <see cref="GearInventoryModel"/> when the object table, the player or the
 /// strength changed, and its <see cref="GearDeckGeometry"/> when the height or
 /// the layout input changed. Drawing is in UiGearDeck.Draw.cs, input in
@@ -45,7 +44,7 @@ internal sealed partial class UiGearDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private GearInventoryModel _model = GearInventoryModel.Empty;
     private GearDeckGeometry _g;
-    /// <summary>The deck scale everything is laid out and drawn at; follows <see cref="GearDeckBindings.Scale"/>.</summary>
+    /// <summary>The deck scale everything is laid out and drawn at: the width's (<see cref="GearDeckGeometry.ScaleForWidth"/>).</summary>
     private float _scale;
     private int _scrollRow;
     private ulong _lastRevision;
@@ -99,13 +98,16 @@ internal sealed partial class UiGearDeck : UiElement
         _actions = new LoggedGearItemActions(_b.Actions);
         _dispatcherTable = _b.Objects();
         _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _actions);
-        _scale = ReadScale();
-        Width = MinWidth = MaxWidth = GearDeckGeometry.WidthAt(_scale);
+        _scale = 1f;
+        Width = GearDeckGeometry.WidthAt(_scale);
+        MinWidth = MinWindowWidth;
+        MaxWidth = MaxWindowWidth;
         Height = GearDeckGeometry.DefaultHeightAt(_scale);
         MinHeight = GearDeckGeometry.MinHeightAt(_scale);
         Resizable = true;
-        ResizeX = false;
+        ResizeX = true;
         ResizeY = true;
+        ResizableEdges = AllEdges;
         _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale);
         CreateQueryInput();   // UiGearDeck.Query.cs
         CreateMenu();         // UiGearDeck.Menu.cs
@@ -123,8 +125,14 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
     internal void Detach() => _b.Session.Ended -= OnSessionEnded;
 
-    /// <summary>How the runtime mounts the deck: imported chrome, as wide as the deck at <paramref name="scale"/>
-    /// (its <see cref="Scale"/>) with the minimum height at that scale, resized from the top or bottom, hidden.</summary>
+    // The window's full width range, one width per scale step; ConstrainResize
+    // and SyncScale keep the width on a step.
+    private const float MinWindowWidth = GearDeckGeometry.Width * DeckGeometry.MinScale;
+    private const float MaxWindowWidth = GearDeckGeometry.Width * DeckGeometry.MaxScale;
+    private const ResizeEdges AllEdges = ResizeEdges.Left | ResizeEdges.Right | ResizeEdges.Top | ResizeEdges.Bottom;
+
+    /// <summary>How the runtime mounts the deck: imported chrome, any width in the decks' scale range, the
+    /// minimum height at <paramref name="scale"/> (its <see cref="Scale"/>), resized from every edge, hidden.</summary>
     internal static RetailWindowFrame.Options MountOptions(float left, float top, float scale = 1f) => new()
     {
         WindowName = WindowNames.GearDeck,
@@ -132,12 +140,12 @@ internal sealed partial class UiGearDeck : UiElement
         Left = left,
         Top = top,
         Resizable = true,
-        ResizeX = false,
+        ResizeX = true,
         ResizeY = true,
-        ResizableEdges = ResizeEdges.Top | ResizeEdges.Bottom,
+        ResizableEdges = AllEdges,
         ConstrainResizeToParent = true,
-        MinWidth = GearDeckGeometry.WidthAt(scale),
-        MaxWidth = GearDeckGeometry.WidthAt(scale),
+        MinWidth = MinWindowWidth,
+        MaxWidth = MaxWindowWidth,
         MinHeight = GearDeckGeometry.MinHeightAt(scale),
         Visible = false,
         ContentClickThrough = false,
@@ -304,21 +312,35 @@ internal sealed partial class UiGearDeck : UiElement
         PlaceQueryInput();
     }
 
-    /// <summary>The bound scale, snapped to the decks' steps and range; 1 without a binding.</summary>
-    private float ReadScale() => _b.Scale is { } scale ? DeckGeometry.SnapScale(scale()) : 1f;
+    /// <summary>
+    /// Sets the deck to <paramref name="scale"/> (snapped to the decks' steps and
+    /// range) as a side-edge drag would, keeping the right edge when the new
+    /// width would cross the parent's right side.
+    /// </summary>
+    internal void SetScale(float scale)
+    {
+        float width = GearDeckGeometry.WidthAt(DeckGeometry.SnapScale(scale));
+        if (width == Width) return;
+        float right = Left + Width;
+        Width = width;
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = MathF.Max(0f, MathF.Min(right, parent.Width) - Width);
+        ResetAnchorCapture();
+        SyncGeometry();
+        FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
+    }
 
     /// <summary>
-    /// Follows the bound scale: a change re-bakes the fields' fonts and drops
-    /// the text fitted at the old size, and every check sets the width to the
-    /// scale's (a saved layout may restore another), kept inside the parent.
-    /// A width that would cross the parent's right side keeps the old right
-    /// edge instead, so a deck mounted at 1x a margin in from the screen edge
-    /// keeps that margin when the Command Deck's scale arrives. The height is
-    /// left to <see cref="FitMinHeight"/>, which grows it to the new minimum.
+    /// Follows the width's scale: a change re-bakes the fields' fonts and drops
+    /// the text fitted at the old size, and every check puts the width on the
+    /// scale's step (a saved or hand-edited layout may restore another), kept
+    /// inside the parent. A width that would cross the parent's right side
+    /// keeps the old right edge instead. The height is left to
+    /// <see cref="FitMinHeight"/>, which grows it to the new minimum.
     /// </summary>
     private void SyncScale()
     {
-        float scale = ReadScale();
+        float scale = GearDeckGeometry.ScaleForWidth(Width);
         if (scale != _scale)
         {
             _scale = scale;
@@ -333,9 +355,8 @@ internal sealed partial class UiGearDeck : UiElement
             ClearFitted();
         }
         float width = GearDeckGeometry.WidthAt(_scale);
-        if (Width == width && MinWidth == width && MaxWidth == width) return;
+        if (Width == width) return;
         float right = Left + Width;
-        MinWidth = MaxWidth = width;
         Width = width;
         if (Parent is { } parent && Left + Width > parent.Width)
             Left = MathF.Max(0f, MathF.Min(right, parent.Width) - Width);
@@ -513,10 +534,34 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>The window left the screen: forget the hover and any drop highlight, keep the scroll.</summary>
     public void OnHidden() => ClearHover();
 
+    /// <summary>
+    /// A side-edge drag scales the deck: the proposed width snaps live to the
+    /// nearest scale step (as the Command Deck's drags do), lowered a step at a
+    /// time while the deck at that scale would not fit the room the drag has
+    /// (the side being dragged towards and the height's minimum). The top and
+    /// bottom edges change only the height, never under the minimum at the
+    /// scale. A corner does both: its side sets the scale, its top or bottom
+    /// the height. The edges not dragged stay where they are.
+    /// </summary>
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
-        width = GearDeckGeometry.WidthAt(_scale);
-        height = MathF.Max(height, MinHeight);
+        float scale = _scale;
+        if ((edges & (ResizeEdges.Left | ResizeEdges.Right)) != 0)
+        {
+            scale = DeckGeometry.SnapScale(width / GearDeckGeometry.Width);
+            if (ConstrainResizeToParent && Parent is { } parent)
+            {
+                float roomWidth = (edges & ResizeEdges.Left) != 0 ? Left + Width : parent.Width - Left;
+                float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
+                GearDeckLayoutInput input = LayoutInput();
+                while (scale > DeckGeometry.MinScale + 1e-4f
+                       && (GearDeckGeometry.WidthAt(scale) > roomWidth + 0.01f
+                           || GearDeckGeometry.MinHeightFor(input, scale) > roomHeight + 0.01f))
+                    scale = DeckGeometry.SnapScale(scale - DeckGeometry.ScaleStep);
+            }
+        }
+        width = GearDeckGeometry.WidthAt(scale);
+        height = MathF.Max(height, scale == _scale ? MinHeight : GearDeckGeometry.MinHeightFor(LayoutInput(), scale));
     }
 
     /// <summary>"Main · 96 / 102" or "Pack 3 · 10 / 24": the selected pack, its item count and capacity.</summary>

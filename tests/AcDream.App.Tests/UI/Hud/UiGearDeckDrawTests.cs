@@ -68,7 +68,7 @@ public sealed class UiGearDeckDrawTests
     private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
         EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u,
         Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null,
-        Func<float>? scale = null, Func<double>? clock = null)
+        float? scale = null, Func<double>? clock = null)
     {
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
@@ -82,9 +82,9 @@ public sealed class UiGearDeckDrawTests
             Session: session,
             Actions: new NoActions(),
             IsPending: id => id == 0xA01u,
-            Close: () => { },
-            Scale: scale);
+            Close: () => { });
         var deck = new UiGearDeck(b, fonts, icons, clock);
+        if (scale is { } s) deck.SetScale(s);
         deck.Refresh();
         return deck;
     }
@@ -107,13 +107,13 @@ public sealed class UiGearDeckDrawTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void AtTheCommandDecksScale_TheDeckIsWiderAndDrawsInsideItsFrame(bool list)
+    public void AtScale1_5_TheDeckIsWiderAndDrawsInsideItsFrame(bool list)
     {
-        UiGearDeck deck = Deck(World(), fonts: new DeckFonts((_, _) => null!), scale: () => 1.5f,
+        UiGearDeck deck = Deck(World(), fonts: new DeckFonts((_, _) => null!), scale: 1.5f,
             settings: s => s with { View = list ? GearPackView.List : GearPackView.Grid });
         Assert.Equal(1.5f, deck.Scale);
         Assert.Equal(450f, deck.Width);
-        Assert.Equal(GearDeckGeometry.DefaultHeight * 1.5f, deck.Height);
+        Assert.True(deck.Height >= GearDeckGeometry.MinHeightAt(1.5f), "the height grew to the minimum at the scale");
         Assert.Equal(1.5f, deck.Geometry.Scale);
         deck.SetQuery(GearQuery.Empty.With(GearChip.NameContains("item")));
         deck.Refresh();
@@ -127,7 +127,7 @@ public sealed class UiGearDeckDrawTests
         var baked = new List<float>();
         double now = 0;
         UiGearDeck deck = Deck(World(), fonts: new DeckFonts((px, _) => { baked.Add(px); return null!; }),
-            scale: () => 1.5f, clock: () => now);
+            scale: 1.5f, clock: () => now);
         DeckRect cell = deck.Geometry.GridCell(0, 0)!.Value;
         float x = cell.X + cell.W / 2f, y = cell.Y + cell.H / 2f;
         deck.HitTestLocal(x, y);
@@ -145,11 +145,13 @@ public sealed class UiGearDeckDrawTests
     public void AScaledDeck_MountsAtItsWidth_AsTheRuntimeMountsIt()
     {
         var root = new UiRoot { Width = 2560, Height = 1330 };
-        UiGearDeck deck = Deck(World(), scale: () => 1.5f);
+        UiGearDeck deck = Deck(World(), scale: 1.5f);
         RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0),
             UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Scale));
-        Assert.Equal(450f, deck.MinWidth);
-        Assert.Equal(450f, deck.MaxWidth);
+        Assert.Equal(450f, deck.Width);
+        Assert.Equal(1.5f, deck.Scale);
+        Assert.Equal(GearDeckGeometry.WidthAt(DeckGeometry.MinScale), deck.MinWidth);
+        Assert.Equal(GearDeckGeometry.WidthAt(DeckGeometry.MaxScale), deck.MaxWidth);
         Assert.True(deck.MinHeight >= GearDeckGeometry.MinHeightAt(1.5f), "the mount's minimum is at the scale too");
         Assert.Equal(root.Width - 450f - 10f, deck.Left);
     }
@@ -157,14 +159,13 @@ public sealed class UiGearDeckDrawTests
     [Fact]
     public void MountedAt1x_ThenScaledUp_KeepsItsRightEdge_SoTheEdgeMarginStays()
     {
-        float scale = 1f;
         var root = new UiRoot { Width = 1600, Height = 1200 };
-        UiGearDeck deck = Deck(World(), scale: () => scale);
+        UiGearDeck deck = Deck(World());
         RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0),
             UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Scale));
         Assert.Equal(root.Width - 300f - 10f, deck.Left);
 
-        scale = 1.5f;   // the Command Deck's saved size arrives after the first mount
+        deck.SetScale(1.5f);
         deck.Refresh();
         Assert.Equal(450f, deck.Width);
         Assert.Equal(root.Width - 450f - 10f, deck.Left);
@@ -174,7 +175,7 @@ public sealed class UiGearDeckDrawTests
     public void WithoutFonts_ChipPillsStillScale()
     {
         UiGearDeck one = Deck(World());
-        UiGearDeck big = Deck(World(), scale: () => 1.5f);
+        UiGearDeck big = Deck(World(), scale: 1.5f);
         GearQuery q = GearQuery.Empty.With(GearChip.WornOnly);
         one.SetQuery(q);
         big.SetQuery(q);
@@ -186,21 +187,18 @@ public sealed class UiGearDeckDrawTests
     [Fact]
     public void TheDeck_FollowsAChangingScale_SnappedAndClamped()
     {
-        float scale = 1f;
         var root = new UiRoot { Width = 1600, Height = 1200 };
-        UiGearDeck deck = Deck(World(), scale: () => scale);
+        UiGearDeck deck = Deck(World());
         root.AddChild(deck);
         deck.Left = 1300;
         deck.Refresh();
         Assert.Equal(300f, deck.Width);
         float minAtOne = deck.MinHeight;
 
-        scale = 1.52f;   // snaps to 1.5
+        deck.SetScale(1.52f);   // snaps to 1.5
         deck.Refresh();
         Assert.Equal(1.5f, deck.Scale);
         Assert.Equal(450f, deck.Width);
-        Assert.Equal(450f, deck.MinWidth);
-        Assert.Equal(450f, deck.MaxWidth);
         Assert.Equal(450f, deck.Geometry.Frame.W);
         Assert.Equal(1.5f, deck.Geometry.Scale);
         Assert.True(deck.MinHeight > minAtOne);
@@ -210,10 +208,10 @@ public sealed class UiGearDeckDrawTests
         deck.ConstrainResize(ResizeEdges.Bottom, ref w, ref h);
         Assert.Equal(450f, w);
 
-        scale = 9f;   // past the decks' range
+        deck.SetScale(9f);   // past the decks' range
         deck.Refresh();
         Assert.Equal(DeckGeometry.MaxScale, deck.Scale);
-        scale = 1f;
+        deck.SetScale(1f);
         deck.Refresh();
         Assert.Equal(300f, deck.Width);
         Assert.Equal(1f, deck.Geometry.Scale);
@@ -399,24 +397,24 @@ public sealed class UiGearDeckDrawTests
         Assert.Equal(expected, UiGearDeck.StackText(stack));
 
     [Fact]
-    public void MountOptions_AreHeightOnlyAndHidden()
+    public void MountOptions_ResizeFromEveryEdge_InTheScaleRange_AndAreHidden()
     {
         var o = UiGearDeck.MountOptions(10f, 120f);
-        Assert.Equal(GearDeckGeometry.Width, o.MinWidth);
-        Assert.Equal(GearDeckGeometry.Width, o.MaxWidth);
+        Assert.Equal(GearDeckGeometry.WidthAt(DeckGeometry.MinScale), o.MinWidth);
+        Assert.Equal(GearDeckGeometry.WidthAt(DeckGeometry.MaxScale), o.MaxWidth);
         Assert.Equal(WindowNames.GearDeck, o.WindowName);
         Assert.Equal(RetailWindowChrome.Imported, o.Chrome);
         Assert.True(o.Resizable);
-        Assert.False(o.ResizeX);
+        Assert.True(o.ResizeX);
         Assert.True(o.ResizeY);
-        Assert.Equal(ResizeEdges.Top | ResizeEdges.Bottom, o.ResizableEdges);
+        Assert.Equal(ResizeEdges.Left | ResizeEdges.Right | ResizeEdges.Top | ResizeEdges.Bottom, o.ResizableEdges);
         Assert.Equal(GearDeckGeometry.MinHeight, o.MinHeight);
         Assert.True(o.ConstrainResizeToParent);
         Assert.False(o.Visible);
     }
 
     [Fact]
-    public void ConstrainResize_KeepsTheWidthAndTheMinimumHeight()
+    public void ConstrainResize_AHeightEdgeKeepsTheWidthAndTheMinimumHeight()
     {
         UiGearDeck deck = Deck(World());
         float w = 420f, h = 100f;

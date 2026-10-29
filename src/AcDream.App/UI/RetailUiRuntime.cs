@@ -3983,9 +3983,7 @@ public sealed class RetailUiRuntime : IDisposable
                     Keyboard: Host.Keyboard,
                     // The salvage window mounts after the deck, so the controller is read when asked.
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
-                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
-                    // The decks read as one set: the Gear Deck draws at the Command Deck's scale.
-                    Scale: () => _commandDeck?.Geometry.Scale ?? 1f),
+                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage)),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

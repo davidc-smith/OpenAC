@@ -72,6 +72,20 @@ internal sealed class GearDeckGeometry
     /// <summary>A new window's height at <paramref name="scale"/>.</summary>
     public static float DefaultHeightAt(float scale) => DefaultHeight * scale;
 
+    /// <summary>
+    /// The scale a window <paramref name="width"/> wide is at: the decks' step
+    /// nearest width / 300, lowered a step when that would be wider than the
+    /// width (as <see cref="DeckGeometry.FromSize"/> reads a height), within the
+    /// decks' range. A saved or hand-edited width loads at a step.
+    /// </summary>
+    public static float ScaleForWidth(float width)
+    {
+        if (!float.IsFinite(width)) return 1f;
+        float scale = DeckGeometry.SnapScale(width / Width);
+        if (WidthAt(scale) > width + 0.5f) scale = DeckGeometry.StepDown(width / Width);
+        return scale;
+    }
+
     private float S(float points) => points * Scale;
 
     public int VisibleGridRows => Math.Max(0, (int)MathF.Floor((Contents.H + S(ItemGap)) / (S(ItemCell) + S(ItemGap))));

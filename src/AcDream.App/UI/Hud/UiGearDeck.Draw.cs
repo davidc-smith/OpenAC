@@ -39,6 +39,9 @@ internal sealed partial class UiGearDeck
         DeckRect f = g.Frame;
         float inset = P(FrameInset);
         DeckChrome.DrawFrame(ctx, new DeckRect(f.X + inset, f.Y + inset, f.W - 2f * inset, f.H - 2f * inset), _scale);
+        // The side grips scale the deck, so they light as the Command Deck's do; the height edges draw nothing.
+        DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None,
+            new DeckRect(f.X + inset, f.Y + inset, f.W - 2f * inset, f.H - 2f * inset), _scale);
         DrawText(ctx, Bold, "Gear", P(GearDeckGeometry.Pad + 2f), g.Title, LabelInk);
         DrawClose(ctx);
         if (_model.Packs.Count == 0) return;   // no player yet: the frame and title only
