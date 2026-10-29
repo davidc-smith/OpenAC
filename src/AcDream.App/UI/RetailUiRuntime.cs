@@ -553,6 +553,7 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.ChatDeckSession? _chatDeckSession;
     private Hud.UiTargetDeck? _targetDeck;
     private Hud.UiGearDeck? _gearDeck;
+    private PaperdollClickMap? _paperdollClickMap;
     private Hud.GearDeckSession? _gearDeckSession;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
@@ -834,6 +835,7 @@ public sealed class RetailUiRuntime : IDisposable
     public RetailFpsController? FpsController { get; private set; }
     public SelectedObjectController? SelectedObjectController { get; private set; }
     public UiViewport? PaperdollViewportWidget { get; private set; }
+    internal Hud.UiGearDeck? GearDeck => _gearDeck;
 
     /// <summary>Set by the composition once the doll viewport exists; the panel
     /// already holds it, so the flash starts working the moment it is filled in.</summary>
@@ -3997,7 +3999,8 @@ public sealed class RetailUiRuntime : IDisposable
                     // The salvage window mounts after the deck, so the controller is read when asked.
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
                         () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
-                    Text: HudTextSize),
+                    Text: HudTextSize,
+                    ClickMap: _paperdollClickMap),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
@@ -5517,6 +5520,7 @@ public sealed class RetailUiRuntime : IDisposable
             paperdollEmptySprites = PaperdollSlotBackgrounds.ResolveEmptySprites(_bindings.Assets.Dats);
             paperdollClickMap = PaperdollClickMap.Load(_bindings.Assets.Dats);
         }
+        _paperdollClickMap = paperdollClickMap;
 
         InventoryRuntimeBindings b = _bindings.Inventory;
         Action<uint, uint>? notifyMergeAttempt = b.RetargetMergedShortcut;
