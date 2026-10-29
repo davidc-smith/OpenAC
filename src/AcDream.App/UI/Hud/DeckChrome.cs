@@ -88,26 +88,30 @@ internal static class DeckChrome
         return dim ? ink with { W = 0.4f } : ink;
     }
 
-    /// <summary>A faint bronze stroke on the right edge, or an L at the right
-    /// corner, while that grip is hovered or being dragged.</summary>
+    /// <summary>A faint bronze stroke on the right (or left) edge, or an L at
+    /// that side's top or bottom corner, while that grip is hovered or being
+    /// dragged. Only a side grip draws: a top or bottom edge alone draws nothing.</summary>
     internal static void DrawResizeGrip(UiRenderContext ctx, ResizeEdges edges, DeckRect frame, float scale)
     {
-        if ((edges & ResizeEdges.Right) == 0) return;
+        bool rightSide = (edges & ResizeEdges.Right) != 0;
+        if (!rightSide && (edges & ResizeEdges.Left) == 0) return;
         DeckRect f = frame;
-        float w = Line(2, scale), right = f.X + f.W - w, arm = 24f * scale;
+        float w = Line(2, scale), arm = 24f * scale;
+        float edge = rightSide ? f.X + f.W - w : f.X;          // the stroke along the side
+        float armX = rightSide ? edge - arm + w : edge;        // the stroke along the top or bottom
         if ((edges & ResizeEdges.Top) != 0)
         {
-            ctx.DrawFill(right, f.Y, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y, arm, w, GripInk);
+            ctx.DrawFill(edge, f.Y, w, arm, GripInk);
+            ctx.DrawFill(armX, f.Y, arm, w, GripInk);
         }
         else if ((edges & ResizeEdges.Bottom) != 0)
         {
-            ctx.DrawFill(right, f.Y + f.H - arm, w, arm, GripInk);
-            ctx.DrawFill(right - arm + w, f.Y + f.H - w, arm, w, GripInk);
+            ctx.DrawFill(edge, f.Y + f.H - arm, w, arm, GripInk);
+            ctx.DrawFill(armX, f.Y + f.H - w, arm, w, GripInk);
         }
         else
         {
-            ctx.DrawFill(right, f.Y + 10f * scale, w, f.H - 20f * scale, GripInk);
+            ctx.DrawFill(edge, f.Y + 10f * scale, w, f.H - 20f * scale, GripInk);
         }
     }
 }

@@ -73,6 +73,22 @@ public sealed class UiMarkupContextMenuTests
     }
 
     [Fact]
+    public void AtAScale_RowsInsetsAndWidthsScale_AndHitTestingFollows()
+    {
+        var m = Mount(CopyPaste);
+        m.Menu.Scale = 1.5f;
+        int picked = -1;
+        m.Menu.Selected = i => picked = i;
+        RightClick(m.Root, 100, 100);
+        Assert.Equal((100f, 100f, 120f, 73.5f), m.Menu.PopupScreenRect);   // (3 + 18 + 7 + 18 + 3) x 1.5; 80 x 1.5
+        Click(m.Root, 110, 100 + 25);   // Copy is 4.5 .. 31.5 at 1.5x (25 is the separator at 1x)
+        Assert.Equal(0, picked);
+        RightClick(m.Root, 100, 100);
+        Click(m.Root, 110, 100 + 60);   // Paste is 42 .. 69 at 1.5x (60 is below a 1x popup)
+        Assert.Equal(2, picked);
+    }
+
+    [Fact]
     public void NearTheRightAndBottomEdges_Flips()
     {
         var m = Mount(CopyPaste);

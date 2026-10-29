@@ -90,4 +90,30 @@ public sealed class HudTooltipTests
         cache.Get(Long with { State = "OFF" }, HudTooltipStyle.Compact, null, Counting, 14f);
         Assert.True(calls > afterStyle);
     }
+
+    [Fact]
+    public void AtAScale_PaddingWrapAndGapScale()
+    {
+        var (w, h, _) = HudTooltip.Measure(Long, HudTooltipStyle.Compact, SixPerChar, 21f, scale: 1.5f);
+        Assert.Equal(21f + 2 * 5f * 1.5f, h, 3);
+        Assert.Equal(SixPerChar("Auto-target") + 6f * 1.5f + SixPerChar("ON") + 2 * 9f * 1.5f, w, 3);
+
+        var (_, _, lines) = HudTooltip.Measure(Long, HudTooltipStyle.Card, SixPerChar, 21f, scale: 1.5f);
+        Assert.True(lines.Any(l => SixPerChar(l) > HudTooltip.WrapWidth), "the wrap width scales too");
+        foreach (string line in lines)
+            Assert.True(SixPerChar(line) <= HudTooltip.WrapWidth * 1.5f, line);
+
+        var anchor = new DeckRect(100f, 50f, 20f, 10f);
+        var (_, y, _) = HudTooltip.Place(anchor, 60f, 30f, screenLeft: 500f, screenTop: 600f, screenWidth: 1920f, scale: 1.5f);
+        Assert.Equal(50f - 8f * 1.5f - 30f, y, 3);
+    }
+
+    [Fact]
+    public void LayoutCacheMeasuresAgainWhenTheScaleChanges()
+    {
+        var cache = new HudTooltipLayoutCache();
+        var one = cache.Get(Long, HudTooltipStyle.Compact, null, SixPerChar, 14f);
+        var big = cache.Get(Long, HudTooltipStyle.Compact, null, SixPerChar, 14f, scale: 2f);
+        Assert.Equal(one.W + 2 * 9f + 6f, big.W, 3);   // the pads and the state gap doubled; the text did not
+    }
 }

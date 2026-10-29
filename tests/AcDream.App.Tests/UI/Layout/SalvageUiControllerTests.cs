@@ -102,6 +102,29 @@ public sealed class SalvageUiControllerTests
         Assert.True(h.Visible);
     }
 
+    [Fact]
+    public void Revision_moves_on_every_change_even_a_remove_and_add_that_restore_the_count()
+    {
+        using var h = new Harness();
+        h.Item(1);
+        h.Item(2);
+        Assert.True(h.Controller.AddItem(1));
+        int before = h.Controller.Revision;
+        h.Controller.RemoveItem(1);
+        Assert.True(h.Controller.AddItem(2));
+        Assert.Equal(1, h.Controller.ItemCount);   // same tool, same count: a hash of the two would not move
+        Assert.NotEqual(before, h.Controller.Revision);
+    }
+
+    [Fact]
+    public void AllowsMultipleMaterials_reads_the_option_live()
+    {
+        using var h = new Harness();
+        Assert.True(h.Controller.AllowsMultipleMaterials);
+        h.Multiple = false;
+        Assert.False(h.Controller.AllowsMultipleMaterials);
+    }
+
     [Theory]
     [InlineData(0, 0)]
     [InlineData(3, 0)]

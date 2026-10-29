@@ -1169,34 +1169,8 @@ public static class GameEventWiring
             CultureInfo.InvariantCulture,
             "{0} {1} (ws {2:F2})",
             result.Units,
-            SalvageMaterialName(result.MaterialType),
+            MaterialNames.Name(result.MaterialType),
             result.Workmanship);
-
-    private static string SalvageMaterialName(uint materialType) => materialType switch
-    {
-        1u => "Ceramic", 2u => "Porcelain", 3u => "Cloth", 4u => "Linen",
-        5u => "Satin", 6u => "Silk", 7u => "Velvet", 8u => "Wool",
-        9u => "Gem", 10u => "Agate", 11u => "Amber", 12u => "Amethyst",
-        13u => "Aquamarine", 14u => "Azurite", 15u => "Black Garnet",
-        16u => "Black Opal", 17u => "Bloodstone", 18u => "Carnelian",
-        19u => "Citrine", 20u => "Diamond", 21u => "Emerald", 22u => "Fire Opal",
-        23u => "Green Garnet", 24u => "Green Jade", 25u => "Hematite",
-        26u => "Imperial Topaz", 27u => "Jet", 28u => "Lapis Lazuli",
-        29u => "Lavender Jade", 30u => "Malachite", 31u => "Moonstone",
-        32u => "Onyx", 33u => "Opal", 34u => "Peridot", 35u => "Red Garnet",
-        36u => "Red Jade", 37u => "Rose Quartz", 38u => "Ruby", 39u => "Sapphire",
-        40u => "Smokey Quartz", 41u => "Sunstone", 42u => "Tiger Eye",
-        43u => "Tourmaline", 44u => "Turquoise", 45u => "White Jade",
-        46u => "White Quartz", 47u => "White Sapphire", 48u => "Yellow Garnet",
-        49u => "Yellow Topaz", 50u => "Zircon", 51u => "Ivory", 52u => "Leather",
-        53u => "Armoredillo Hide", 54u => "Gromnie Hide", 55u => "Reed Shark Hide",
-        56u => "Metal", 57u => "Brass", 58u => "Bronze", 59u => "Copper",
-        60u => "Gold", 61u => "Iron", 62u => "Pyreal", 63u => "Silver",
-        64u => "Steel", 65u => "Stone", 66u => "Alabaster", 67u => "Granite",
-        68u => "Marble", 69u => "Obsidian", 70u => "Sandstone", 71u => "Serpentine",
-        72u => "Wood", 73u => "Ebony", 74u => "Mahogany", 75u => "Oak",
-        76u => "Pine", 77u => "Teak", _ => "Unknown",
-    };
 
     // The salvage message names the skill from the client's built-in list,
     // the same one an appraisal's weapon line uses, and prints nothing where

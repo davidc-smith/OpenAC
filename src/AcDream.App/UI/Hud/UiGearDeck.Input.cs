@@ -26,7 +26,7 @@ internal sealed partial class UiGearDeck
     /// <summary>The payload of a drag over the deck (DragEnter to leave or drop); null otherwise.</summary>
     private object? _dropPayload;
     private readonly HudTooltipLayoutCache _tooltipLayout = new();
-    private (GearDeckHit Hit, ulong Revision, uint Pack, HudTooltipContent? Content)? _tooltipCache;
+    private (GearDeckHit Hit, ulong Revision, uint Pack, int QueryVersion, HudTooltipContent? Content)? _tooltipCache;
 
     /// <summary>Every drop and take-off goes through the one dispatcher, over the current table.</summary>
     private GearDropDispatcher Dispatcher
@@ -68,6 +68,14 @@ internal sealed partial class UiGearDeck
             case UiEventType.MouseDown:
                 _tooltipSuppressed = true;
                 _press = _g.HitAt(e.Data1, e.Data2);
+                _starCloses = _namingClosedByStar && _press.Zone == GearZone.SaveStud;   // UiGearDeck.Query.cs
+                _namingClosedByStar = false;
+                // Empty contents space is no control, so no Click follows it: clear on the press.
+                if (_press.Zone == GearZone.Frame && _g.Contents.Contains(e.Data1, e.Data2)) ClearSelection();
+                // The root took the focus from the field for this press; a press on a suggestion
+                // or the field gives it back, so the rows stay up until the click acts.
+                if (_press.Zone is GearZone.Suggestion or GearZone.QueryField)
+                    FindRoot()?.SetKeyboardFocus(QueryInput);
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.Click:
                 return ReleasedOnPress(e, out GearDeckHit clicked) ? Click(clicked) : IsControl(clicked.Zone);
@@ -77,6 +85,8 @@ internal sealed partial class UiGearDeck
                 SetHover(_g.HitAt(e.Data1, e.Data2));
                 return Hover.Zone != GearZone.None;
             case UiEventType.HoverLeave:
+                // The root stops hit-testing the deck once the pointer is elsewhere, so the last hit is stale.
+                _hit = NoHit;
                 SetHover(NoHit);
                 return true;
             case UiEventType.Scroll:
@@ -101,6 +111,125 @@ internal sealed partial class UiGearDeck
             default:
                 return false;
         }
+    }
+
+    // ---- selection ----
+
+    private readonly HashSet<uint> _selection = [];
+    /// <summary>The <see cref="Shown"/> index a range click spans from, or -1.</summary>
+    private int _anchor = -1;
+    /// <summary>The anchor row's id; <see cref="_anchor"/> is re-found from it when <see cref="Shown"/> is rebuilt,
+    /// so a pack or query change that drops the row drops the anchor.</summary>
+    private uint _anchorId;
+    private int _selectionVersion;
+
+    /// <summary>The selected item ids; always a subset of <see cref="Shown"/>.</summary>
+    internal IReadOnlyCollection<uint> Selection
+    {
+        get
+        {
+            _ = Shown;   // a stale list prunes here, so the ids read are always shown ones
+            return _selection;
+        }
+    }
+
+    /// <summary>Bumped on every selection change, for the caches that follow it.</summary>
+    internal int SelectionVersion => _selectionVersion;
+
+    private (bool Toggle, bool Range) ReadModifiers()
+    {
+        if (_b.Modifiers is { } modifiers) return modifiers();
+        return FindRoot() is { } root ? (root.CopyModifierHeld, root.ShiftHeld) : (false, false);
+    }
+
+    private void ClearSelection()
+    {
+        _anchor = -1;
+        _anchorId = 0u;
+        if (_selection.Count == 0) return;
+        _selection.Clear();
+        _selectionVersion++;
+    }
+
+    private void SelectOnly(int index)
+    {
+        _selection.Clear();
+        _selection.Add(Shown[index].Id);
+        SetAnchor(index);
+        _selectionVersion++;
+    }
+
+    private void SetAnchor(int index)
+    {
+        _anchor = index;
+        _anchorId = index >= 0 ? Shown[index].Id : 0u;
+    }
+
+    /// <summary>Drops the ids a rebuilt <see cref="Shown"/> no longer holds.</summary>
+    private void PruneSelection(IReadOnlyList<GearItemView> rows)
+    {
+        _anchor = -1;
+        if (_anchorId != 0u)
+            for (int i = 0; i < rows.Count; i++)
+                if (rows[i].Id == _anchorId) { _anchor = i; break; }
+        if (_anchor < 0) _anchorId = 0u;
+        if (_selection.Count == 0) return;
+        int before = _selection.Count;
+        var live = new HashSet<uint>(rows.Count);
+        foreach (GearItemView row in rows) live.Add(row.Id);
+        _selection.IntersectWith(live);
+        if (_selection.Count != before) _selectionVersion++;
+    }
+
+    /// <summary>A click on an item: plain selects only it, toggle adds or removes it, range selects
+    /// everything between the anchor and it.</summary>
+    private void ClickItem(int index)
+    {
+        (bool toggle, bool range) = ReadModifiers();
+        IReadOnlyList<GearItemView> rows = Shown;
+        if (range && _anchor >= 0 && _anchor < rows.Count)
+        {
+            _selection.Clear();
+            for (int i = Math.Min(_anchor, index); i <= Math.Max(_anchor, index); i++) _selection.Add(rows[i].Id);
+            _selectionVersion++;
+        }
+        else if (toggle)
+        {
+            uint id = rows[index].Id;
+            if (!_selection.Remove(id)) _selection.Add(id);
+            SetAnchor(index);
+            _selectionVersion++;
+        }
+        else SelectOnly(index);
+    }
+
+    private void SelectAll()
+    {
+        _selection.Clear();
+        foreach (GearItemView row in Shown) _selection.Add(row.Id);
+        SetAnchor(Shown.Count > 0 ? 0 : -1);
+        _selectionVersion++;
+    }
+
+    /// <summary>The menu's Show in pack: leaves the search (keeping the sort, which orders the pack view too),
+    /// opens the row's pack, scrolls to the row where that order shows it and selects it.</summary>
+    private void ShowInPack(GearItemView row)
+    {
+        SetQuery(GearQuery.Empty with { Sort = _query.Sort });
+        QueryInput.SetText("");
+        foreach (GearPack pack in _model.Packs)
+            if (pack.Id == row.PackId) { SelectPack(pack); break; }
+        IReadOnlyList<GearItemView> rows = Shown;
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (rows[i].Id != row.Id) continue;
+            bool list = _b.Session.Settings.View == GearPackView.List;
+            int line = list ? i : i / GearDeckGeometry.Columns;
+            if (line < _scrollRow || line >= _scrollRow + Math.Max(1, VisibleRows)) ScrollTo(line);
+            SelectOnly(i);
+            return;
+        }
+        ClearSelection();
     }
 
     // ---- clicks ----
@@ -135,9 +264,44 @@ internal sealed partial class UiGearDeck
                 SetView(GearPackView.List);
                 return true;
             case GearZone.SidePack when hit.Index < _model.Packs.Count:
-                SelectPack(_model.Packs[hit.Index]);
+                if (ShowsResults) TogglePackChip(_model.Packs[hit.Index]);
+                else SelectPack(_model.Packs[hit.Index]);
+                return true;
+            case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
+                ClickItem(hit.Index);
+                return true;
+            case GearZone.FooterButton:
+                AddTargetsToSalvage();
                 return true;
             case GearZone.FigureStud:   // Figure is plan 3
+                return true;
+            case GearZone.Chip when hit.Index < _query.Chips.Count:
+                SetQuery(_query.Without(hit.Index));
+                return true;
+            case GearZone.ChipMore when _g.ChipMore is { } more:
+                OpenMenuAt(more);   // UiGearDeck.Menu.cs
+                return true;
+            case GearZone.SortStud:
+                OpenMenuAt(_g.SortStud);
+                return true;
+            case GearZone.DirStud:
+                if (!DirStudDim) SetQuery(_query with { Sort = _query.Sort with { Descending = !_query.Sort.Descending } });
+                return true;
+            case GearZone.SaveStud:
+                if (!_starCloses) StartSave();   // UiGearDeck.Query.cs; a press that closed the name field only closes it
+                _starCloses = false;
+                return true;
+            case GearZone.SavedFilter:
+                ClickSaved(hit.Index);
+                return true;
+            case GearZone.SavedMore when _g.SavedMore is { } savedMore:
+                OpenMenuAt(savedMore);
+                return true;
+            case GearZone.Suggestion:
+                TakeSuggestion(hit.Index);
+                return true;
+            case GearZone.QueryField:   // the field child normally takes the click itself
+                FindRoot()?.SetKeyboardFocus(QueryInput);
                 return true;
             default:
                 return IsControl(hit.Zone);
@@ -164,12 +328,43 @@ internal sealed partial class UiGearDeck
         if (!pack.IsMain) _b.Actions.OpenPack(pack.Id);
     }
 
+    /// <summary>While results are shown a pack cell narrows the search: it adds a Pack chip
+    /// for that pack, or removes the one it has. Several are OR'd; none means every pack.</summary>
+    private void TogglePackChip(GearPack pack)
+    {
+        int i = -1;
+        for (int c = 0; c < _query.Chips.Count; c++)
+            if (_query.Chips[c] is { Field: GearField.Pack } chip && chip.Id == pack.Id) { i = c; break; }
+        SetQuery(i >= 0 ? _query.Without(i) : _query.With(GearChip.InPack(pack.Id)));
+    }
+
+    /// <summary>Whether the query has a Pack chip for <paramref name="packId"/> (the side column outlines it).</summary>
+    private bool HasPackChip(uint packId)
+    {
+        IReadOnlyList<GearChip> chips = _query.Chips;
+        for (int i = 0; i < chips.Count; i++)
+            if (chips[i].Field == GearField.Pack && chips[i].Id == packId) return true;
+        return false;
+    }
+
     private bool DoubleClick(GearDeckHit hit)
     {
         switch (hit.Zone)
         {
-            case GearZone.Item when hit.Index < Items.Count:
-                _b.Actions.Activate(Items[hit.Index].ObjectId);
+            case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
+                GearItemView row = Shown[hit.Index];
+                // A toggle double-click's two clicks added the row and took it out again; the row used stays selected.
+                if (_selection.Add(row.Id))
+                {
+                    SetAnchor(hit.Index);
+                    _selectionVersion++;
+                }
+                if (row.Worn) Dispatcher.TakeOff(row.Id);   // a worn result comes off, as its slot does
+                else _b.Actions.Activate(row.Id);
+                return true;
+            case GearZone.SidePack when ShowsResults && hit.Index < _model.Packs.Count:
+                // Each click toggled the pack's chip, so the two cancelled out: a double-click toggles it once.
+                TogglePackChip(_model.Packs[hit.Index]);
                 return true;
             case GearZone.EquipSlot or GearZone.WornCell:
                 if (WornAt(hit) is uint worn) Dispatcher.TakeOff(worn);
@@ -193,11 +388,15 @@ internal sealed partial class UiGearDeck
     // ---- drag source ----
 
     /// <summary>The item a press on <paramref name="hit"/> would lift, and where it leaves from.
-    /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.</summary>
+    /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.
+    /// A worn result row lifts as equipment, as its slot does.</summary>
     private (uint Id, ItemDragSource Kind)? DragItem(GearDeckHit hit)
     {
-        if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Items.Count)
-            return (Items[hit.Index].ObjectId, ItemDragSource.Inventory);
+        if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Shown.Count)
+        {
+            GearItemView row = Shown[hit.Index];
+            return (row.Id, row.Worn ? ItemDragSource.Equipment : ItemDragSource.Inventory);
+        }
         if (hit.Zone == GearZone.SidePack && hit.Index >= 1 && hit.Index < _model.Packs.Count
             && !_model.Packs[hit.Index].IsMain)
             return (_model.Packs[hit.Index].Id, ItemDragSource.Inventory);
@@ -223,7 +422,8 @@ internal sealed partial class UiGearDeck
         payload is ItemDragPayload { SourceKind: not ItemDragSource.ShortcutBar, ObjId: not 0u } p ? p : null;
 
     /// <summary>What a drop at a point lands on: a pack, an item, an equipment slot or worn
-    /// cell, or (as <see cref="GearZone.Frame"/>) the empty contents area; null anywhere else.</summary>
+    /// cell, or (as <see cref="GearZone.Frame"/>) the empty contents area; null anywhere else.
+    /// Results come from many packs, so their empty space is not a target.</summary>
     private GearDeckHit? DropTargetAt(float x, float y)
     {
         if (_model.Packs.Count == 0) return null;
@@ -231,13 +431,16 @@ internal sealed partial class UiGearDeck
         return hit.Zone switch
         {
             GearZone.SidePack when hit.Index < _model.Packs.Count => hit,
-            GearZone.Item when hit.Index < Items.Count => hit,
+            GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => hit,
             GearZone.EquipSlot when hit.Index < GearSlotCatalog.Slots.Count => hit,
             GearZone.WornCell when hit.Index < _model.Worn.Count => hit,
-            GearZone.Frame when _g.Contents.Contains(x, y) => hit,
+            GearZone.Frame when !ShowsResults && _g.Contents.Contains(x, y) => hit,
             _ => null,
         };
     }
+
+    /// <summary>Where a worn item is worn, for a drop on its result row.</summary>
+    private EquipMask WornMask(uint id) => _b.Objects().Get(id)?.CurrentlyEquippedLocation ?? EquipMask.None;
 
     /// <summary>The slot mask a drop on an equipment slot or worn cell asks for.</summary>
     private EquipMask SlotMaskAt(GearDeckHit hit) => hit.Zone == GearZone.EquipSlot
@@ -257,9 +460,27 @@ internal sealed partial class UiGearDeck
                 Dispatcher.DropOnPack(p.ObjId, _model.Packs[hit.Index].Id, fromGround);
                 break;
             case GearZone.Item:
-                action = nameof(GearDropDispatcher.DropOnCell);
-                Dispatcher.DropOnCell(p.ObjId, SelectedPackId, Items[hit.Index].ObjectId, hit.Index, fromGround);
+            {
+                // Every row names its own pack and slot (a sorted pack view's index is not the
+                // slot), or is a side pack or a worn item.
+                GearItemView row = Shown[hit.Index];
+                if (row.Worn)
+                {
+                    action = nameof(GearDropDispatcher.DropOnSlot);
+                    Dispatcher.DropOnSlot(p.ObjId, WornMask(row.Id));
+                }
+                else if (row.IsPack)
+                {
+                    action = nameof(GearDropDispatcher.DropOnPack);
+                    Dispatcher.DropOnPack(p.ObjId, row.Id, fromGround);
+                }
+                else
+                {
+                    action = nameof(GearDropDispatcher.DropOnCell);
+                    Dispatcher.DropOnCell(p.ObjId, row.PackId, row.Id, row.Slot, fromGround);
+                }
                 break;
+            }
             case GearZone.Frame:   // empty grid space: after the last item, as retail's list does
                 action = nameof(GearDropDispatcher.DropOnCell);
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, 0u, -1, fromGround);
@@ -341,9 +562,10 @@ internal sealed partial class UiGearDeck
     private HudTooltipContent? CachedTooltip(GearDeckHit hit)
     {
         uint pack = SelectedPackId;
-        if (_tooltipCache is { } c && c.Hit == hit && c.Revision == _lastRevision && c.Pack == pack) return c.Content;
+        if (_tooltipCache is { } c && c.Hit == hit && c.Revision == _lastRevision && c.Pack == pack
+            && c.QueryVersion == _queryVersion) return c.Content;
         HudTooltipContent? content = TooltipFor(hit) is { } text ? new HudTooltipContent(text, null, null, null) : null;
-        _tooltipCache = (hit, _lastRevision, pack, content);
+        _tooltipCache = (hit, _lastRevision, pack, _queryVersion, content);
         return content;
     }
 
@@ -353,14 +575,16 @@ internal sealed partial class UiGearDeck
         if (hit.Index < 0) return null;
         switch (hit.Zone)
         {
-            case GearZone.Item when hit.Index < Items.Count:
-                return Caption(Items[hit.Index].ObjectId);
+            case GearZone.Item when hit.Index < Shown.Count:
+                return Caption(Shown[hit.Index].Id);
             case GearZone.EquipSlot when hit.Index < GearSlotCatalog.Slots.Count:
                 return WornAt(hit) is uint worn ? Caption(worn) : GearSlotCatalog.Slots[hit.Index].Label;
             case GearZone.WornCell when WornAt(hit) is uint cell:
                 return Caption(cell);
             case GearZone.SidePack when hit.Index < _model.Packs.Count && !_model.Packs[hit.Index].IsMain:
                 return Caption(_model.Packs[hit.Index].Id);
+            case GearZone.Chip:
+                return "Click to remove";
             default:
                 return null;
         }
@@ -370,12 +594,13 @@ internal sealed partial class UiGearDeck
 
     protected override void OnDrawOverlay(UiRenderContext ctx)
     {
+        DrawSuggestions(ctx);   // UiGearDeck.Draw.cs: above the grid, below the tooltip
         if (VisibleTooltip is not { } tip || RectFor(Hover) is not { } anchor) return;
         ctx.PushAlphaAbsolute(1f);
         try
         {
             HudTooltip.Draw(ctx, tip, HudTooltipStyle.Compact, anchor,
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts, _scale);
         }
         finally { ctx.PopAlpha(); }
     }

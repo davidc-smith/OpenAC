@@ -100,7 +100,7 @@ public sealed record DeckGeometry
     }
 
     /// <summary>The largest scale step at or under <paramref name="raw"/>, never under the minimum.</summary>
-    private static float StepDown(float raw) =>
+    internal static float StepDown(float raw) =>
         Math.Max(MinScale, MathF.Floor(raw / ScaleStep + 1e-4f) * ScaleStep);
 
     /// <summary>A side-edge resize: the same scale, the width decides the stretch.</summary>
