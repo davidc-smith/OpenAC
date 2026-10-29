@@ -58,7 +58,8 @@ internal sealed partial class UiGearDeck
 
         DrawSideColumn(ctx, objects);
         DrawText(ctx, Small, FooterLeftText, g.Footer.X, g.Footer, LabelInk);
-        if (!ShowsResults)
+        if (g.Input.SalvageButton) DrawSalvageButton(ctx);
+        else if (!ShowsResults)
         {
             string footer = FooterText;
             DrawText(ctx, Small, footer, g.Footer.X + g.Footer.W - Small.Measure(ctx, footer), g.Footer, LabelInk);
@@ -66,6 +67,14 @@ internal sealed partial class UiGearDeck
 
         if (DropHighlight is { } drop && RectFor(drop.Hit) is { } target)
             StrokeAround(ctx, target, drop.Accept ? DropAccept : DropReject);
+    }
+
+    /// <summary>The footer's lit "Add N to salvage" stud.</summary>
+    private void DrawSalvageButton(UiRenderContext ctx)
+    {
+        DeckRect r = _g.FooterButton;
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, 1f, on: true);
+        DrawCentred(ctx, Small, Fit(ctx, Small, SalvageText(SalvageCount), r.W - 8f), r, ink);
     }
 
     // ---- text and cells ----

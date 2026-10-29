@@ -3980,7 +3980,10 @@ public sealed class RetailUiRuntime : IDisposable
                     Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
                     // One line per drag and drop, beside the mount line, for live checks.
                     Log: Console.WriteLine,
-                    Keyboard: Host.Keyboard),
+                    Keyboard: Host.Keyboard,
+                    // The salvage window mounts after the deck, so the controller is read when asked.
+                    Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
+                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage)),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

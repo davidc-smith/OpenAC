@@ -265,6 +265,9 @@ internal sealed partial class UiGearDeck
             case GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count:
                 ClickItem(hit.Index);
                 return true;
+            case GearZone.FooterButton:
+                AddTargetsToSalvage();
+                return true;
             case GearZone.FigureStud:   // Figure is plan 3
                 return true;
             case GearZone.Chip when hit.Index < _query.Chips.Count:

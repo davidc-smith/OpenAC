@@ -22,6 +22,11 @@ internal sealed partial class UiGearDeck
     private bool _menuCanShow;
     /// <summary>For <see cref="MenuKind.Item"/>: the selected ids in <see cref="Shown"/> order when the menu opened.</summary>
     private uint[] _menuSelection = [];
+    /// <summary>For <see cref="MenuKind.Item"/>: the rows Add to salvage would take (from <see cref="_menuSelection"/>) and
+    /// the labels listed, as of the open. The salvage entry is first and keyed by its label like the others.</summary>
+    private List<GearItemView> _menuSalvage = [];
+    private string? _menuSalvageLabel;
+    private string[] _menuItems = [];
 
     /// <summary>The sort menu's fields, in the order it lists them.</summary>
     private static readonly GearSortField[] SortFields =
@@ -57,6 +62,9 @@ internal sealed partial class UiGearDeck
         _menuLabels = [];
         _menuSaved = [];
         _menuSelection = [];
+        _menuSalvage = [];
+        _menuSalvageLabel = null;
+        _menuItems = ItemMenuItems;
         if (_menuKind == MenuKind.SavedFilter)
             _menuSaved = [_b.Session.Settings.SavedFilters[hit.Index]];
         else if (_menuKind == MenuKind.SavedMore)
@@ -72,6 +80,7 @@ internal sealed partial class UiGearDeck
                 if (_selection.Contains(row.Id)) picked.Add(row.Id);
             _menuSelection = picked.ToArray();
             _menuCanShow = ShowsResults && _selection.Count == 1 && !clicked.Worn && !clicked.IsPack;
+            BuildItemMenu();
         }
         if (_menuKind != MenuKind.HiddenChips) return;
         int first = _g.Chips.Count;
@@ -79,6 +88,20 @@ internal sealed partial class UiGearDeck
         int count = Math.Max(0, Math.Min(_query.Chips.Count, labels.Count) - first);
         _menuChips = _query.Chips.Skip(first).Take(count).ToArray();
         _menuLabels = labels.Skip(first).Take(count).ToArray();
+    }
+
+    /// <summary>While salvage is open the item menu starts with "Add N to salvage" and a separator; N is
+    /// recomputed over the menu's own selection snapshot.</summary>
+    private void BuildItemMenu()
+    {
+        _menuItems = ItemMenuItems;
+        if (_b.Salvage is not { IsOpen: true } salvage) return;
+        var rows = new List<GearItemView>(_menuSelection.Length);
+        foreach (GearItemView row in Shown)
+            if (Array.IndexOf(_menuSelection, row.Id) >= 0) rows.Add(row);
+        _menuSalvage = GearSalvageHandOff.Candidates(rows, salvage);
+        _menuSalvageLabel = SalvageText(_menuSalvage.Count);
+        _menuItems = [_menuSalvageLabel, UiMarkupContextMenu.Separator, .. ItemMenuItems];
     }
 
     private IReadOnlyList<string> MenuItems()
@@ -97,7 +120,7 @@ internal sealed partial class UiGearDeck
             case MenuKind.SavedMore:
                 return _menuSaved.Select(f => f.Name).ToArray();
             case MenuKind.Item:
-                return ItemMenuItems;
+                return _menuItems;
             default:
                 return [];
         }
@@ -114,10 +137,11 @@ internal sealed partial class UiGearDeck
         if (_menuKind == MenuKind.Item)
         {
             for (int i = 0; i < count; i++)
-                flags[i] = ItemMenuItems[i] switch
+                flags[i] = _menuItems[i] switch
                 {
                     ShowInPackLabel => _menuCanShow,
                     ClearSelectionLabel => _menuSelection.Length > 0,
+                    string label when label == _menuSalvageLabel => _menuSalvage.Count > 0,
                     _ => true,
                 };
         }
@@ -143,9 +167,13 @@ internal sealed partial class UiGearDeck
             case MenuKind.SavedMore when index >= 0 && index < _menuSaved.Length:
                 ApplySaved(_menuSaved[index]);
                 break;
-            case MenuKind.Item when index >= 0 && index < ItemMenuItems.Length:
-                switch (ItemMenuItems[index])
+            case MenuKind.Item when index >= 0 && index < _menuItems.Length:
+                switch (_menuItems[index])
                 {
+                    case string label when label == _menuSalvageLabel:
+                        if (_menuSalvage.Count > 0 && _b.Salvage is { IsOpen: true } salvage)
+                            GearSalvageHandOff.AddAll(_menuSalvage, salvage);
+                        break;
                     case ShowInPackLabel when _menuCanShow && _menuRow is not null: ShowInPack(_menuRow); break;
                     case SelectAllLabel: SelectAll(); break;
                     case ClearSelectionLabel: ClearSelection(); break;

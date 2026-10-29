@@ -19,7 +19,8 @@ internal sealed record GearDeckBindings(
     Action Close,
     Action<string>? Log = null,
     Silk.NET.Input.IKeyboard? Keyboard = null,
-    Func<(bool Toggle, bool Range)>? Modifiers = null);
+    Func<(bool Toggle, bool Range)>? Modifiers = null,
+    IGearSalvage? Salvage = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
@@ -253,7 +254,8 @@ internal sealed partial class UiGearDeck : UiElement
         _model.SidePackSlots,
         _scrollRow,
         SavedCount: _b.Session.Settings.SavedFilters.Count,
-        Suggestions: VisibleSuggestions);
+        Suggestions: VisibleSuggestions,
+        SalvageButton: _b.Salvage?.IsOpen == true && SalvageCount > 0);
 
     private void SyncGeometry()
     {
@@ -377,6 +379,54 @@ internal sealed partial class UiGearDeck : UiElement
         if (stack <= 1) return "";
         if (!_stackTexts.TryGetValue(stack, out string? text)) _stackTexts[stack] = text = StackText(stack);
         return text;
+    }
+
+    // ---- salvage hand-off ----
+
+    private int _salvageCount;
+    private (ulong Build, int QueryVersion, int Selection, int Revision)? _salvageFor;
+    private readonly Dictionary<int, string> _salvageTexts = [];
+
+    /// <summary>The rows an Add to salvage acts on: the selection in <see cref="Shown"/> order, else all of Shown.</summary>
+    private IReadOnlyList<GearItemView> SalvageTargets()
+    {
+        IReadOnlyList<GearItemView> shown = Shown;   // prunes the selection
+        if (_selection.Count == 0) return shown;
+        var picked = new List<GearItemView>(_selection.Count);
+        foreach (GearItemView row in shown)
+            if (_selection.Contains(row.Id)) picked.Add(row);
+        return picked;
+    }
+
+    /// <summary>How many of the targets the salvage panel would take; cached per model, query, selection and panel state.</summary>
+    internal int SalvageCount
+    {
+        get
+        {
+            if (_b.Salvage is not { } salvage) return 0;
+            _ = Shown;
+            (ulong, int, int, int) key = (_modelBuild, _queryVersion, _selectionVersion, salvage.Revision);
+            if (_salvageFor != key)
+            {
+                _salvageCount = salvage.IsOpen ? GearSalvageHandOff.Candidates(SalvageTargets(), salvage).Count : 0;
+                _salvageFor = key;
+            }
+            return _salvageCount;
+        }
+    }
+
+    /// <summary>"Add N to salvage", built once per N.</summary>
+    private string SalvageText(int n)
+    {
+        if (!_salvageTexts.TryGetValue(n, out string? text))
+            _salvageTexts[n] = text = $"Add {n.ToString(CultureInfo.InvariantCulture)} to salvage";
+        return text;
+    }
+
+    private void AddTargetsToSalvage()
+    {
+        if (_b.Salvage is not { IsOpen: true } salvage) return;
+        GearSalvageHandOff.AddAll(GearSalvageHandOff.Candidates(SalvageTargets(), salvage), salvage);
     }
 
     /// <summary>The window is on screen: nothing to restore, the scroll is kept.</summary>
