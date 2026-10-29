@@ -91,6 +91,14 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
     public int ItemCount => _items.Count;
     public uint ToolId => _toolId;
 
+    /// <summary>Moves on every change to the tool or the staged items, so a reader's cached view knows to
+    /// recompute (a remove and an add in one tick leave <see cref="ItemCount"/> as it was; this still moves).</summary>
+    public int Revision { get; private set; }
+
+    /// <summary>The player's multiple-materials option, read live. Off, the first item staged fixes the
+    /// material and <see cref="CanAdd"/> refuses every other one.</summary>
+    public bool AllowsMultipleMaterials => _bindings.AllowMultipleMaterials();
+
     public void HandlePolicyAction(ItemPolicyAction action)
     {
         if (action.Kind == ItemPolicyActionKind.OpenSalvage)
@@ -211,6 +219,7 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
 
     private void Refresh()
     {
+        Revision++;
         using (_list.DeferLayout())
         {
             _list.Flush();

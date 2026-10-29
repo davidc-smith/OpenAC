@@ -23,6 +23,7 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
 
     public GearDeckSettings Settings { get; private set; } = GearDeckSettings.Default;
     public event Action? Changed;
+    public event Action? Ended;
 
     public void Tick()
     {
@@ -65,6 +66,7 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
         _key = null;
         Settings = GearDeckSettings.Default;
         Changed?.Invoke();
+        Ended?.Invoke();
     }
 
     private void Flush()

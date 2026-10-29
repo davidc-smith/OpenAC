@@ -306,4 +306,42 @@ public class UiFieldTests
         Assert.Equal(new[] { "escape", "lost" }, order);
         Assert.Null(root.KeyboardFocus);
     }
+
+    [Fact]
+    public void BackspaceOnAnEmptyField_RunsTheHookOnce_AndOtherwiseDeletes()
+    {
+        int fired = 0;
+        var input = new UiField { OnBackspaceWhenEmpty = () => fired++ };
+        var backspace = new UiEvent(0, input, UiEventType.KeyDown, Data0: (int)Silk.NET.Input.Key.Backspace);
+
+        Assert.True(input.OnEvent(backspace));
+        Assert.Equal(1, fired);
+
+        input.SetText("ab");
+        Assert.True(input.OnEvent(backspace));
+        Assert.Equal(1, fired);
+        Assert.Equal("a", input.Text);
+    }
+
+    [Fact]
+    public void AHeldBackspace_RepeatsOnlyAsADelete_NeverAsTheEmptyFieldHook()
+    {
+        int fired = 0;
+        var input = new UiField { Width = 100, Height = 20, OnBackspaceWhenEmpty = () => fired++ };
+        var root = new UiRoot { Width = 400, Height = 300 };
+        root.AddChild(input);
+        root.SetKeyboardFocus(input);
+        input.SetText("ab");
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Backspace);   // deletes "b" and starts the repeat
+        Assert.Equal("a", input.Text);
+        for (int i = 0; i < 40; i++) root.Tick(0.05, 0);      // two seconds held: repeats run the field dry
+        Assert.Equal("", input.Text);
+        Assert.Equal(0, fired);
+
+        root.OnKeyUp((int)Silk.NET.Input.Key.Backspace);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Backspace);   // a fresh press on the empty field: the hook, once
+        for (int i = 0; i < 40; i++) root.Tick(0.05, 0);
+        Assert.Equal(1, fired);
+    }
 }

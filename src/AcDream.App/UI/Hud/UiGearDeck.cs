@@ -17,11 +17,17 @@ internal sealed record GearDeckBindings(
     IGearItemActions Actions,
     Func<uint, bool> IsPending,
     Action Close,
-    Action<string>? Log = null);
+    Action<string>? Log = null,
+    Silk.NET.Input.IKeyboard? Keyboard = null,
+    Func<(bool Toggle, bool Range)>? Modifiers = null,
+    IGearSalvage? Salvage = null);
 
 /// <summary>
-/// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
-/// column that resizes in height only. Each tick it rebuilds its
+/// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
+/// points × its own scale wide. Dragging the left or right edge scales the
+/// whole deck in the decks' steps (the width is always 300 × the scale, so the
+/// scale is read back from the width, and a saved layout restores it); the
+/// top and bottom edges change the height only. Each tick it rebuilds its
 /// <see cref="GearInventoryModel"/> when the object table, the player or the
 /// strength changed, and its <see cref="GearDeckGeometry"/> when the height or
 /// the layout input changed. Drawing is in UiGearDeck.Draw.cs, input in
@@ -38,12 +44,25 @@ internal sealed partial class UiGearDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private GearInventoryModel _model = GearInventoryModel.Empty;
     private GearDeckGeometry _g;
+    /// <summary>The deck scale everything is laid out and drawn at: the width's (<see cref="GearDeckGeometry.ScaleForWidth"/>).</summary>
+    private float _scale;
     private int _scrollRow;
     private ulong _lastRevision;
     private ClientObjectTable? _lastTable;
     private uint _lastPlayer;
     private int? _lastStrength;
     private bool _built;
+    /// <summary>Counts model rebuilds, so <see cref="Shown"/> knows when its rows are stale.</summary>
+    private ulong _modelBuild;
+
+    /// <summary>The model as flat rows: what a query searches and what <see cref="Shown"/> indexes.</summary>
+    private GearProjection _projection = GearProjection.Empty;
+    private GearQuery _query = GearQuery.Empty;
+    /// <summary>Bumped by each query change; the caches that follow the query key on it.</summary>
+    private int _queryVersion;
+    internal int QueryVersion => _queryVersion;
+    private IReadOnlyList<GearItemView> _shown = [];
+    private (ulong Build, int QueryVersion, uint Pack)? _shownFor;
 
     // Built with the model (Refresh's gated rebuild) so a frame does no table scans or string work.
     /// <summary>Each <see cref="GearSlotCatalog.Slots"/> entry's occupant id, or 0.</summary>
@@ -53,6 +72,15 @@ internal sealed partial class UiGearDeck : UiElement
     private string[] _badges = [];
     private string _footer = "";
     private uint _footerFor;
+    private string _matchText = "";
+    private (ulong Build, int QueryVersion)? _matchFor;
+    private string _footerLeft = "";
+    private (ulong Build, int QueryVersion, int Selection, bool Results)? _footerLeftFor;
+    /// <summary>The results list's value columns for <see cref="_columnsFor"/>'s query version.</summary>
+    private (GearSortField? A, GearSortField? B) _columns;
+    private int _columnsFor = -1;
+    /// <summary>Results-list column texts fitted to their slot, by item and field; cleared with <see cref="_fittedNames"/>.</summary>
+    private readonly Dictionary<(uint Id, GearSortField Field), string> _columnTexts = [];
     /// <summary>Stack corner texts by stack size; cleared with the model.</summary>
     private readonly Dictionary<int, string> _stackTexts = [];
     /// <summary>List names fitted to their row, by item id; cleared with the model and the geometry.</summary>
@@ -70,35 +98,63 @@ internal sealed partial class UiGearDeck : UiElement
         _actions = new LoggedGearItemActions(_b.Actions);
         _dispatcherTable = _b.Objects();
         _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _actions);
-        Width = GearDeckGeometry.Width;
-        Height = GearDeckGeometry.DefaultHeight;
-        MinHeight = GearDeckGeometry.MinHeight;
+        _scale = 1f;
+        Width = GearDeckGeometry.WidthAt(_scale);
+        MinWidth = MinWindowWidth;
+        MaxWidth = MaxWindowWidth;
+        Height = GearDeckGeometry.DefaultHeightAt(_scale);
+        MinHeight = GearDeckGeometry.MinHeightAt(_scale);
         Resizable = true;
-        ResizeX = false;
+        ResizeX = true;
         ResizeY = true;
-        _g = GearDeckGeometry.Create(Height, LayoutInput());
+        ResizableEdges = AllEdges;
+        _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale);
+        CreateQueryInput();   // UiGearDeck.Query.cs
+        CreateMenu();         // UiGearDeck.Menu.cs
+        _b.Session.Ended += OnSessionEnded;
     }
 
-    /// <summary>How the runtime mounts the deck: imported chrome, 300 wide, resized from the top or bottom, hidden.</summary>
-    internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
+    /// <summary>The live query is not kept between sessions.</summary>
+    private void OnSessionEnded()
+    {
+        FinishSave(null, "session ended");
+        SetQuery(GearQuery.Empty);
+        QueryInput.SetText("");
+    }
+
+    /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
+    internal void Detach() => _b.Session.Ended -= OnSessionEnded;
+
+    // The window's full width range, one width per scale step; ConstrainResize
+    // and SyncScale keep the width on a step.
+    private const float MinWindowWidth = GearDeckGeometry.Width * DeckGeometry.MinScale;
+    private const float MaxWindowWidth = GearDeckGeometry.Width * DeckGeometry.MaxScale;
+    private const ResizeEdges AllEdges = ResizeEdges.Left | ResizeEdges.Right | ResizeEdges.Top | ResizeEdges.Bottom;
+
+    /// <summary>How the runtime mounts the deck: imported chrome, any width in the decks' scale range, the
+    /// minimum height at <paramref name="scale"/> (its <see cref="Scale"/>), resized from every edge, hidden.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top, float scale = 1f) => new()
     {
         WindowName = WindowNames.GearDeck,
         Chrome = RetailWindowChrome.Imported,
         Left = left,
         Top = top,
         Resizable = true,
-        ResizeX = false,
+        ResizeX = true,
         ResizeY = true,
-        ResizableEdges = ResizeEdges.Top | ResizeEdges.Bottom,
+        ResizableEdges = AllEdges,
         ConstrainResizeToParent = true,
-        MinWidth = GearDeckGeometry.Width,
-        MaxWidth = GearDeckGeometry.Width,
-        MinHeight = GearDeckGeometry.MinHeight,
+        MinWidth = MinWindowWidth,
+        MaxWidth = MaxWindowWidth,
+        MinHeight = GearDeckGeometry.MinHeightAt(scale),
         Visible = false,
         ContentClickThrough = false,
     };
 
     internal GearDeckGeometry Geometry => _g;
+
+    /// <summary>The deck scale the deck is laid out and drawn at.</summary>
+    internal float Scale => _scale;
     internal GearInventoryModel Model => _model;
     internal GearDeckBindings Bindings => _b;
 
@@ -126,10 +182,58 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>The loose items of the selected pack, in slot order.</summary>
     internal IReadOnlyList<ClientObject> Items => _model.Contents(SelectedPackId);
 
-    /// <summary>The rows the selected view holds for <see cref="Items"/>.</summary>
+    /// <summary>The live query; an empty one shows the selected pack.</summary>
+    internal GearQuery Query => _query;
+
+    /// <summary>A non-empty query shows its matches from every pack instead of the selected pack. A sort alone
+    /// is no query: it orders the selected pack's view.</summary>
+    internal bool ShowsResults => !_query.IsEmpty;
+
+    /// <summary>The sort applies to the pack view and to results alike, so its stud is never dim.</summary>
+    internal bool SortStudDim => false;
+
+    /// <summary>Pack order has no direction: the ↑/↓ stud is dim and inert under it.</summary>
+    internal bool DirStudDim => _query.Sort.Field == GearSortField.Pack;
+
+    /// <summary>Sets the live query and shows its first row; the same query changes nothing.</summary>
+    internal void SetQuery(GearQuery q)
+    {
+        ArgumentNullException.ThrowIfNull(q);
+        if (q.Equals(_query)) return;
+        _query = q;
+        _queryVersion++;
+        ClearFitted();   // the results list fits its names around the query's columns
+        ScrollTo(0);
+    }
+
+    /// <summary>
+    /// The rows the contents area shows and every item hit indexes: the query's
+    /// matches across all packs while <see cref="ShowsResults"/>, else the selected
+    /// pack's rows in the query's sort (slot order under Pack order). Each row keeps
+    /// its own <see cref="GearItemView.Slot"/>, which a drop on it uses. Rebuilt only
+    /// when the model, query or pack changed.
+    /// </summary>
+    internal IReadOnlyList<GearItemView> Shown
+    {
+        get
+        {
+            uint pack = SelectedPackId;
+            if (_shownFor != (_modelBuild, _queryVersion, pack))
+            {
+                _shown = ShowsResults
+                    ? GearQueryEngine.Run(_projection.All, _query)
+                    : GearQueryEngine.Sort(_projection.ForPack(pack), _query.Sort);
+                _shownFor = (_modelBuild, _queryVersion, pack);
+                PruneSelection(_shown);
+            }
+            return _shown;
+        }
+    }
+
+    /// <summary>The rows the selected view holds for <see cref="Shown"/>.</summary>
     private int ContentRows => _b.Session.Settings.View == GearPackView.List
-        ? Items.Count
-        : (Items.Count + GearDeckGeometry.Columns - 1) / GearDeckGeometry.Columns;
+        ? Shown.Count
+        : (Shown.Count + GearDeckGeometry.Columns - 1) / GearDeckGeometry.Columns;
 
     private int VisibleRows => _b.Session.Settings.View == GearPackView.List ? _g.VisibleListRows : _g.VisibleGridRows;
 
@@ -160,6 +264,8 @@ internal sealed partial class UiGearDeck : UiElement
             || player != _lastPlayer || strength != _lastStrength)
         {
             _model = GearInventoryModel.Build(table, player, strength);
+            _projection = GearProjection.Build(_model, table, _b.DisplayName);
+            _modelBuild++;
             RebuildCaches(table, player);
             _lastTable = table;
             _lastRevision = table.MutationRevision;
@@ -181,20 +287,81 @@ internal sealed partial class UiGearDeck : UiElement
         _b.Session.Settings.Folded,
         _b.Session.Settings.View == GearPackView.List,
         _model.Worn.Count,
-        Items.Count,
+        Shown.Count,
         _model.SidePackSlots,
-        _scrollRow);
+        _scrollRow,
+        SavedCount: _b.Session.Settings.SavedFilters.Count,
+        Suggestions: VisibleSuggestions,
+        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0);
 
     private void SyncGeometry()
     {
+        SyncScale();
         GearDeckLayoutInput input = LayoutInput();
         FitMinHeight(input);
-        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H)
+        GearPills pills = Pills();
+        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeightAt(_scale)) != _g.Frame.H
+            || _pillsVersion != _geometryPills || _g.Scale != _scale)
         {
-            _g = GearDeckGeometry.Create(Height, input);
-            _fittedNames.Clear();
+            _g = GearDeckGeometry.Create(Height, input, pills, _scale);
+            _geometryPills = _pillsVersion;
+            ClearFitted();
             Array.Clear(_slotLabels);
+            Array.Clear(_fittedChips);
         }
+        PlaceQueryInput();
+    }
+
+    /// <summary>
+    /// Sets the deck to <paramref name="scale"/> (snapped to the decks' steps and
+    /// range) as a side-edge drag would, keeping the right edge when the new
+    /// width would cross the parent's right side.
+    /// </summary>
+    internal void SetScale(float scale)
+    {
+        float width = GearDeckGeometry.WidthAt(DeckGeometry.SnapScale(scale));
+        if (width == Width) return;
+        float right = Left + Width;
+        Width = width;
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = MathF.Max(0f, MathF.Min(right, parent.Width) - Width);
+        ResetAnchorCapture();
+        SyncGeometry();
+        FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
+    }
+
+    /// <summary>
+    /// Follows the width's scale: a change re-bakes the fields' fonts and drops
+    /// the text fitted at the old size, and every check puts the width on the
+    /// scale's step (a saved or hand-edited layout may restore another), kept
+    /// inside the parent. A width that would cross the parent's right side
+    /// keeps the old right edge instead. The height is left to
+    /// <see cref="FitMinHeight"/>, which grows it to the new minimum.
+    /// </summary>
+    private void SyncScale()
+    {
+        float scale = GearDeckGeometry.ScaleForWidth(Width);
+        if (scale != _scale)
+        {
+            _scale = scale;
+            SetFieldFonts();
+            SetMenuScale();   // UiGearDeck.Menu.cs
+            _pillsFor = null;   // pills are measured with the face at the scale
+            _sortText = null;
+            _fittedFooter = null;
+            _fittedSalvage = null;
+            Array.Clear(_suggestTexts);
+            Array.Clear(_slotLabels);
+            ClearFitted();
+        }
+        float width = GearDeckGeometry.WidthAt(_scale);
+        if (Width == width) return;
+        float right = Left + Width;
+        Width = width;
+        if (Parent is { } parent && Left + Width > parent.Width)
+            Left = MathF.Max(0f, MathF.Min(right, parent.Width) - Width);
+        ResetAnchorCapture();
+        FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
     }
 
     /// <summary>
@@ -204,7 +371,7 @@ internal sealed partial class UiGearDeck : UiElement
     /// </summary>
     private void FitMinHeight(GearDeckLayoutInput input)
     {
-        float min = GearDeckGeometry.MinHeightFor(input);
+        float min = GearDeckGeometry.MinHeightFor(input, _scale);
         MinHeight = min;
         if (Height >= min) return;
         UiElement? parent = Parent;
@@ -231,7 +398,69 @@ internal sealed partial class UiGearDeck : UiElement
         _footer = "";
         _footerFor = 0;
         _stackTexts.Clear();
+        ClearFitted();
+    }
+
+    /// <summary>Forgets the list names and column texts fitted to their rows.</summary>
+    private void ClearFitted()
+    {
         _fittedNames.Clear();
+        _columnTexts.Clear();
+    }
+
+    /// <summary>A results row's pack badge: "M", "2"…"8", or "W" for a worn item.</summary>
+    private string PackBadge(GearItemView row) =>
+        row.Worn ? "W" : row.PackIndex >= 0 && row.PackIndex < _badges.Length ? _badges[row.PackIndex] : "";
+
+    /// <summary>"3 of 102 match": the results against every pack item.</summary>
+    internal string MatchText
+    {
+        get
+        {
+            if (_matchFor != (_modelBuild, _queryVersion))
+            {
+                _matchText = $"{Shown.Count.ToString(CultureInfo.InvariantCulture)} of {_projection.PackItemCount.ToString(CultureInfo.InvariantCulture)} match";
+                _matchFor = (_modelBuild, _queryVersion);
+            }
+            return _matchText;
+        }
+    }
+
+    /// <summary>The footer's left text: the match text and " · k selected" in results, "k selected" alone
+    /// in the pack view, and empty when nothing is selected there. Cached per model, query and selection.</summary>
+    internal string FooterLeftText
+    {
+        get
+        {
+            _ = Shown;   // prune the selection first, so the count is of shown items
+            if (_footerLeftFor != (_modelBuild, _queryVersion, _selectionVersion, ShowsResults))
+            {
+                string picked = _selection.Count > 0
+                    ? _selection.Count.ToString(CultureInfo.InvariantCulture) + " selected" : "";
+                _footerLeft = !ShowsResults ? picked : picked.Length == 0 ? MatchText : MatchText + " · " + picked;
+                _footerLeftFor = (_modelBuild, _queryVersion, _selectionVersion, ShowsResults);
+            }
+            return _footerLeft;
+        }
+    }
+
+    /// <summary>The results list's value columns: the sort field when it is not Name or Pack, then
+    /// the first range chip's field when that differs from the sort.</summary>
+    private (GearSortField? A, GearSortField? B) ResultColumns
+    {
+        get
+        {
+            if (_columnsFor == _queryVersion) return _columns;
+            GearSortField? sort = _query.Sort.Field is GearSortField.Name or GearSortField.Pack ? null : _query.Sort.Field;
+            GearSortField? range = null;
+            IReadOnlyList<GearChip> chips = _query.Chips;
+            for (int i = 0; i < chips.Count; i++)
+                if (chips[i].IsRange) { range = GearChipText.SortFieldOf(chips[i].Field); break; }
+            if (range == sort) range = null;
+            _columns = sort is null ? (range, null) : (sort, range);
+            _columnsFor = _queryVersion;
+            return _columns;
+        }
     }
 
     /// <summary>The occupant drawn in slot <paramref name="index"/> of <see cref="GearSlotCatalog.Slots"/>, or 0.</summary>
@@ -244,16 +473,95 @@ internal sealed partial class UiGearDeck : UiElement
         return text;
     }
 
+    // ---- salvage hand-off ----
+
+    private int _salvageCount;
+    private (ulong Build, int QueryVersion, int Selection, int Revision, bool Open, bool OneMaterial)? _salvageFor;
+    private readonly Dictionary<int, string> _salvageTexts = [];
+
+    /// <summary>The rows the footer's Add to salvage acts on: the selection in <see cref="Shown"/> order, else all
+    /// of Shown while results show; none in the plain pack view with nothing selected.</summary>
+    private IReadOnlyList<GearItemView> SalvageTargets()
+    {
+        IReadOnlyList<GearItemView> shown = Shown;   // prunes the selection
+        if (_selection.Count == 0) return ShowsResults ? shown : [];
+        var picked = new List<GearItemView>(_selection.Count);
+        foreach (GearItemView row in shown)
+            if (_selection.Contains(row.Id)) picked.Add(row);
+        return picked;
+    }
+
+    /// <summary>How many of the targets the salvage panel would take; cached per model, query, selection and panel
+    /// state (its contents, whether it is open and whether it takes one material only).</summary>
+    internal int SalvageCount
+    {
+        get
+        {
+            if (_b.Salvage is not { } salvage) return 0;
+            _ = Shown;
+            bool open = salvage.IsOpen;
+            (ulong, int, int, int, bool, bool) key =
+                (_modelBuild, _queryVersion, _selectionVersion, salvage.Revision, open, salvage.OneMaterial);
+            if (_salvageFor != key)
+            {
+                _salvageCount = open ? GearSalvageHandOff.Candidates(SalvageTargets(), salvage).Count : 0;
+                _salvageFor = key;
+            }
+            return _salvageCount;
+        }
+    }
+
+    /// <summary>The footer button's label for the current <see cref="SalvageCount"/>.</summary>
+    internal string SalvageButtonText => SalvageText(SalvageCount);
+
+    /// <summary>"Add N to salvage", built once per N.</summary>
+    private string SalvageText(int n)
+    {
+        if (!_salvageTexts.TryGetValue(n, out string? text))
+            _salvageTexts[n] = text = $"Add {n.ToString(CultureInfo.InvariantCulture)} to salvage";
+        return text;
+    }
+
+    private void AddTargetsToSalvage()
+    {
+        if (_b.Salvage is not { IsOpen: true } salvage) return;
+        GearSalvageHandOff.AddAll(GearSalvageHandOff.Candidates(SalvageTargets(), salvage), salvage);
+    }
+
     /// <summary>The window is on screen: nothing to restore, the scroll is kept.</summary>
     public void OnShown() => ClearHover();
 
     /// <summary>The window left the screen: forget the hover and any drop highlight, keep the scroll.</summary>
     public void OnHidden() => ClearHover();
 
+    /// <summary>
+    /// A side-edge drag scales the deck: the proposed width snaps live to the
+    /// nearest scale step (as the Command Deck's drags do), lowered a step at a
+    /// time while the deck at that scale would not fit the room the drag has
+    /// (the side being dragged towards and the height's minimum). The top and
+    /// bottom edges change only the height, never under the minimum at the
+    /// scale. A corner does both: its side sets the scale, its top or bottom
+    /// the height. The edges not dragged stay where they are.
+    /// </summary>
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
-        width = GearDeckGeometry.Width;
-        height = MathF.Max(height, MinHeight);
+        float scale = _scale;
+        if ((edges & (ResizeEdges.Left | ResizeEdges.Right)) != 0)
+        {
+            scale = DeckGeometry.SnapScale(width / GearDeckGeometry.Width);
+            if (ConstrainResizeToParent && Parent is { } parent)
+            {
+                float roomWidth = (edges & ResizeEdges.Left) != 0 ? Left + Width : parent.Width - Left;
+                float roomHeight = (edges & ResizeEdges.Top) != 0 ? Top + Height : parent.Height - Top;
+                GearDeckLayoutInput input = LayoutInput();
+                while (scale > DeckGeometry.MinScale + 1e-4f
+                       && (GearDeckGeometry.WidthAt(scale) > roomWidth + 0.01f
+                           || GearDeckGeometry.MinHeightFor(input, scale) > roomHeight + 0.01f))
+                    scale = DeckGeometry.SnapScale(scale - DeckGeometry.ScaleStep);
+            }
+        }
+        width = GearDeckGeometry.WidthAt(scale);
+        height = MathF.Max(height, scale == _scale ? MinHeight : GearDeckGeometry.MinHeightFor(LayoutInput(), scale));
     }
 
     /// <summary>"Main · 96 / 102" or "Pack 3 · 10 / 24": the selected pack, its item count and capacity.</summary>

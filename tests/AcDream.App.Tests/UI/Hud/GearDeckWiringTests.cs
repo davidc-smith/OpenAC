@@ -355,4 +355,14 @@ public sealed class GearDeckWiringTests
         Assert.Equal([WindowNames.Inventory], released);
         Assert.False(w.DeckVisible);
     }
+
+    [Fact]
+    public void RuntimeGearSalvage_WithNoController_IsNotOpenAndTakesNothing()
+    {
+        var salvage = new RuntimeGearSalvage(() => null, () => true, _ => { });
+        Assert.False(salvage.IsOpen);
+        Assert.False(salvage.CanAdd(1));
+        Assert.False(salvage.Add(1));
+        Assert.Equal(0, salvage.Revision);
+    }
 }

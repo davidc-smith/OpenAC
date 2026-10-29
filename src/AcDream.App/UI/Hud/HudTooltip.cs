@@ -5,7 +5,8 @@ namespace AcDream.App.UI.Hud;
 /// <summary>
 /// Measures, places and draws a Modern HUD tooltip in the deck's own look,
 /// not the retail tooltip art. Measuring and placing are pure so they can be
-/// tested without a renderer.
+/// tested without a renderer. Every size here is at deck scale 1; a deck drawn
+/// at another scale passes it, and the pads, gaps, wrap width and faces follow.
 /// </summary>
 internal static class HudTooltip
 {
@@ -36,25 +37,26 @@ internal static class HudTooltip
     private static readonly Vector4 DetailInk = Rgb(0xB9B3C6);
     private static readonly Vector4 HintInk = Rgb(0xC9BFA6);
 
-    /// <summary>The tooltip's size and, for a card, its description wrapped at <see cref="WrapWidth"/>.</summary>
+    /// <summary>The tooltip's size and, for a card, its description wrapped at <see cref="WrapWidth"/>
+    /// (sizes at <paramref name="scale"/>; <paramref name="measure"/> and <paramref name="lineHeight"/> are already at it).</summary>
     internal static (float W, float H, IReadOnlyList<string> DetailLines) Measure(
-        HudTooltipContent c, HudTooltipStyle s, Func<string, float> measure, float lineHeight)
+        HudTooltipContent c, HudTooltipStyle s, Func<string, float> measure, float lineHeight, float scale = 1f)
     {
         if (s == HudTooltipStyle.Compact)
         {
-            float line = measure(c.Title) + (c.State is null ? 0f : CompactStateGap + measure(c.State));
-            return (line + 2 * CompactPadX, lineHeight + 2 * CompactPadY, []);
+            float line = measure(c.Title) + (c.State is null ? 0f : CompactStateGap * scale + measure(c.State));
+            return (line + 2 * CompactPadX * scale, lineHeight + 2 * CompactPadY * scale, []);
         }
 
-        IReadOnlyList<string> lines = c.Detail is null ? [] : Wrap(c.Detail, measure, WrapWidth);
-        float width = measure(c.Title) + (c.State is null ? 0f : BadgeGap + measure(c.State) + 2 * BadgePadX);
+        IReadOnlyList<string> lines = c.Detail is null ? [] : Wrap(c.Detail, measure, WrapWidth * scale);
+        float width = measure(c.Title) + (c.State is null ? 0f : (BadgeGap + 2 * BadgePadX) * scale + measure(c.State));
         foreach (string l in lines) width = MathF.Max(width, measure(l));
         if (c.Hint is not null) width = MathF.Max(width, measure(c.Hint));
 
         float height = lineHeight;
-        if (lines.Count > 0) height += CardRowGap + lines.Count * lineHeight;
-        if (c.Hint is not null) height += CardRowGap + lineHeight;
-        return (width + 2 * CardPadX, height + 2 * CardPadY, lines);
+        if (lines.Count > 0) height += CardRowGap * scale + lines.Count * lineHeight;
+        if (c.Hint is not null) height += CardRowGap * scale + lineHeight;
+        return (width + 2 * CardPadX * scale, height + 2 * CardPadY * scale, lines);
     }
 
     /// <summary>Greedy word wrap; a word wider than the limit keeps a line to itself.</summary>
@@ -86,45 +88,49 @@ internal static class HudTooltip
     /// when the screen width is known.
     /// </summary>
     internal static (float X, float Y, bool Below) Place(
-        DeckRect anchor, float w, float h, float screenLeft, float screenTop, float? screenWidth)
+        DeckRect anchor, float w, float h, float screenLeft, float screenTop, float? screenWidth, float scale = 1f)
     {
+        float gap = Gap * scale, margin = ScreenMargin * scale;
         float x = anchor.X + anchor.W / 2f - w / 2f;
-        float y = anchor.Y - Gap - h;
+        float y = anchor.Y - gap - h;
         bool below = screenTop + y < 0f;
-        if (below) y = anchor.Y + anchor.H + Gap;
+        if (below) y = anchor.Y + anchor.H + gap;
 
         if (screenWidth is float sw)
         {
             float screenX = screenLeft + x;
-            screenX = MathF.Min(screenX, sw - ScreenMargin - w);
-            screenX = MathF.Max(screenX, ScreenMargin);
+            screenX = MathF.Min(screenX, sw - margin - w);
+            screenX = MathF.Max(screenX, margin);
             x = screenX - screenLeft;
         }
         return (x, y, below);
     }
 
-    /// <summary>Draws the tooltip pointing at <paramref name="anchor"/> (local coordinates).</summary>
+    /// <summary>Draws the tooltip pointing at <paramref name="anchor"/> (local coordinates), at deck scale
+    /// <paramref name="scale"/>: the faces are the deck's at that scale, and every size follows it.</summary>
     internal static void Draw(
         UiRenderContext ctx, HudTooltipContent c, HudTooltipStyle s, DeckRect anchor,
         Vector2 screenPosition, float? screenWidth, HudTooltipLayoutCache? cache = null,
-        DeckFonts? fonts = null)
+        DeckFonts? fonts = null, float scale = 1f)
     {
-        var bodyFace = new DeckFace(fonts?.Text);
+        DeckFontSet? set = fonts?.At(scale);
+        var bodyFace = new DeckFace(set?.Text);
         // The title is measured in the body face: the bold face is barely wider.
-        var titleFace = new DeckFace(fonts?.Bold);
+        var titleFace = new DeckFace(set?.Bold);
         Func<string, float> measure = text => bodyFace.Measure(ctx, text);
         float lh = bodyFace.LineHeight(ctx);
         var (w, h, lines) = cache is null
-            ? Measure(c, s, measure, lh)
-            : cache.Get(c, s, (object?)bodyFace.Font ?? ctx.DefaultFont, measure, lh);
-        var (x, y, below) = Place(anchor, w, h, screenPosition.X, screenPosition.Y, screenWidth);
+            ? Measure(c, s, measure, lh, scale)
+            : cache.Get(c, s, (object?)bodyFace.Font ?? ctx.DefaultFont, measure, lh, scale);
+        var (x, y, below) = Place(anchor, w, h, screenPosition.X, screenPosition.Y, screenWidth, scale);
         bool card = s == HudTooltipStyle.Card;
-        float radius = card ? CardRadius : CompactRadius;
+        float radius = (card ? CardRadius : CompactRadius) * scale;
+        float pointer = PointerSize * scale, line = MathF.Max(1f, MathF.Round(scale));
 
         // The pointer: a square turned on its corner, half under the body,
         // aimed at the anchor's centre but kept clear of the rounded corners.
-        float half = PointerSize / 2f;
-        float inset = radius + half + 2f;
+        float half = pointer / 2f;
+        float inset = radius + half + 2f * scale;
         float px = w > 2f * inset
             ? Math.Clamp(anchor.X + anchor.W / 2f, x + inset, x + w - inset)
             : x + w / 2f;
@@ -132,46 +138,48 @@ internal static class HudTooltip
         Vector4 edge = card ? CardEdge : PillEdge;
         Vector4 body = card ? (below ? CardTop : CardBottom) : PillFill;
 
-        Diamond(ctx, px, py, PointerSize + 2f, edge);
+        Diamond(ctx, px, py, pointer + 2f * line, edge);
         if (card)
         {
-            ctx.FillRoundedRect(x - 1f, y - 1f, w + 2f, h + 2f, radius + 1f, edge);
-            Diamond(ctx, px, py, PointerSize, body);
+            ctx.FillRoundedRect(x - line, y - line, w + 2f * line, h + 2f * line, radius + line, edge);
+            Diamond(ctx, px, py, pointer, body);
             ctx.FillVerticalGradient(x, y, w, h, new CanvasCornerRadii(radius, radius, radius, radius), CardTop, CardBottom);
-            ctx.StrokeRoundedRect(x + 2f, y + 2f, w - 4f, h - 4f, radius - 2f, Hairline, 1f);
-            DrawCardText(ctx, c, lines, x, y, w, lh, measure, bodyFace, titleFace);
+            float hair = 2f * scale;
+            ctx.StrokeRoundedRect(x + hair, y + hair, w - 2f * hair, h - 2f * hair, radius - hair, Hairline, line);
+            DrawCardText(ctx, c, lines, x, y, w, lh, measure, bodyFace, titleFace, scale);
         }
         else
         {
-            Diamond(ctx, px, py, PointerSize, body);
+            Diamond(ctx, px, py, pointer, body);
             ctx.FillRoundedRect(x, y, w, h, radius, PillFill);
-            ctx.StrokeRoundedRect(x + 0.5f, y + 0.5f, w - 1f, h - 1f, radius, edge, 1f);
-            float tx = x + CompactPadX, ty = y + CompactPadY;
+            ctx.StrokeRoundedRect(x + line / 2f, y + line / 2f, w - line, h - line, radius, edge, line);
+            float tx = x + CompactPadX * scale, ty = y + CompactPadY * scale;
             bodyFace.Draw(ctx, c.Title, tx, ty, TitleInk);
             if (c.State is not null)
-                bodyFace.Draw(ctx, c.State, tx + measure(c.Title) + CompactStateGap, ty, StateInk);
+                bodyFace.Draw(ctx, c.State, tx + measure(c.Title) + CompactStateGap * scale, ty, StateInk);
         }
     }
 
     private static void DrawCardText(
         UiRenderContext ctx, HudTooltipContent c, IReadOnlyList<string> lines,
-        float x, float y, float w, float lh, Func<string, float> measure, DeckFace body, DeckFace title)
+        float x, float y, float w, float lh, Func<string, float> measure, DeckFace body, DeckFace title, float scale)
     {
-        float tx = x + CardPadX, ty = y + CardPadY;
+        float tx = x + CardPadX * scale, ty = y + CardPadY * scale, rowGap = CardRowGap * scale;
         title.Draw(ctx, c.Title, tx, ty, TitleInk);
         // DefaultFont has no bold face: a second pass half a point over thickens the title.
-        if (title.Font is null) title.Draw(ctx, c.Title, tx + 0.5f, ty, TitleInk);
+        if (title.Font is null) title.Draw(ctx, c.Title, tx + 0.5f * scale, ty, TitleInk);
         if (c.State is not null)
         {
-            float bw = measure(c.State) + 2 * BadgePadX;
-            float bx = x + w - CardPadX - bw;
-            ctx.FillRoundedRect(bx, ty - 1f, bw, lh + 2f, (lh + 2f) / 2f, BadgeFill);
-            body.Draw(ctx, c.State, bx + BadgePadX, ty, StateInk);
+            float padX = BadgePadX * scale, rise = scale;
+            float bw = measure(c.State) + 2 * padX;
+            float bx = x + w - CardPadX * scale - bw;
+            ctx.FillRoundedRect(bx, ty - rise, bw, lh + 2f * rise, (lh + 2f * rise) / 2f, BadgeFill);
+            body.Draw(ctx, c.State, bx + padX, ty, StateInk);
         }
         ty += lh;
         if (lines.Count > 0)
         {
-            ty += CardRowGap;
+            ty += rowGap;
             foreach (string line in lines)
             {
                 body.Draw(ctx, line, tx, ty, DetailInk);
@@ -179,7 +187,7 @@ internal static class HudTooltip
             }
         }
         if (c.Hint is not null)
-            body.Draw(ctx, c.Hint, tx, ty + CardRowGap, HintInk);
+            body.Draw(ctx, c.Hint, tx, ty + rowGap, HintInk);
     }
 
     /// <summary>A <paramref name="size"/>-point square rotated 45° about (cx, cy).</summary>
@@ -201,20 +209,22 @@ internal sealed class HudTooltipLayoutCache
     private HudTooltipStyle _style;
     private object? _font;
     private float _lineHeight;
+    private float _scale;
     private (float W, float H, IReadOnlyList<string> DetailLines) _layout;
 
-    /// <summary>The layout for this content and style; measured again only when either (or the font) changes.</summary>
+    /// <summary>The layout for this content and style; measured again only when either (or the font or scale) changes.</summary>
     internal (float W, float H, IReadOnlyList<string> DetailLines) Get(
-        HudTooltipContent c, HudTooltipStyle s, object? font, Func<string, float> measure, float lineHeight)
+        HudTooltipContent c, HudTooltipStyle s, object? font, Func<string, float> measure, float lineHeight, float scale = 1f)
     {
         if (_content is null || !_content.Equals(c) || _style != s
-            || !ReferenceEquals(_font, font) || _lineHeight != lineHeight)
+            || !ReferenceEquals(_font, font) || _lineHeight != lineHeight || _scale != scale)
         {
-            _layout = HudTooltip.Measure(c, s, measure, lineHeight);
+            _layout = HudTooltip.Measure(c, s, measure, lineHeight, scale);
             _content = c;
             _style = s;
             _font = font;
             _lineHeight = lineHeight;
+            _scale = scale;
         }
         return _layout;
     }

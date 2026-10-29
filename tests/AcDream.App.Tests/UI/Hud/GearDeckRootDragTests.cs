@@ -150,6 +150,30 @@ public sealed class GearDeckRootDragTests
     }
 
     [Fact]
+    public void PressOnEmptyContentsSpace_ThroughTheRoot_ClearsTheSelectionAndDragsTheWindow()
+    {
+        var w = new World();
+        var (ix, iy) = w.Screen(w.Deck.Geometry.GridCell(0, 0)!.Value);
+        w.Root.OnMouseMove(ix, iy);
+        w.Root.OnMouseDown(UiMouseButton.Left, ix, iy);
+        w.Root.OnMouseUp(UiMouseButton.Left, ix, iy);
+        Assert.Equal(new[] { Sword }, w.Deck.Selection);
+
+        float left = w.Deck.ScreenPosition.X;
+        DeckRect empty = w.Deck.Geometry.GridCell(5, 0)!.Value;   // the main pack holds one item
+        Assert.Equal(GearZone.Frame, w.Deck.Geometry.HitAt(empty.X + empty.W / 2, empty.Y + empty.H / 2).Zone);
+        var (x, y) = w.Screen(empty);
+        w.Root.OnMouseMove(x + 30, y + 30);   // away, so the press is no double-click on the item
+        w.Root.OnMouseMove(x, y);
+        w.Root.OnMouseDown(UiMouseButton.Left, x, y);
+        w.Root.OnMouseMove(x + 40, y + 20);
+        w.Root.OnMouseUp(UiMouseButton.Left, x + 40, y + 20);
+        Assert.Empty(w.Deck.Selection);
+        Assert.Equal(left + 40, w.Deck.ScreenPosition.X);
+        Assert.Null(w.Root.DragSource);
+    }
+
+    [Fact]
     public void PressOnEmptyFrameSpace_UnlockedDragsTheWindow()
     {
         var w = new World();
