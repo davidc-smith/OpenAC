@@ -432,7 +432,7 @@ internal sealed partial class UiGearDeck : UiElement
     // ---- salvage hand-off ----
 
     private int _salvageCount;
-    private (ulong Build, int QueryVersion, int Selection, int Revision)? _salvageFor;
+    private (ulong Build, int QueryVersion, int Selection, int Revision, bool Open, bool OneMaterial)? _salvageFor;
     private readonly Dictionary<int, string> _salvageTexts = [];
 
     /// <summary>The rows the footer's Add to salvage acts on: the selection in <see cref="Shown"/> order, else all
@@ -447,22 +447,28 @@ internal sealed partial class UiGearDeck : UiElement
         return picked;
     }
 
-    /// <summary>How many of the targets the salvage panel would take; cached per model, query, selection and panel state.</summary>
+    /// <summary>How many of the targets the salvage panel would take; cached per model, query, selection and panel
+    /// state (its contents, whether it is open and whether it takes one material only).</summary>
     internal int SalvageCount
     {
         get
         {
             if (_b.Salvage is not { } salvage) return 0;
             _ = Shown;
-            (ulong, int, int, int) key = (_modelBuild, _queryVersion, _selectionVersion, salvage.Revision);
+            bool open = salvage.IsOpen;
+            (ulong, int, int, int, bool, bool) key =
+                (_modelBuild, _queryVersion, _selectionVersion, salvage.Revision, open, salvage.OneMaterial);
             if (_salvageFor != key)
             {
-                _salvageCount = salvage.IsOpen ? GearSalvageHandOff.Candidates(SalvageTargets(), salvage).Count : 0;
+                _salvageCount = open ? GearSalvageHandOff.Candidates(SalvageTargets(), salvage).Count : 0;
                 _salvageFor = key;
             }
             return _salvageCount;
         }
     }
+
+    /// <summary>The footer button's label for the current <see cref="SalvageCount"/>.</summary>
+    internal string SalvageButtonText => SalvageText(SalvageCount);
 
     /// <summary>"Add N to salvage", built once per N.</summary>
     private string SalvageText(int n)

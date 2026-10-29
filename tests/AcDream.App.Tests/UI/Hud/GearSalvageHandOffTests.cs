@@ -9,31 +9,40 @@ namespace AcDream.App.Tests.UI.Hud;
 public sealed class GearSalvageHandOffTests
 {
     private const uint Player = 0x50000001, First = 0xA00;
-    private const uint Steel = 64;
+    private const uint Steel = 64, Iron = 52;
 
+    /// <summary>The salvage panel as the deck sees it, with the retail panel's material lock: while
+    /// <see cref="OneMaterial"/> is set, the first item in fixes the material and others are refused.</summary>
     private sealed class FakeSalvage : IGearSalvage
     {
         public readonly HashSet<uint> Addable = [];
         public readonly HashSet<uint> RefuseOnAdd = [];
+        /// <summary>Each id's material; an id missing here is Steel.</summary>
+        public readonly Dictionary<uint, uint> Materials = [];
         public readonly List<uint> Added = [];
         public readonly List<string> Reports = [];
         public bool Open;
+        public bool OneMaterial { get; set; }
+        private uint _locked;
         private int _revision;
         public bool IsOpen => Open;
         public int Revision => _revision;
-        public bool CanAdd(uint id) => Addable.Contains(id);
+        private uint MaterialOf(uint id) => Materials.TryGetValue(id, out uint m) ? m : Steel;
+        public bool CanAdd(uint id) =>
+            Addable.Contains(id) && (!OneMaterial || _locked == 0 || MaterialOf(id) == _locked);
         public bool Add(uint id)
         {
-            if (RefuseOnAdd.Contains(id) || !Addable.Remove(id)) return false;
+            if (RefuseOnAdd.Contains(id) || !CanAdd(id) || !Addable.Remove(id)) return false;
             Added.Add(id);
+            if (Added.Count == 1) _locked = MaterialOf(id);
             _revision++;
             return true;
         }
         public void Report(string text) => Reports.Add(text);
     }
 
-    private static GearItemView Row(uint id, bool worn = false, bool pack = false) =>
-        new(id, $"Row {id:X}", GearTypeGroup.Salvage, Steel, 0f, 0, 0, 1, 1, Player, 0, 0, worn, pack);
+    private static GearItemView Row(uint id, bool worn = false, bool pack = false, uint material = Steel) =>
+        new(id, $"Row {id:X}", GearTypeGroup.Salvage, material, 0f, 0, 0, 1, 1, Player, 0, 0, worn, pack);
 
     [Fact]
     public void Candidates_DropWornPackAndRefusedRows_KeepingOrder()
@@ -42,6 +51,30 @@ public sealed class GearSalvageHandOffTests
         foreach (uint id in new uint[] { 1, 2, 3, 4, 6 }) s.Addable.Add(id);   // 5 is not addable
         GearItemView[] rows = [Row(1), Row(2, worn: true), Row(3, pack: true), Row(4), Row(5), Row(6)];
         Assert.Equal(new uint[] { 1, 4, 6 }, GearSalvageHandOff.Candidates(rows, s).Select(r => r.Id));
+    }
+
+    [Theory]
+    [InlineData(false, new uint[] { 1, 2, 3, 4 })]
+    [InlineData(true, new uint[] { 2, 4 })]   // the first kept row is Iron: the panel will lock to it
+    public void Candidates_WithOneMaterialOnly_KeepTheFirstKeptRowsMaterial(bool oneMaterial, uint[] expected)
+    {
+        var s = new FakeSalvage { OneMaterial = oneMaterial };
+        foreach (uint id in new uint[] { 2, 3, 4 }) s.Addable.Add(id);   // 1 is not addable, so Iron 2 leads
+        GearItemView[] rows = [Row(1), Row(2, material: Iron), Row(3), Row(4, material: Iron)];
+        if (!oneMaterial) s.Addable.Add(1);
+        Assert.Equal(expected, GearSalvageHandOff.Candidates(rows, s).Select(r => r.Id));
+    }
+
+    [Fact]
+    public void Candidates_WithOneMaterialOnly_AreExactlyWhatAddAllPutsIn()
+    {
+        var s = new FakeSalvage { OneMaterial = true };
+        foreach (uint id in new uint[] { 1, 2, 3 }) s.Addable.Add(id);
+        s.Materials[2] = Iron;
+        List<GearItemView> picked = GearSalvageHandOff.Candidates([Row(1), Row(2, material: Iron), Row(3)], s);
+        Assert.Equal(2, picked.Count);
+        Assert.Equal(2, GearSalvageHandOff.AddAll(picked, s));
+        Assert.Empty(s.Reports);   // no "Added x of N": N was what went in
     }
 
     [Fact]
@@ -73,15 +106,18 @@ public sealed class GearSalvageHandOffTests
         Assert.Empty(s.Reports);
     }
 
-    private static (UiGearDeck Deck, FakeSalvage Salvage) MakeDeck()
+    /// <summary>Three salvage bags (Steel, unless <paramref name="middleIron"/> makes the second Iron) and a plain
+    /// item, with an open panel that takes the bags, shown as the results of a Salvage type chip.</summary>
+    private static (UiGearDeck Deck, FakeSalvage Salvage) MakeDeck(bool middleIron = false)
     {
         var t = new ClientObjectTable();
         t.AddOrUpdate(new ClientObject { ObjectId = Player, Type = ItemType.Creature, ItemsCapacity = 102, ContainersCapacity = 7 });
         for (uint i = 0; i < 3; i++)
         {
+            uint material = middleIron && i == 1 ? Iron : Steel;
             t.AddOrUpdate(new ClientObject
             {
-                ObjectId = First + i, Name = $"Steel {i}", Type = ItemType.TinkeringMaterial, MaterialType = Steel, WeenieClassId = 0x1000u + i,
+                ObjectId = First + i, Name = $"Bag {i}", Type = ItemType.TinkeringMaterial, MaterialType = material, WeenieClassId = 0x1000u + i,
             });
             Assert.True(t.MoveItem(First + i, Player, (int)i));
         }
@@ -89,6 +125,7 @@ public sealed class GearSalvageHandOffTests
         Assert.True(t.MoveItem(0xC00, Player, 3));
         var salvage = new FakeSalvage { Open = true };
         for (uint i = 0; i < 3; i++) salvage.Addable.Add(First + i);
+        for (uint i = 0; i < 3; i++) salvage.Materials[First + i] = middleIron && i == 1 ? Iron : Steel;
         var session = new GearDeckSession(null, () => "", () => false);
         var b = new GearDeckBindings(() => t, () => Player, () => 100, (_, _, _, _, _) => 0u, (_, _, _, _, _) => 0u,
             o => o.Name, session, new NoActions(), _ => false, () => { }, Modifiers: () => (false, false), Salvage: salvage);
@@ -124,12 +161,27 @@ public sealed class GearSalvageHandOffTests
     {
         var (deck, salvage) = MakeDeck();
         Assert.True(deck.Geometry.Input.SalvageButton);
-        salvage.Open = false;
-        salvage.Addable.Add(0xFFFF);   // a revision-visible change so the cache recomputes
+        salvage.Open = false;   // nothing else changes: the count's cache keys on IsOpen itself
         deck.Refresh();
-        deck.SetQuery(GearQuery.Empty);
-        deck.Refresh();
+        Assert.Equal(0, deck.SalvageCount);
         Assert.False(deck.Geometry.Input.SalvageButton);
+    }
+
+    [Fact]
+    public void MixedMaterials_WithOneMaterialOnly_TheButtonOffersWhatWillGoIn()
+    {
+        var (deck, salvage) = MakeDeck(middleIron: true);
+        Assert.Equal(3, deck.SalvageCount);
+        Assert.Equal("Add 3 to salvage", deck.SalvageButtonText);
+
+        salvage.OneMaterial = true;   // the option flips and nothing else: the count follows
+        deck.Refresh();
+        Assert.Equal(2, deck.SalvageCount);
+        Assert.Equal("Add 2 to salvage", deck.SalvageButtonText);
+
+        Click(deck, deck.Geometry.FooterButton);
+        Assert.Equal(new[] { First, First + 2 }, salvage.Added);   // the two Steel bags, in shown order
+        Assert.Empty(salvage.Reports);
     }
 
     [Fact]
@@ -138,6 +190,7 @@ public sealed class GearSalvageHandOffTests
         var (deck, salvage) = MakeDeck();
         Assert.Equal(3, deck.Shown.Count);
         Assert.Equal(3, deck.SalvageCount);
+        Assert.Equal("Add 3 to salvage", deck.SalvageButtonText);
 
         Click(deck, deck.Geometry.GridCell(1, 0)!.Value);
         deck.Refresh();
