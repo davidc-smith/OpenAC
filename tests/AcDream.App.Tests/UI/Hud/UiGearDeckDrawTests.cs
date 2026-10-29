@@ -67,7 +67,8 @@ public sealed class UiGearDeckDrawTests
 
     private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
         EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u,
-        Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null)
+        Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null,
+        Func<float>? scale = null)
     {
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
@@ -81,7 +82,8 @@ public sealed class UiGearDeckDrawTests
             Session: session,
             Actions: new NoActions(),
             IsPending: id => id == 0xA01u,
-            Close: () => { });
+            Close: () => { },
+            Scale: scale);
         var deck = new UiGearDeck(b, fonts, icons);
         deck.Refresh();
         return deck;
@@ -89,17 +91,82 @@ public sealed class UiGearDeckDrawTests
 
     private static TextRenderer DrawInside(UiGearDeck deck)
     {
-        var renderer = MarkupDrawProbe.Draw(deck, GearDeckGeometry.Width, deck.Height);
+        var renderer = MarkupDrawProbe.Draw(deck, deck.Width, deck.Height);
         int vertices = 0;
         foreach (var s in renderer.DebugSpriteSegmentVerts)
             for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
             {
                 vertices++;
-                Assert.InRange(s.Verts[i], -0.01f, GearDeckGeometry.Width + 0.01f);
+                Assert.InRange(s.Verts[i], -0.01f, deck.Width + 0.01f);
                 Assert.InRange(s.Verts[i + 1], -0.01f, deck.Height + 0.01f);
             }
         Assert.True(vertices > 0);
         return renderer;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AtTheCommandDecksScale_TheDeckIsWiderAndDrawsInsideItsFrame(bool list)
+    {
+        UiGearDeck deck = Deck(World(), fonts: new DeckFonts((_, _) => null!), scale: () => 1.5f,
+            settings: s => s with { View = list ? GearPackView.List : GearPackView.Grid });
+        Assert.Equal(1.5f, deck.Scale);
+        Assert.Equal(450f, deck.Width);
+        Assert.Equal(GearDeckGeometry.DefaultHeight * 1.5f, deck.Height);
+        Assert.Equal(1.5f, deck.Geometry.Scale);
+        deck.SetQuery(GearQuery.Empty.With(GearChip.NameContains("item")));
+        deck.Refresh();
+        TextRenderer r = DrawInside(deck);
+        Assert.True(HasColour(r, list ? UiGearDeck.RowRule : UiGearDeck.CellFill));
+    }
+
+    [Fact]
+    public void AScaledDeck_MountsAtItsWidth_AsTheRuntimeMountsIt()
+    {
+        var root = new UiRoot { Width = 2560, Height = 1330 };
+        UiGearDeck deck = Deck(World(), scale: () => 1.5f);
+        RetailWindowFrame.Mount(root, deck, _ => (0u, 0, 0),
+            UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(root.Width, deck.Width), RetailUiRuntime.GearDeckDefaultTop, deck.Width));
+        Assert.Equal(450f, deck.MinWidth);
+        Assert.Equal(450f, deck.MaxWidth);
+        Assert.Equal(root.Width - 450f - 10f, deck.Left);
+    }
+
+    [Fact]
+    public void TheDeck_FollowsAChangingScale_SnappedAndClamped()
+    {
+        float scale = 1f;
+        var root = new UiRoot { Width = 1600, Height = 1200 };
+        UiGearDeck deck = Deck(World(), scale: () => scale);
+        root.AddChild(deck);
+        deck.Left = 1300;
+        deck.Refresh();
+        Assert.Equal(300f, deck.Width);
+        float minAtOne = deck.MinHeight;
+
+        scale = 1.52f;   // snaps to 1.5
+        deck.Refresh();
+        Assert.Equal(1.5f, deck.Scale);
+        Assert.Equal(450f, deck.Width);
+        Assert.Equal(450f, deck.MinWidth);
+        Assert.Equal(450f, deck.MaxWidth);
+        Assert.Equal(450f, deck.Geometry.Frame.W);
+        Assert.Equal(1.5f, deck.Geometry.Scale);
+        Assert.True(deck.MinHeight > minAtOne);
+        Assert.True(deck.Height >= deck.MinHeight, "the height grows to the new minimum");
+        Assert.True(deck.Left + deck.Width <= root.Width, "kept inside its parent");
+        float w = deck.Width, h = deck.Height;
+        deck.ConstrainResize(ResizeEdges.Bottom, ref w, ref h);
+        Assert.Equal(450f, w);
+
+        scale = 9f;   // past the decks' range
+        deck.Refresh();
+        Assert.Equal(DeckGeometry.MaxScale, deck.Scale);
+        scale = 1f;
+        deck.Refresh();
+        Assert.Equal(300f, deck.Width);
+        Assert.Equal(1f, deck.Geometry.Scale);
     }
 
     /// <summary>Tighter than a channel step (1/255): the deck's dark inks differ by one step.</summary>

@@ -14,7 +14,12 @@ internal sealed record GearPills(IReadOnlyList<string> Chips, IReadOnlyList<stri
 
 internal readonly record struct GearDeckHit(GearZone Zone, int Index = -1);
 
-/// <summary>Where everything in the 300-point Gear Deck column goes, for one height and state.</summary>
+/// <summary>
+/// Where everything in the Gear Deck column goes, for one height, state and
+/// deck scale. The constants are the sizes at scale 1 (the 300-point column);
+/// <see cref="Scale"/> multiplies every one of them, so a deck at 1.5 is 450
+/// points wide with every cell, stud and gap half as big again.
+/// </summary>
 internal sealed class GearDeckGeometry
 {
     public const float Width = 300f, MinHeight = 360f, DefaultHeight = 648f, Pad = 10f, Gap = 6f;
@@ -57,101 +62,117 @@ internal sealed class GearDeckGeometry
     public required int HiddenChips { get; init; }
     public required int HiddenSaved { get; init; }
     public required GearDeckLayoutInput Input { get; init; }
+    /// <summary>The deck scale every size here was multiplied by.</summary>
+    public required float Scale { get; init; }
 
-    public int VisibleGridRows => Math.Max(0, (int)MathF.Floor((Contents.H + ItemGap) / (ItemCell + ItemGap)));
-    public int VisibleListRows => Math.Max(0, (int)MathF.Floor(Contents.H / ListRowH));
+    /// <summary>The column's width at <paramref name="scale"/>.</summary>
+    public static float WidthAt(float scale) => Width * scale;
+    /// <summary>The window's smallest height at <paramref name="scale"/>, before the side packs ask for more.</summary>
+    public static float MinHeightAt(float scale) => MinHeight * scale;
+    /// <summary>A new window's height at <paramref name="scale"/>.</summary>
+    public static float DefaultHeightAt(float scale) => DefaultHeight * scale;
+
+    private float S(float points) => points * Scale;
+
+    public int VisibleGridRows => Math.Max(0, (int)MathF.Floor((Contents.H + S(ItemGap)) / (S(ItemCell) + S(ItemGap))));
+    public int VisibleListRows => Math.Max(0, (int)MathF.Floor(Contents.H / S(ListRowH)));
 
     /// <summary>How many side-column cells (main pack included) are shown: the pack count, clipped to the area.</summary>
     public int VisibleSidePacks =>
-        Math.Clamp((int)MathF.Floor((SideColumn.H + SideGap) / (SideCell + SideGap)), 0, 1 + Math.Max(0, Input.SidePackSlots));
+        Math.Clamp((int)MathF.Floor((SideColumn.H + S(SideGap)) / (S(SideCell) + S(SideGap))), 0, 1 + Math.Max(0, Input.SidePackSlots));
 
     /// <summary>
     /// The smallest height that shows every side-column cell (the main pack and
-    /// each side-pack slot) for <paramref name="input"/>'s fold state, never
-    /// below <see cref="MinHeight"/>. The window's minimum follows it.
+    /// each side-pack slot) for <paramref name="input"/>'s fold state at
+    /// <paramref name="scale"/>, never below <see cref="MinHeightAt"/>. The
+    /// window's minimum follows it.
     /// </summary>
-    public static float MinHeightFor(GearDeckLayoutInput input)
+    public static float MinHeightFor(GearDeckLayoutInput input, float scale = 1f)
     {
+        float S(float points) => points * scale;
         int cells = 1 + Math.Max(0, input.SidePackSlots);
-        float top = TitleH + Gap + HeaderH + Gap + EquipmentHeight(input) + Gap + HeaderH + Gap + BurdenH + Gap
-            + QueryH + Gap + (input.SavedCount > 0 ? SavedH + Gap : 0f);
-        float side = cells * SideCell + (cells - 1) * SideGap;
-        return MathF.Max(MinHeight, MathF.Ceiling(top + side + Gap + FooterH + Pad));
+        float top = S(TitleH) + S(Gap) + S(HeaderH) + S(Gap) + EquipmentHeight(input, scale) + S(Gap) + S(HeaderH) + S(Gap)
+            + S(BurdenH) + S(Gap) + S(QueryH) + S(Gap) + (input.SavedCount > 0 ? S(SavedH) + S(Gap) : 0f);
+        float side = cells * S(SideCell) + (cells - 1) * S(SideGap);
+        return MathF.Max(MinHeightAt(scale), MathF.Ceiling(top + side + S(Gap) + S(FooterH) + S(Pad)));
     }
 
-    private static float EquipmentHeight(GearDeckLayoutInput input)
+    private static float EquipmentHeight(GearDeckLayoutInput input, float scale)
     {
-        if (!input.Folded) return SlotRows * SlotCell + (SlotRows - 1) * SlotGap;
+        if (!input.Folded) return SlotRows * SlotCell * scale + (SlotRows - 1) * SlotGap * scale;
         int rows = Math.Clamp((input.WornCount + WornPerRow - 1) / WornPerRow, 1, MaxWornRows);
-        return rows * WornCellSize + (rows - 1) * WornGap;
+        return rows * WornCellSize * scale + (rows - 1) * WornGap * scale;
     }
 
-    public static GearDeckGeometry Create(float height, GearDeckLayoutInput input, GearPills? pills = null)
+    public static GearDeckGeometry Create(float height, GearDeckLayoutInput input, GearPills? pills = null, float scale = 1f)
     {
-        float h = MathF.Max(height, MinHeight);
-        float inner = Width - 2 * Pad;
+        float S(float points) => points * scale;
+        float h = MathF.Max(height, MinHeightAt(scale));
+        float width = WidthAt(scale), pad = S(Pad), gap = S(Gap);
+        float inner = width - 2 * pad;
 
-        var title = new DeckRect(0f, 0f, Width, TitleH);
-        var close = new DeckRect(Width - Pad - CloseSize, (TitleH - CloseSize) / 2f, CloseSize, CloseSize);
+        var title = new DeckRect(0f, 0f, width, S(TitleH));
+        var close = new DeckRect(width - pad - S(CloseSize), (S(TitleH) - S(CloseSize)) / 2f, S(CloseSize), S(CloseSize));
 
-        float y = TitleH + Gap;
-        var equipHeader = new DeckRect(Pad, y, inner, HeaderH);
-        float studY = y + (HeaderH - StudH) / 2f;
-        var slotsStud = new DeckRect(Width - Pad - StudW, studY, StudW, StudH);
-        var figureStud = slotsStud with { X = slotsStud.X - StudGap - StudW };
-        var foldStud = new DeckRect(Pad, studY, FoldW, StudH);
-        y += HeaderH + Gap;
+        float y = S(TitleH) + gap;
+        var equipHeader = new DeckRect(pad, y, inner, S(HeaderH));
+        float studY = y + (S(HeaderH) - S(StudH)) / 2f;
+        var slotsStud = new DeckRect(width - pad - S(StudW), studY, S(StudW), S(StudH));
+        var figureStud = slotsStud with { X = slotsStud.X - S(StudGap) - S(StudW) };
+        var foldStud = new DeckRect(pad, studY, S(FoldW), S(StudH));
+        y += S(HeaderH) + gap;
 
-        float equipH = EquipmentHeight(input);
-        var equipment = new DeckRect(Pad, y, inner, equipH);
-        y += equipH + Gap;
+        float equipH = EquipmentHeight(input, scale);
+        var equipment = new DeckRect(pad, y, inner, equipH);
+        y += equipH + gap;
 
-        var packsHeader = new DeckRect(Pad, y, inner, HeaderH);
-        studY = y + (HeaderH - StudH) / 2f;
-        var listStud = new DeckRect(Width - Pad - ViewStudW, studY, ViewStudW, StudH);
-        var gridStud = listStud with { X = listStud.X - StudGap - ViewStudW };
-        y += HeaderH + Gap;
+        var packsHeader = new DeckRect(pad, y, inner, S(HeaderH));
+        studY = y + (S(HeaderH) - S(StudH)) / 2f;
+        var listStud = new DeckRect(width - pad - S(ViewStudW), studY, S(ViewStudW), S(StudH));
+        var gridStud = listStud with { X = listStud.X - S(StudGap) - S(ViewStudW) };
+        y += S(HeaderH) + gap;
 
-        var burden = new DeckRect(Pad, y, inner, BurdenH);
-        y += BurdenH + Gap;
+        var burden = new DeckRect(pad, y, inner, S(BurdenH));
+        y += S(BurdenH) + gap;
 
-        var queryBar = new DeckRect(Pad, y, inner, QueryH);
-        float qStudY = y + (QueryH - StudH) / 2f;
-        var dir = new DeckRect(Width - Pad - DirW, qStudY, DirW, StudH);
-        var sort = new DeckRect(dir.X - StudGap - SortW, qStudY, SortW, StudH);
-        var save = new DeckRect(sort.X - StudGap - SaveW, qStudY, SaveW, StudH);
-        var queryText = new DeckRect(Pad, y, MathF.Max(0f, save.X - Gap - Pad), QueryH);
-        float pillY = y + (QueryH - PillH) / 2f;
-        float[] chipW = pills is null ? [] : pills.Chips.Select(c => MathF.Min(MaxPillW, pills.Measure(c) + 2 * PillPadX + ChipCloseW)).ToArray();
-        var (chips, chipMore, hiddenChips) = FitPills(chipW, queryText.X, pillY, queryText.W - FieldMinW - Gap, PillH);
-        float fieldX = chipMore is { } m ? m.X + m.W + PillGap
-            : chips.Length > 0 ? chips[^1].X + chips[^1].W + PillGap : queryText.X;
-        var queryField = new DeckRect(fieldX, y, queryText.X + queryText.W - fieldX, QueryH);
-        y += QueryH + Gap;
+        float queryH = S(QueryH), pillH = S(PillH);
+        var queryBar = new DeckRect(pad, y, inner, queryH);
+        float qStudY = y + (queryH - S(StudH)) / 2f;
+        var dir = new DeckRect(width - pad - S(DirW), qStudY, S(DirW), S(StudH));
+        var sort = new DeckRect(dir.X - S(StudGap) - S(SortW), qStudY, S(SortW), S(StudH));
+        var save = new DeckRect(sort.X - S(StudGap) - S(SaveW), qStudY, S(SaveW), S(StudH));
+        var queryText = new DeckRect(pad, y, MathF.Max(0f, save.X - gap - pad), queryH);
+        float pillY = y + (queryH - pillH) / 2f;
+        float[] chipW = pills is null ? [] : pills.Chips.Select(c => MathF.Min(S(MaxPillW), pills.Measure(c) + 2 * S(PillPadX) + S(ChipCloseW))).ToArray();
+        var (chips, chipMore, hiddenChips) = FitPills(chipW, queryText.X, pillY, queryText.W - S(FieldMinW) - gap, pillH, scale);
+        float fieldX = chipMore is { } m ? m.X + m.W + S(PillGap)
+            : chips.Length > 0 ? chips[^1].X + chips[^1].W + S(PillGap) : queryText.X;
+        var queryField = new DeckRect(fieldX, y, queryText.X + queryText.W - fieldX, queryH);
+        y += queryH + gap;
 
-        DeckRect savedRow = new(Pad, y, inner, 0f);
+        DeckRect savedRow = new(pad, y, inner, 0f);
         DeckRect[] savedStuds = [];
         DeckRect? savedMore = null;
         int hiddenSaved = 0;
         if (input.SavedCount > 0)
         {
-            savedRow = savedRow with { H = SavedH };
-            float[] savedW = pills is null ? [] : pills.Saved.Select(s => MathF.Min(MaxPillW, pills.Measure(s) + 2 * PillPadX)).ToArray();
-            (savedStuds, savedMore, hiddenSaved) = FitPills(savedW, Pad, y, inner, SavedH);
-            y += SavedH + Gap;
+            savedRow = savedRow with { H = S(SavedH) };
+            float[] savedW = pills is null ? [] : pills.Saved.Select(n => MathF.Min(S(MaxPillW), pills.Measure(n) + 2 * S(PillPadX))).ToArray();
+            (savedStuds, savedMore, hiddenSaved) = FitPills(savedW, pad, y, inner, S(SavedH), scale);
+            y += S(SavedH) + gap;
         }
 
-        var footer = new DeckRect(Pad, h - Pad - FooterH, inner, FooterH);
-        var footerButton = new DeckRect(footer.X + footer.W - FooterButtonW, footer.Y, FooterButtonW, FooterH);
-        float areaH = MathF.Max(0f, footer.Y - Gap - y);
-        var packArea = new DeckRect(Pad, y, inner, areaH);
-        float contentsW = inner - SideW - Gap;
-        var contents = new DeckRect(Pad, y, contentsW, areaH);
-        var side = new DeckRect(Pad + contentsW + Gap, y, SideW, areaH);
+        var footer = new DeckRect(pad, h - pad - S(FooterH), inner, S(FooterH));
+        var footerButton = new DeckRect(footer.X + footer.W - S(FooterButtonW), footer.Y, S(FooterButtonW), S(FooterH));
+        float areaH = MathF.Max(0f, footer.Y - gap - y);
+        var packArea = new DeckRect(pad, y, inner, areaH);
+        float contentsW = inner - S(SideW) - gap;
+        var contents = new DeckRect(pad, y, contentsW, areaH);
+        var side = new DeckRect(pad + contentsW + gap, y, S(SideW), areaH);
 
         return new GearDeckGeometry
         {
-            Frame = new DeckRect(0f, 0f, Width, h),
+            Frame = new DeckRect(0f, 0f, width, h),
             Title = title, Close = close,
             EquipHeader = equipHeader, FoldStud = foldStud, FigureStud = figureStud, SlotsStud = slotsStud,
             Equipment = equipment,
@@ -162,30 +183,32 @@ internal sealed class GearDeckGeometry
             SavedRow = savedRow, FooterButton = footerButton,
             Chips = chips, SavedStuds = savedStuds, ChipMore = chipMore, SavedMore = savedMore,
             HiddenChips = hiddenChips, HiddenSaved = hiddenSaved,
-            Input = input,
+            Input = input, Scale = scale,
         };
     }
 
     /// <summary>Pills left to right while each fits, keeping room for a "+N" pill when more follow.</summary>
-    internal static (DeckRect[] Rects, DeckRect? More, int Hidden) FitPills(IReadOnlyList<float> widths, float x, float y, float room, float h)
+    internal static (DeckRect[] Rects, DeckRect? More, int Hidden) FitPills(IReadOnlyList<float> widths, float x, float y, float room, float h,
+        float scale = 1f)
     {
+        float pillGap = PillGap * scale, moreW = MoreW * scale;
         var rects = new List<DeckRect>();
         float used = 0f;
         int i = 0;
         for (; i < widths.Count; i++)
         {
             bool last = i == widths.Count - 1;
-            float need = widths[i] + (last ? 0f : PillGap + MoreW);
+            float need = widths[i] + (last ? 0f : pillGap + moreW);
             if (used + need > room) break;
             rects.Add(new DeckRect(x + used, y, widths[i], h));
-            used += widths[i] + PillGap;
+            used += widths[i] + pillGap;
         }
         int hidden = widths.Count - i;
-        return (rects.ToArray(), hidden > 0 ? new DeckRect(x + used, y, MoreW, h) : null, hidden);
+        return (rects.ToArray(), hidden > 0 ? new DeckRect(x + used, y, moreW, h) : null, hidden);
     }
 
     public DeckRect Suggestion(int index) =>
-        new(QueryText.X, QueryBar.Y + QueryH + 1f + index * SuggestH, QueryText.W, SuggestH);
+        new(QueryText.X, QueryBar.Y + S(QueryH) + S(1f) + index * S(SuggestH), QueryText.W, S(SuggestH));
 
     public DeckRect? GridCell(int index, int scrollRow)
     {
@@ -193,7 +216,8 @@ internal sealed class GearDeckGeometry
         int row = index / Columns - scrollRow;
         if (row < 0 || row >= VisibleGridRows) return null;
         int col = index % Columns;
-        return new DeckRect(Contents.X + col * (ItemCell + ItemGap), Contents.Y + row * (ItemCell + ItemGap), ItemCell, ItemCell);
+        float step = S(ItemCell) + S(ItemGap);
+        return new DeckRect(Contents.X + col * step, Contents.Y + row * step, S(ItemCell), S(ItemCell));
     }
 
     public DeckRect? ListRow(int index, int scrollRow)
@@ -201,25 +225,27 @@ internal sealed class GearDeckGeometry
         if (index < 0) return null;
         int row = index - scrollRow;
         if (row < 0 || row >= VisibleListRows) return null;
-        return new DeckRect(Contents.X, Contents.Y + row * ListRowH, Contents.W, ListRowH);
+        return new DeckRect(Contents.X, Contents.Y + row * S(ListRowH), Contents.W, S(ListRowH));
     }
 
     public DeckRect EquipSlot(int index)
     {
-        float gridW = Columns * SlotCell + (Columns - 1) * SlotGap;
+        float cell = S(SlotCell), gap = S(SlotGap);
+        float gridW = Columns * cell + (Columns - 1) * gap;
         float x0 = Equipment.X + (Equipment.W - gridW) / 2f;
         int col = index % Columns, row = index / Columns;
-        return new DeckRect(x0 + col * (SlotCell + SlotGap), Equipment.Y + row * (SlotCell + SlotGap), SlotCell, SlotCell);
+        return new DeckRect(x0 + col * (cell + gap), Equipment.Y + row * (cell + gap), cell, cell);
     }
 
     public DeckRect WornCell(int index)
     {
         int col = index % WornPerRow, row = index / WornPerRow;
-        return new DeckRect(Equipment.X + col * (WornCellSize + WornGap), Equipment.Y + row * (WornCellSize + WornGap), WornCellSize, WornCellSize);
+        float cell = S(WornCellSize), step = cell + S(WornGap);
+        return new DeckRect(Equipment.X + col * step, Equipment.Y + row * step, cell, cell);
     }
 
     public DeckRect SidePack(int index) =>
-        new(SideColumn.X + 1f, SideColumn.Y + index * (SideCell + SideGap), SideCell, SideCell);
+        new(SideColumn.X + S(1f), SideColumn.Y + index * (S(SideCell) + S(SideGap)), S(SideCell), S(SideCell));
 
     public GearDeckHit HitAt(float x, float y)
     {

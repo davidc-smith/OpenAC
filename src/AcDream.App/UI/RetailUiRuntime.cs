@@ -3923,8 +3923,8 @@ public sealed class RetailUiRuntime : IDisposable
     /// <summary>The Gear Deck's place before the player moves it: the right edge, under the radar.</summary>
     internal const float GearDeckDefaultTop = 120f;
 
-    internal static float GearDeckDefaultLeft(float rootWidth) =>
-        Math.Max(0f, rootWidth - Hud.GearDeckGeometry.Width - 10f);
+    internal static float GearDeckDefaultLeft(float rootWidth, float deckWidth = Hud.GearDeckGeometry.Width) =>
+        Math.Max(0f, rootWidth - deckWidth - 10f);
 
     /// <summary>
     /// The Gear Deck's Modern HUD entry: it stands in for the retail inventory, shown only
@@ -3983,11 +3983,13 @@ public sealed class RetailUiRuntime : IDisposable
                     Keyboard: Host.Keyboard,
                     // The salvage window mounts after the deck, so the controller is read when asked.
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
-                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage)),
+                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
+                    // The decks read as one set: the Gear Deck draws at the Command Deck's scale.
+                    Scale: () => _commandDeck?.Geometry.Scale ?? 1f),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
-                Hud.UiGearDeck.MountOptions(GearDeckDefaultLeft(Host.Root.Width), GearDeckDefaultTop));
+                Hud.UiGearDeck.MountOptions(GearDeckDefaultLeft(Host.Root.Width, deck.Width), GearDeckDefaultTop, deck.Width));
         }
         catch (Exception ex)
         {

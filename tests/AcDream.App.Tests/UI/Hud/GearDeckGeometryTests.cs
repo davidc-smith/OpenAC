@@ -230,4 +230,47 @@ public sealed class GearDeckGeometryTests
         Assert.Equal(2, g.SavedStuds.Count);
         Assert.Equal(new GearDeckHit(GearZone.SavedFilter, 1), g.HitAt(g.SavedStuds[1].X + 2, g.SavedStuds[1].Y + 2));
     }
+
+    [Fact]
+    public void AtScaleOneAndAHalf_EverySizeGrowsByHalf_AndHitsLand()
+    {
+        GearDeckLayoutInput input = Input(itemCount: 30) with { SavedCount = 1, Suggestions = 2 };
+        GearDeckGeometry one = GearDeckGeometry.Create(700f, input, new GearPills(["Steel"], ["Kits"], Six));
+        // The deck measures pills with its face at the scale, so the text is half as wide again too.
+        GearDeckGeometry big = GearDeckGeometry.Create(1050f, input, new GearPills(["Steel"], ["Kits"], t => Six(t) * 1.5f), scale: 1.5f);
+
+        Assert.Equal(1.5f, big.Scale);
+        Assert.Equal(450f, big.Frame.W);
+        Assert.Equal(450f, GearDeckGeometry.WidthAt(1.5f));
+        Assert.Equal(GearDeckGeometry.MinHeight * 1.5f, GearDeckGeometry.MinHeightAt(1.5f));
+        Assert.Equal(GearDeckGeometry.DefaultHeight * 1.5f, GearDeckGeometry.DefaultHeightAt(1.5f));
+        Assert.Equal(MathF.Ceiling(GearDeckGeometry.MinHeightFor(input) * 1.5f), GearDeckGeometry.MinHeightFor(input, 1.5f), 1f);
+        foreach (var (a, b) in new[]
+        {
+            (one.Close, big.Close), (one.FoldStud, big.FoldStud), (one.SlotsStud, big.SlotsStud), (one.Equipment, big.Equipment),
+            (one.SaveStud, big.SaveStud), (one.SortStud, big.SortStud), (one.DirStud, big.DirStud), (one.QueryText, big.QueryText),
+            (one.Chips[0], big.Chips[0]), (one.SavedStuds[0], big.SavedStuds[0]), (one.EquipSlot(7), big.EquipSlot(7)),
+            (one.GridCell(8, 0)!.Value, big.GridCell(8, 0)!.Value), (one.SidePack(2), big.SidePack(2)), (one.Suggestion(1), big.Suggestion(1)),
+        })
+        {
+            Assert.Equal(a.X * 1.5f, b.X, 3);
+            Assert.Equal(a.Y * 1.5f, b.Y, 3);
+            Assert.Equal(a.W * 1.5f, b.W, 3);
+            Assert.Equal(a.H * 1.5f, b.H, 3);
+        }
+        Assert.Equal(one.VisibleGridRows, big.VisibleGridRows);
+        Assert.Equal(one.VisibleSidePacks, big.VisibleSidePacks);
+
+        static (float, float) Mid(DeckRect r) => (r.X + r.W / 2f, r.Y + r.H / 2f);
+        (float x, float y) = Mid(big.SaveStud);
+        Assert.Equal(new GearDeckHit(GearZone.SaveStud), big.HitAt(x, y));
+        (x, y) = Mid(big.GridCell(8, 0)!.Value);
+        Assert.Equal(new GearDeckHit(GearZone.Item, 8), big.HitAt(x, y));
+        (x, y) = Mid(big.SidePack(2));
+        Assert.Equal(new GearDeckHit(GearZone.SidePack, 2), big.HitAt(x, y));
+        (x, y) = Mid(big.Suggestion(1));
+        Assert.Equal(new GearDeckHit(GearZone.Suggestion, 1), big.HitAt(x, y));
+        (x, y) = Mid(big.Chips[0]);
+        Assert.Equal(new GearDeckHit(GearZone.Chip, 0), big.HitAt(x, y));
+    }
 }

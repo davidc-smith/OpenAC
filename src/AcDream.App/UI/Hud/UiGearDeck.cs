@@ -20,11 +20,15 @@ internal sealed record GearDeckBindings(
     Action<string>? Log = null,
     Silk.NET.Input.IKeyboard? Keyboard = null,
     Func<(bool Toggle, bool Range)>? Modifiers = null,
-    IGearSalvage? Salvage = null);
+    IGearSalvage? Salvage = null,
+    Func<float>? Scale = null);
 
 /// <summary>
-/// The Gear Deck: the Modern HUD inventory and paper doll, one 300-point
-/// column that resizes in height only. Each tick it rebuilds its
+/// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
+/// points × the deck scale wide that the player resizes in height only. The
+/// scale is the Command Deck's (<see cref="GearDeckBindings.Scale"/>), so the
+/// decks' text matches; a change resizes the width and redraws everything at
+/// the new size. Each tick it rebuilds its
 /// <see cref="GearInventoryModel"/> when the object table, the player or the
 /// strength changed, and its <see cref="GearDeckGeometry"/> when the height or
 /// the layout input changed. Drawing is in UiGearDeck.Draw.cs, input in
@@ -41,6 +45,8 @@ internal sealed partial class UiGearDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private GearInventoryModel _model = GearInventoryModel.Empty;
     private GearDeckGeometry _g;
+    /// <summary>The deck scale everything is laid out and drawn at; follows <see cref="GearDeckBindings.Scale"/>.</summary>
+    private float _scale;
     private int _scrollRow;
     private ulong _lastRevision;
     private ClientObjectTable? _lastTable;
@@ -92,13 +98,14 @@ internal sealed partial class UiGearDeck : UiElement
         _actions = new LoggedGearItemActions(_b.Actions);
         _dispatcherTable = _b.Objects();
         _dispatcher = new GearDropDispatcher(_dispatcherTable, _b.PlayerGuid, _actions);
-        Width = GearDeckGeometry.Width;
-        Height = GearDeckGeometry.DefaultHeight;
-        MinHeight = GearDeckGeometry.MinHeight;
+        _scale = ReadScale();
+        Width = MinWidth = MaxWidth = GearDeckGeometry.WidthAt(_scale);
+        Height = GearDeckGeometry.DefaultHeightAt(_scale);
+        MinHeight = GearDeckGeometry.MinHeightAt(_scale);
         Resizable = true;
         ResizeX = false;
         ResizeY = true;
-        _g = GearDeckGeometry.Create(Height, LayoutInput());
+        _g = GearDeckGeometry.Create(Height, LayoutInput(), null, _scale);
         CreateQueryInput();   // UiGearDeck.Query.cs
         CreateMenu();         // UiGearDeck.Menu.cs
         _b.Session.Ended += () =>   // the live query is not kept between sessions
@@ -109,8 +116,9 @@ internal sealed partial class UiGearDeck : UiElement
         };
     }
 
-    /// <summary>How the runtime mounts the deck: imported chrome, 300 wide, resized from the top or bottom, hidden.</summary>
-    internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
+    /// <summary>How the runtime mounts the deck: imported chrome, <paramref name="width"/> wide (the deck's width
+    /// at its scale), resized from the top or bottom, hidden.</summary>
+    internal static RetailWindowFrame.Options MountOptions(float left, float top, float width = GearDeckGeometry.Width) => new()
     {
         WindowName = WindowNames.GearDeck,
         Chrome = RetailWindowChrome.Imported,
@@ -121,14 +129,17 @@ internal sealed partial class UiGearDeck : UiElement
         ResizeY = true,
         ResizableEdges = ResizeEdges.Top | ResizeEdges.Bottom,
         ConstrainResizeToParent = true,
-        MinWidth = GearDeckGeometry.Width,
-        MaxWidth = GearDeckGeometry.Width,
+        MinWidth = width,
+        MaxWidth = width,
         MinHeight = GearDeckGeometry.MinHeight,
         Visible = false,
         ContentClickThrough = false,
     };
 
     internal GearDeckGeometry Geometry => _g;
+
+    /// <summary>The deck scale the deck is laid out and drawn at.</summary>
+    internal float Scale => _scale;
     internal GearInventoryModel Model => _model;
     internal GearDeckBindings Bindings => _b;
 
@@ -259,18 +270,53 @@ internal sealed partial class UiGearDeck : UiElement
 
     private void SyncGeometry()
     {
+        SyncScale();
         GearDeckLayoutInput input = LayoutInput();
         FitMinHeight(input);
         GearPills pills = Pills();
-        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeight) != _g.Frame.H || _pillsVersion != _geometryPills)
+        if (input != _g.Input || MathF.Max(Height, GearDeckGeometry.MinHeightAt(_scale)) != _g.Frame.H
+            || _pillsVersion != _geometryPills || _g.Scale != _scale)
         {
-            _g = GearDeckGeometry.Create(Height, input, pills);
+            _g = GearDeckGeometry.Create(Height, input, pills, _scale);
             _geometryPills = _pillsVersion;
             ClearFitted();
             Array.Clear(_slotLabels);
             Array.Clear(_fittedChips);
         }
         PlaceQueryInput();
+    }
+
+    /// <summary>The bound scale, snapped to the decks' steps and range; 1 without a binding.</summary>
+    private float ReadScale() => _b.Scale is { } scale ? DeckGeometry.SnapScale(scale()) : 1f;
+
+    /// <summary>
+    /// Follows the bound scale: a change re-bakes the fields' fonts and drops
+    /// the text fitted at the old size, and every check sets the width to the
+    /// scale's (a saved layout may restore another), kept inside the parent.
+    /// The height is left to <see cref="FitMinHeight"/>, which grows it to
+    /// the new minimum.
+    /// </summary>
+    private void SyncScale()
+    {
+        float scale = ReadScale();
+        if (scale != _scale)
+        {
+            _scale = scale;
+            SetFieldFonts();
+            _pillsFor = null;   // pills are measured with the face at the scale
+            _sortText = null;
+            _fittedFooter = null;
+            Array.Clear(_suggestTexts);
+            Array.Clear(_slotLabels);
+            ClearFitted();
+        }
+        float width = GearDeckGeometry.WidthAt(_scale);
+        if (Width == width && MinWidth == width && MaxWidth == width) return;
+        MinWidth = MaxWidth = width;
+        Width = width;
+        if (Parent is { } parent && Left + Width > parent.Width) Left = MathF.Max(0f, parent.Width - Width);
+        ResetAnchorCapture();
+        FindRoot()?.NotifyWindowResized(this);   // the layout records the new size
     }
 
     /// <summary>
@@ -280,7 +326,7 @@ internal sealed partial class UiGearDeck : UiElement
     /// </summary>
     private void FitMinHeight(GearDeckLayoutInput input)
     {
-        float min = GearDeckGeometry.MinHeightFor(input);
+        float min = GearDeckGeometry.MinHeightFor(input, _scale);
         MinHeight = min;
         if (Height >= min) return;
         UiElement? parent = Parent;
@@ -439,7 +485,7 @@ internal sealed partial class UiGearDeck : UiElement
 
     internal override void ConstrainResize(ResizeEdges edges, ref float width, ref float height)
     {
-        width = GearDeckGeometry.Width;
+        width = GearDeckGeometry.WidthAt(_scale);
         height = MathF.Max(height, MinHeight);
     }
 

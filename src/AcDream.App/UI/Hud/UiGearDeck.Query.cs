@@ -80,7 +80,6 @@ internal sealed partial class UiGearDeck
     private void CreateQueryInput()
     {
         QueryInput.Keyboard = _b.Keyboard;
-        QueryInput.DatFont = _fonts?.Face(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular);
         QueryInput.OnTextChanged = text =>
         {
             _suggestions = GearChipSuggester.Suggest(text);
@@ -105,12 +104,21 @@ internal sealed partial class UiGearDeck
         AddChild(QueryInput);
 
         SaveNameInput.Keyboard = _b.Keyboard;
-        SaveNameInput.DatFont = QueryInput.DatFont;
+        SetFieldFonts();
         SaveNameInput.OnSubmit = text => FinishSave(text, "enter");
         SaveNameInput.OnFocusLost = _ => FinishSave(null, "focus lost");   // like Esc: leaving the field cancels
         SaveNameInput.OnEscape = () => FinishSave(null, "escape");
         AddChild(SaveNameInput);
         PlaceQueryInput();
+    }
+
+    /// <summary>The query and name fields type in the deck's small face at its scale.</summary>
+    private void SetFieldFonts()
+    {
+        UiDatFont? face = _fonts?.At(_scale).Small;
+        QueryInput.DatFont = face;
+        SaveNameInput.DatFont = face;
+        QueryInput.Padding = SaveNameInput.Padding = 4f * _scale;
     }
 
     /// <summary>★: opens the name field, pre-filled from the chip labels and selected. Does nothing while the query is empty.</summary>
@@ -195,9 +203,10 @@ internal sealed partial class UiGearDeck
     {
         DeckRect r = _g.QueryField;
         if (QueryInput.Anchors != AnchorEdges.None) QueryInput.Anchors = AnchorEdges.None;
-        QueryInput.Left = r.X + 2f;
+        float inset = 2f * _scale;
+        QueryInput.Left = r.X + inset;
         QueryInput.Top = r.Y;
-        QueryInput.Width = MathF.Max(0f, r.W - 4f);
+        QueryInput.Width = MathF.Max(0f, r.W - 2f * inset);
         QueryInput.Height = r.H;
         bool shown = _model.Packs.Count > 0;
         QueryInput.Visible = shown && !_naming;
