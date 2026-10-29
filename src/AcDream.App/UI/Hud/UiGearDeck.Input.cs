@@ -251,10 +251,17 @@ internal sealed partial class UiGearDeck
                 return true;
             case GearZone.FoldStud:
                 _b.Session.Update(s => s with { Folded = !s.Folded });
+                ResetFigurePose();
                 ScrollTo(_scrollRow);
                 return true;
-            case GearZone.SlotsStud:   // Slots is plan 1's only expanded view
-                _b.Session.Update(s => s with { Folded = false });
+            case GearZone.SlotsStud:
+                _b.Session.Update(s => s with { Folded = false, Equip = GearEquipView.Slots });
+                ResetFigurePose();
+                ScrollTo(_scrollRow);
+                return true;
+            case GearZone.FigureStud:
+                if (!_figureAttached) return true;   // dim without a figure
+                _b.Session.Update(s => s with { Folded = false, Equip = GearEquipView.Figure });
                 ScrollTo(_scrollRow);
                 return true;
             case GearZone.GridStud:
@@ -272,8 +279,6 @@ internal sealed partial class UiGearDeck
                 return true;
             case GearZone.FooterButton:
                 AddTargetsToSalvage();
-                return true;
-            case GearZone.FigureStud:   // Figure is plan 3
                 return true;
             case GearZone.Chip when hit.Index < _query.Chips.Count:
                 SetQuery(_query.Without(hit.Index));

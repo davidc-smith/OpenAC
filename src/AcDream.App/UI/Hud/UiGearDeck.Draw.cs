@@ -54,7 +54,11 @@ internal sealed partial class UiGearDeck
         ClientObjectTable objects = _b.Objects();
         DrawEquipHeader(ctx);
         if (g.Input.Folded) DrawWornRow(ctx);
-        else DrawSlots(ctx, objects);
+        else
+        {
+            if (g.Input.Figure) DrawFigure(ctx);
+            DrawSlots(ctx, objects);   // the ring in Figure view, the grid in Slots view
+        }
         DrawPacksHeader(ctx);
         DeckChrome.DrawGauge(ctx, g.BurdenBar, _model.BurdenFill, StaminaInk, 1f, _scale);
         DrawQueryBar(ctx);
@@ -171,7 +175,7 @@ internal sealed partial class UiGearDeck
         ctx.DrawLine(c.X + c.W - inset, c.Y + inset, c.X + inset, c.Y + c.H - inset, ink, stroke);
     }
 
-    /// <summary>The ▾ / ▸ fold stud, "Equipment", and the Figure (dimmed in plan 1) and Slots studs.</summary>
+    /// <summary>The ▾ / ▸ fold stud, "Equipment", and the Figure (dim without a figure) and Slots studs.</summary>
     private void DrawEquipHeader(UiRenderContext ctx)
     {
         GearDeckGeometry g = _g;
@@ -182,8 +186,9 @@ internal sealed partial class UiGearDeck
         DrawChevron(ctx, g.FoldStud, g.Input.Folded ? Chevron.Right : Chevron.Down, ink);
         DrawText(ctx, BoldIn(h), "Equipment", g.FoldStud.X + g.FoldStud.W + P(6f), h, LabelInk);
 
-        DrawLabelledStud(ctx, g.FigureStud, "Figure", on: false, dim: true);
-        DrawLabelledStud(ctx, g.SlotsStud, "Slots", on: true);
+        bool figure = g.Input.Figure && !g.Input.Folded;
+        DrawLabelledStud(ctx, g.FigureStud, "Figure", on: figure, dim: !_figureAttached);
+        DrawLabelledStud(ctx, g.SlotsStud, "Slots", on: !figure && !g.Input.Folded);
     }
 
     private void DrawPacksHeader(UiRenderContext ctx)
@@ -233,6 +238,18 @@ internal sealed partial class UiGearDeck
     }
 
     // ---- equipment ----
+
+    /// <summary>The figure: a dark backdrop and the doll the paper doll presenter rendered for it.</summary>
+    private void DrawFigure(UiRenderContext ctx)
+    {
+        DeckRect f = _g.Figure;
+        ctx.FillRoundedRect(f.X, f.Y, f.W, f.H, P(6f), SlotFill);
+        if (!_figureTexture.IsAssigned) return;
+        uint handle = AcDream.App.Rendering.TextRenderer.ResolveExternalTextureSlot(_figureTexture);
+        if (handle == 0u) return;
+        // The private viewport renders top-down (PrivateEntityViewportRenderer.TextureIsBottomUp is false).
+        ctx.DrawSprite(handle, f.X, f.Y, f.W, f.H, 0f, 0f, 1f, 1f, Vector4.One);
+    }
 
     /// <summary>The Slots view: every slot as a dark cell with its worn icon, or its label when
     /// empty. Aetheria slots the character has not unlocked are dimmed, as the paper doll hides them.</summary>
@@ -610,6 +627,7 @@ internal sealed partial class UiGearDeck
         GearZone.SidePack when hit.Index >= 0 => _g.SidePack(hit.Index),
         GearZone.Chip when hit.Index >= 0 && hit.Index < _g.Chips.Count => _g.Chips[hit.Index],
         GearZone.ChipMore => _g.ChipMore,
+        GearZone.Figure => _g.Figure,
         GearZone.Item => _g.Input.List ? _g.ListRow(hit.Index, _scrollRow) : _g.GridCell(hit.Index, _scrollRow),
         _ => null,
     };

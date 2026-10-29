@@ -42,3 +42,15 @@ internal sealed class PaperdollFrameViews : IPaperdollFrameView
         foreach (IPaperdollFrameView view in _views) view.ClearTextureHandle();
     }
 }
+
+/// <summary>The Gear Deck's figure as a place the paper doll is shown.</summary>
+internal sealed class GearDeckPaperdollFrameView(AcDream.App.UI.Hud.UiGearDeck deck) : IPaperdollFrameView
+{
+    public PaperdollPose Pose => deck.FigurePose;
+
+    public bool TryGetVisibleSize(out int width, out int height) => deck.TryGetFigureSize(out width, out height);
+
+    public void SetTextureHandle(uint textureHandle) => deck.SetFigureTexture(UiTextureTableHandle.ToSlot(textureHandle));
+
+    public void ClearTextureHandle() => deck.SetFigureTexture(Gpu.GpuTextureSlot.Unassigned);
+}
