@@ -37,13 +37,20 @@ internal sealed partial class UiGearDeck
 
     private void CreateMenu()
     {
-        _menu.DatFont = _fonts?.Face(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular);
+        SetMenuScale();
         _menu.Opening = (x, y) => PickMenu(_g.HitAt(x, y));
         _menu.ItemsSource = MenuItems;
         _menu.ItemsEnabledSource = MenuEnabled;
         _menu.Selected = ChooseMenuItem;
         AddChild(_menu);
         ContextMenu = _menu;
+    }
+
+    /// <summary>The menu draws at the deck's scale: its rows, insets and widths, in the deck's small face.</summary>
+    private void SetMenuScale()
+    {
+        _menu.Scale = _scale;
+        _menu.DatFont = _fonts?.At(_scale).Small;
     }
 
     /// <summary>The kind a right-click (or a left-click opener's point inside its stud) asks for.</summary>

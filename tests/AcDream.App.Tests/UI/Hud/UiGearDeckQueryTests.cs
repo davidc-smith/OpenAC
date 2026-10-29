@@ -50,7 +50,8 @@ public sealed class UiGearDeckQueryTests
         return t;
     }
 
-    private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null, Func<uint>? player = null)
+    private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null, Func<uint>? player = null,
+        Func<float>? scale = null)
     {
         ClientObjectTable table = World();
         var session = new GearDeckSession(null, () => "", () => false);
@@ -64,17 +65,18 @@ public sealed class UiGearDeckQueryTests
             Session: session,
             Actions: new NoActions(),
             IsPending: _ => false,
-            Close: () => { });
+            Close: () => { },
+            Scale: scale);
         var deck = new UiGearDeck(b, fonts, null, clock ?? (() => 0.0));
         deck.Refresh();
         return deck;
     }
 
     /// <summary>A deck at the root's origin, so its screen and local points agree.</summary>
-    private static (UiRoot Root, UiGearDeck Deck) Rooted(DeckFonts? fonts = null)
+    private static (UiRoot Root, UiGearDeck Deck) Rooted(DeckFonts? fonts = null, Func<float>? scale = null)
     {
         var root = new UiRoot { Width = 1200, Height = 900 };
-        UiGearDeck deck = Make(fonts);
+        UiGearDeck deck = Make(fonts, scale: scale);
         root.AddChild(deck);
         deck.Refresh();
         return (root, deck);
@@ -100,6 +102,18 @@ public sealed class UiGearDeckQueryTests
         root.OnMouseMove(x, y);
         root.OnMouseDown(UiMouseButton.Left, x, y);
         root.OnMouseUp(UiMouseButton.Left, x, y);
+    }
+
+    /// <summary>Clicks row <paramref name="index"/> of the open menu (no separators above it) through the root.</summary>
+    private static void ClickMenuRow(UiRoot root, UiGearDeck deck, int index)
+    {
+        var (x, y, _, _) = deck.Menu.PopupScreenRect;
+        float s = deck.Menu.Scale;
+        int px = (int)(x + 10f * s);
+        int py = (int)(y + (UiMarkupContextMenu.Inset + (index + 0.5f) * UiMarkupContextMenu.ItemHeight) * s);
+        root.OnMouseMove(px, py);
+        root.OnMouseDown(UiMouseButton.Left, px, py);
+        root.OnMouseUp(UiMouseButton.Left, px, py);
     }
 
     private static void Key(UiField field, Key key) =>
@@ -252,8 +266,28 @@ public sealed class UiGearDeckQueryTests
         Assert.True(deck.Menu.IsOpen);
         Assert.Equal(deck.ChipLabels.Skip(shown).ToArray(), deck.Menu.ItemsSource());
 
-        deck.Menu.Selected!(0);
+        ClickMenuRow(root, deck, 0);
+        Assert.False(deck.Menu.IsOpen);
         Assert.Equal(q.Without(shown).Chips, deck.Query.Chips);
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void TheSortMenu_FollowsTheDeckScale_InSizeAndHitTesting(float scale)
+    {
+        var (root, deck) = Rooted(scale: () => scale);
+        deck.SetQuery(GearQuery.Empty.With(GearChip.WornOnly));
+        RootClick(root, deck, deck.Geometry.SortStud);
+        Assert.True(deck.Menu.IsOpen);
+        Assert.Equal(scale, deck.Menu.Scale);
+        var (_, _, w, h) = deck.Menu.PopupScreenRect;
+        // Seven rows of 18 between insets of 3, and at least the 80-point minimum width, all at the scale.
+        Assert.Equal((2f * UiMarkupContextMenu.Inset + 7f * UiMarkupContextMenu.ItemHeight) * scale, h, 3);
+        Assert.True(w >= UiMarkupContextMenu.MinPopupWidth * scale);
+
+        ClickMenuRow(root, deck, 4);   // Name, Type, Material, Workmanship, Value
+        Assert.Equal(GearSortField.Value, deck.Query.Sort.Field);
     }
 
     [Fact]

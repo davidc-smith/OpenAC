@@ -29,6 +29,13 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
 
     public PluginUiPalette? ThemePalette { get; set; }
     public UiDatFont? DatFont { get; set; }
+
+    /// <summary>
+    /// What the popup's rows, insets, indent and minimum width are multiplied by
+    /// (the constants above are the sizes at 1). A Modern HUD deck sets its deck
+    /// scale here, with <see cref="DatFont"/> at the same scale. Read as the menu opens.
+    /// </summary>
+    public float Scale { get; set; } = 1f;
     public Func<IReadOnlyList<string>> ItemsSource { get; set; } = static () => Array.Empty<string>();
 
     /// <summary>Per-item enabled flags; null, or an item past the end, is enabled.</summary>
@@ -59,6 +66,7 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
     private bool[] _enabled = Array.Empty<bool>();
     private float[] _rowTops = Array.Empty<float>();   // one more than the items: the last is the bottom
     private float _x, _y, _w, _h;                       // the popup, relative to this menu's origin
+    private float _scale = 1f;                          // Scale as of the open
     private int _highlight = -1;
     private UiElement? _returnFocus;
     private UiRoot? _root;                              // the root it opened in, so Close works detached
@@ -95,19 +103,20 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         _items = items;
         _enabled = new bool[items.Length];
         _rowTops = new float[items.Length + 1];
-        float y = Inset, textWidth = 0f;
+        _scale = Scale > 0f ? Scale : 1f;
+        float y = Inset * _scale, textWidth = 0f;
         for (int i = 0; i < items.Length; i++)
         {
             _rowTops[i] = y;
             bool separator = items[i] == Separator;
-            y += separator ? SeparatorHeight : ItemHeight;
+            y += (separator ? SeparatorHeight : ItemHeight) * _scale;
             _enabled[i] = !separator && (flags is null || i >= flags.Count || flags[i]);
             if (!separator)
                 textWidth = MathF.Max(textWidth, MeasureText(items[i]));
         }
         _rowTops[items.Length] = y;
-        _w = MathF.Ceiling(MathF.Max(MinPopupWidth, textWidth + 2f * TextIndent));
-        _h = y + Inset;
+        _w = MathF.Ceiling(MathF.Max(MinPopupWidth * _scale, textWidth + 2f * TextIndent * _scale));
+        _h = y + Inset * _scale;
         Vector2 origin = ScreenPosition;
         _x = Place(screenX, _w, root.Width) - origin.X;
         _y = Place(screenY, _h, root.Height) - origin.Y;
@@ -263,7 +272,7 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         Selected?.Invoke(index);
     }
 
-    private float MeasureText(string text) => DatFont?.MeasureWidth(text) ?? text.Length * 7f;
+    private float MeasureText(string text) => DatFont?.MeasureWidth(text) ?? text.Length * 7f * _scale;
 
     protected override void OnDrawOverlay(UiRenderContext ctx)
     {
@@ -279,10 +288,11 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
         ctx.PushAlphaAbsolute(1f);
         try
         {
+            float inset = Inset * _scale, itemHeight = ItemHeight * _scale, separatorHeight = SeparatorHeight * _scale;
             if (p is not null)
             {
                 PluginUiStyle.PopupShadow(ctx, _x, _y, _w, _h);
-                PluginUiStyle.Surface(ctx, _x, _y, _w, _h, PluginUiStyle.ContainerRadius, background, border);
+                PluginUiStyle.Surface(ctx, _x, _y, _w, _h, PluginUiStyle.ContainerRadius * _scale, background, border);
             }
             else
             {
@@ -294,18 +304,18 @@ public sealed class UiMarkupContextMenu : UiElement, IUiContextMenu
                 float top = _y + _rowTops[i];
                 if (_items[i] == Separator)
                 {
-                    ctx.DrawFill(_x + Inset, top + MathF.Floor((SeparatorHeight - 1f) * 0.5f),
-                        _w - 2f * Inset, 1f, separator);
+                    ctx.DrawFill(_x + inset, top + MathF.Floor((separatorHeight - 1f) * 0.5f),
+                        _w - 2f * inset, 1f, separator);
                     continue;
                 }
                 if (i == _highlight)
                 {
                     if (p is not null)
-                        PluginUiStyle.Row(ctx, _x, top, _w, ItemHeight, highlight);
+                        PluginUiStyle.Row(ctx, _x, top, _w, itemHeight, highlight);
                     else
-                        ctx.DrawFill(_x + 1f, top, _w - 2f, ItemHeight, highlight);
+                        ctx.DrawFill(_x + 1f, top, _w - 2f, itemHeight, highlight);
                 }
-                UiCaption.Draw(ctx, DatFont, _items[i], _x + TextIndent, top, ItemHeight,
+                UiCaption.Draw(ctx, DatFont, _items[i], _x + TextIndent * _scale, top, itemHeight,
                     _enabled[i] ? text : disabled, outline: p is null);
             }
         }

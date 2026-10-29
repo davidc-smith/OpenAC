@@ -303,6 +303,7 @@ internal sealed partial class UiGearDeck : UiElement
         {
             _scale = scale;
             SetFieldFonts();
+            SetMenuScale();   // UiGearDeck.Menu.cs
             _pillsFor = null;   // pills are measured with the face at the scale
             _sortText = null;
             _fittedFooter = null;
