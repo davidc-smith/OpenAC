@@ -68,7 +68,7 @@ public sealed class UiGearDeckDrawTests
     private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
         EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u,
         Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null,
-        Func<float>? scale = null)
+        Func<float>? scale = null, Func<double>? clock = null)
     {
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
@@ -84,7 +84,7 @@ public sealed class UiGearDeckDrawTests
             IsPending: id => id == 0xA01u,
             Close: () => { },
             Scale: scale);
-        var deck = new UiGearDeck(b, fonts, icons);
+        var deck = new UiGearDeck(b, fonts, icons, clock);
         deck.Refresh();
         return deck;
     }
@@ -119,6 +119,26 @@ public sealed class UiGearDeckDrawTests
         deck.Refresh();
         TextRenderer r = DrawInside(deck);
         Assert.True(HasColour(r, list ? UiGearDeck.RowRule : UiGearDeck.CellFill));
+    }
+
+    [Fact]
+    public void TheTooltip_DrawsInTheDecksTextFaceAtItsScale()
+    {
+        var baked = new List<float>();
+        double now = 0;
+        UiGearDeck deck = Deck(World(), fonts: new DeckFonts((px, _) => { baked.Add(px); return null!; }),
+            scale: () => 1.5f, clock: () => now);
+        DeckRect cell = deck.Geometry.GridCell(0, 0)!.Value;
+        float x = cell.X + cell.W / 2f, y = cell.Y + cell.H / 2f;
+        deck.HitTestLocal(x, y);
+        deck.OnEvent(new UiEvent(0, deck, UiEventType.MouseMove, Data1: (int)x, Data2: (int)y));
+        now += UiCommandDeck.TooltipDwell;
+        Assert.NotNull(deck.VisibleTooltip);
+
+        MarkupDrawProbe.DrawOverlays(deck, deck.Width, deck.Height);
+        // The tooltip body is the text face (14 px at 1x); at 1.5x it is 21 px, and no 1x face is baked.
+        Assert.Contains(DeckFonts.PixelHeight(DeckFonts.TextPixelHeight, 1.5f), baked);
+        Assert.DoesNotContain(DeckFonts.TextPixelHeight, baked);
     }
 
     [Fact]

@@ -584,7 +584,7 @@ internal sealed partial class UiGearDeck
         try
         {
             HudTooltip.Draw(ctx, tip, HudTooltipStyle.Compact, anchor,
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts, _scale);
         }
         finally { ctx.PopAlpha(); }
     }
