@@ -459,6 +459,7 @@ internal sealed partial class UiGearDeck
             GearZone.SidePack when hit.Index < _model.Packs.Count => hit,
             GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => hit,
             GearZone.EquipSlot when hit.Index < GearSlotCatalog.Slots.Count => hit,
+            GearZone.Figure when _g.Input.Figure => hit,
             GearZone.WornCell when hit.Index < _model.Worn.Count => hit,
             GearZone.Frame when !ShowsResults && _g.Contents.Contains(x, y) => hit,
             _ => null,
@@ -511,6 +512,10 @@ internal sealed partial class UiGearDeck
                 action = nameof(GearDropDispatcher.DropOnCell);
                 Dispatcher.DropOnCell(p.ObjId, SelectedPackId, 0u, -1, fromGround);
                 break;
+            case GearZone.Figure:
+                action = nameof(GearDropDispatcher.DropOnFigure);
+                Dispatcher.DropOnFigure(p.ObjId, (EquipMask)(uint)hit.Index);
+                break;
             default:   // EquipSlot or WornCell
                 action = nameof(GearDropDispatcher.DropOnSlot);
                 Dispatcher.DropOnSlot(p.ObjId, SlotMaskAt(hit));
@@ -527,12 +532,17 @@ internal sealed partial class UiGearDeck
             DropHighlight = null;
             return;
         }
-        // A slot shows whether the item can go there; a pack or cell always takes the drop
-        // (the dispatcher falls through to a pack with room, or reports why not).
-        bool accept = hit.Zone is not (GearZone.EquipSlot or GearZone.WornCell)
-            || (_b.Objects().Get(p.ObjId) is { } item
+        // A slot shows whether the item can go there, and the figure as its drop would; a pack or cell
+        // always takes the drop (the dispatcher falls through to a pack with room, or reports why not).
+        bool accept = hit.Zone switch
+        {
+            GearZone.EquipSlot or GearZone.WornCell => _b.Objects().Get(p.ObjId) is { } item
                 && (ItemEquipRules.IsOffHandWeaponDrop(item, SlotMaskAt(hit))
-                    || ItemEquipRules.ResolvePaperdollDropWieldMask(item, SlotMaskAt(hit)) != EquipMask.None));
+                    || ItemEquipRules.ResolvePaperdollDropWieldMask(item, SlotMaskAt(hit)) != EquipMask.None),
+            GearZone.Figure => _b.Objects().Get(p.ObjId) is { } worn
+                && GearDropDispatcher.FigureAccepts(worn, (EquipMask)(uint)hit.Index),
+            _ => true,
+        };
         DropHighlight = (hit, accept);
     }
 

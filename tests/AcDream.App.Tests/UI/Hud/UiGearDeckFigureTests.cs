@@ -360,4 +360,30 @@ public sealed class UiGearDeckFigureTests
         Click(r.Deck, r.Deck.Geometry.SlotsStud);
         Assert.True(r.Deck.FigurePose.IsDefault);
     }
+
+    [Fact]
+    public void DroppingTheCapOnTheHead_WearsIt_AndTheHighlightAccepts()
+    {
+        Rig r = Make();
+        var head = MapPoint(r.Deck, 50, 10);
+        var payload = new ItemDragPayload(Cap, ItemDragSource.Inventory, 0, null);
+        SendAt(r.Deck, UiEventType.DragEnter, head, payload: payload);
+        var drop = Assert.NotNull(r.Deck.DropHighlight);
+        Assert.Equal(GearZone.Figure, drop.Hit.Zone);
+        Assert.True(drop.Accept);
+        SendAt(r.Deck, UiEventType.DropReleased, head, payload: payload);
+        Assert.Contains(r.Actions.Calls, c => c.StartsWith($"wield {Cap:X} "));
+    }
+
+    [Fact]
+    public void ALooseMiscItem_IsRefusedByTheFigure()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        var payload = new ItemDragPayload(First, ItemDragSource.Inventory, 0, null);
+        SendAt(r.Deck, UiEventType.DragEnter, chest, payload: payload);
+        Assert.False(r.Deck.DropHighlight?.Accept);
+        SendAt(r.Deck, UiEventType.DropReleased, chest, payload: payload);
+        Assert.DoesNotContain(r.Actions.Calls, c => c.StartsWith("wield"));
+    }
 }
