@@ -124,4 +124,100 @@ public sealed class GearDeckGeometryTests
         Assert.True(GearDeckGeometry.MinHeightFor(Input(folded: true)) < GearDeckGeometry.MinHeightFor(Input()));
         Assert.Equal(GearDeckGeometry.MinHeight, GearDeckGeometry.MinHeightFor(Input(sideSlots: 0)));
     }
+
+    private static readonly Func<string, float> Six = s => s.Length * 6f;
+
+    [Fact]
+    public void QueryBar_SitsUnderTheBurdenBar()
+    {
+        var g = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 2, 30, 7, 0));
+        Assert.Equal(g.BurdenBar.Y + GearDeckGeometry.BurdenH + GearDeckGeometry.Gap, g.QueryBar.Y);
+        Assert.Equal(GearDeckGeometry.QueryH, g.QueryBar.H);
+        Assert.Equal(g.QueryBar.Y + GearDeckGeometry.QueryH + GearDeckGeometry.Gap, g.Contents.Y);
+        Assert.Equal(0f, g.SavedRow.H);
+    }
+
+    [Fact]
+    public void SavedRow_OnlyWithSavedFilters_AndMinHeightGrows()
+    {
+        var none = new GearDeckLayoutInput(false, false, 2, 30, 7, 0);
+        var some = none with { SavedCount = 2 };
+        var g = GearDeckGeometry.Create(620f, some);
+        Assert.Equal(GearDeckGeometry.SavedH, g.SavedRow.H);
+        Assert.Equal(g.SavedRow.Y + GearDeckGeometry.SavedH + GearDeckGeometry.Gap, g.Contents.Y);
+        Assert.Equal(GearDeckGeometry.MinHeightFor(none) + GearDeckGeometry.SavedH + GearDeckGeometry.Gap,
+            GearDeckGeometry.MinHeightFor(some));
+    }
+
+    [Fact]
+    public void EverySidePackFits_AtMinHeight_WithSavedRow()
+    {
+        var input = new GearDeckLayoutInput(false, false, 2, 30, 7, 0, SavedCount: 1);
+        var g = GearDeckGeometry.Create(GearDeckGeometry.MinHeightFor(input), input);
+        Assert.Equal(8, g.VisibleSidePacks);
+    }
+
+    [Fact]
+    public void QueryStuds_RightToLeft()
+    {
+        var g = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0));
+        Assert.Equal(GearDeckGeometry.Width - GearDeckGeometry.Pad, g.DirStud.X + g.DirStud.W);
+        Assert.Equal(g.DirStud.X - GearDeckGeometry.StudGap, g.SortStud.X + g.SortStud.W);
+        Assert.Equal(g.SortStud.X - GearDeckGeometry.StudGap, g.SaveStud.X + g.SaveStud.W);
+        Assert.Equal(g.SaveStud.X - GearDeckGeometry.Gap, g.QueryText.X + g.QueryText.W);
+    }
+
+    [Fact]
+    public void Chips_FitThenMore_FieldKeepsMinimum()
+    {
+        var input = new GearDeckLayoutInput(false, false, 0, 0, 7, 0);
+        var pills = new GearPills(["Salvage", "Steel", "Work >= 7", "Iron", "Copper"], [], Six);
+        var g = GearDeckGeometry.Create(620f, input, pills);
+        Assert.True(g.Chips.Count < 5);
+        Assert.NotNull(g.ChipMore);
+        Assert.Equal(5 - g.Chips.Count, g.HiddenChips);
+        Assert.True(g.QueryField.W >= GearDeckGeometry.FieldMinW);
+        Assert.Equal(g.QueryText.X + g.QueryText.W, g.QueryField.X + g.QueryField.W);
+        Assert.Equal(new GearDeckHit(GearZone.Chip, 0), g.HitAt(g.Chips[0].X + 2, g.Chips[0].Y + 2));
+        Assert.Equal(GearZone.ChipMore, g.HitAt(g.ChipMore!.Value.X + 2, g.ChipMore.Value.Y + 2).Zone);
+        Assert.Equal(GearZone.QueryField, g.HitAt(g.QueryField.X + 2, g.QueryField.Y + 2).Zone);
+    }
+
+    [Fact]
+    public void NoChips_FieldFillsQueryText()
+    {
+        var g = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0));
+        Assert.Empty(g.Chips);
+        Assert.Null(g.ChipMore);
+        Assert.Equal(g.QueryText.X, g.QueryField.X);
+    }
+
+    [Fact]
+    public void Suggestions_OverlayAndHitFirst()
+    {
+        var g = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 30, 7, 0, Suggestions: 3));
+        DeckRect s1 = g.Suggestion(1);
+        Assert.Equal(g.QueryBar.Y + GearDeckGeometry.QueryH + 1 + GearDeckGeometry.SuggestH, s1.Y);
+        Assert.Equal(new GearDeckHit(GearZone.Suggestion, 1), g.HitAt(s1.X + 2, s1.Y + 2));   // over the grid
+    }
+
+    [Fact]
+    public void FooterButton_OnlyWhenShown()
+    {
+        var off = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0));
+        var on = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0, SalvageButton: true));
+        DeckRect b = on.FooterButton;
+        Assert.Equal(GearDeckGeometry.FooterButtonW, b.W);
+        Assert.Equal(GearZone.FooterButton, on.HitAt(b.X + 2, b.Y + 2).Zone);
+        Assert.NotEqual(GearZone.FooterButton, off.HitAt(b.X + 2, b.Y + 2).Zone);
+    }
+
+    [Fact]
+    public void SavedStuds_HitByIndex()
+    {
+        var input = new GearDeckLayoutInput(false, false, 0, 0, 7, 0, SavedCount: 2);
+        var g = GearDeckGeometry.Create(620f, input, new GearPills([], ["Steel", "Kits"], Six));
+        Assert.Equal(2, g.SavedStuds.Count);
+        Assert.Equal(new GearDeckHit(GearZone.SavedFilter, 1), g.HitAt(g.SavedStuds[1].X + 2, g.SavedStuds[1].Y + 2));
+    }
 }
