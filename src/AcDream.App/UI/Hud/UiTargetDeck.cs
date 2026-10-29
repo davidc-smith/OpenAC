@@ -32,6 +32,9 @@ internal sealed partial class UiTargetDeck : UiElement
     private readonly EmbeddedSvgSpriteCache? _icons;
     private readonly Func<double> _clock;
     private readonly DeckFonts? _fonts;
+    private readonly HudText? _text;
+    private readonly UiMarkupContextMenu _textMenu = new() { ThemePalette = ChatDeckPalette.Menu };
+    private TargetZone _textMenuZone;
     private TargetPlateModel? _view;
     private TargetZone _hover;
     /// <summary>When the pointer reached <see cref="_hover"/>; the tooltip waits <see cref="UiCommandDeck.TooltipDwell"/> from here.</summary>
@@ -52,7 +55,8 @@ internal sealed partial class UiTargetDeck : UiElement
         ITargetDeckActions actions,
         EmbeddedSvgSpriteCache? icons,
         Func<double> clock,
-        DeckFonts? fonts = null)
+        DeckFonts? fonts = null,
+        HudText? text = null)
     {
         _model = model ?? throw new ArgumentNullException(nameof(model));
         _actions = actions ?? throw new ArgumentNullException(nameof(actions));
@@ -62,7 +66,33 @@ internal sealed partial class UiTargetDeck : UiElement
         Width = TargetDeckGeometry.Width;
         Height = TargetDeckGeometry.Height;
         Resizable = false;
+        _text = text;
+        _textMenu.Opening = (x, y) =>
+        {
+            _textMenuZone = _view is null ? TargetZone.None : ZoneAt(_view, x, y);
+            HudTextMenu.StyleMenu(_textMenu, _fonts, 1f, TextFactor);
+        };
+        _textMenu.ItemsSource = () => _text is null || _view is null || _menuOpen || Pressable(_textMenuZone)
+            ? []
+            : HudTextMenu.Labels(_text.Settings, HudDeck.Target);
+        _textMenu.ItemsEnabledSource = HudTextMenu.EnabledFlags;
+        _textMenu.Selected = index =>
+        {
+            if (_text is not null) HudTextMenu.Choose(_text, HudDeck.Target, index);
+        };
+        AddChild(_textMenu);
+        ContextMenu = _textMenu;
     }
+
+    /// <summary>The deck's text factor: its own size or the HUD-wide one (1 without a text size).</summary>
+    internal float TextFactor => _text?.FactorFor(HudDeck.Target) ?? 1f;
+
+    /// <summary>The plate's right-click menu: the Text size block, anywhere on the plate but a stud or the cross.</summary>
+    internal UiMarkupContextMenu TextMenu => _textMenu;
+
+    /// <summary>A ⋯ menu line: its normal height plus the small face's growth at the deck's text size.</summary>
+    private float MenuLineHeight =>
+        MenuLine + DeckFonts.RowGrow(_fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, 1f, TextFactor);
 
     /// <summary>How the runtime mounts the deck: imported chrome, a fixed size, hidden until there is a target.</summary>
     internal static RetailWindowFrame.Options MountOptions(float left, float top) => new()
@@ -122,6 +152,7 @@ internal sealed partial class UiTargetDeck : UiElement
     /// so a deck shown again under a still pointer waits out a fresh dwell.</summary>
     public void OnHidden()
     {
+        _textMenu.Close(restoreFocus: false);
         CloseMenu();
         ResetHover();
     }
@@ -221,7 +252,7 @@ internal sealed partial class UiTargetDeck : UiElement
         return entries;
     }
 
-    private static float MenuHeight(int count) => MenuInset * 2 + count * MenuLine;
+    private float MenuHeight(int count) => MenuInset * 2 + count * MenuLineHeight;
 
     /// <summary>The menu's top in local coordinates: below the plate, or above it when it opened upward.</summary>
     private float MenuTop(int count) => _menuAbove ? -MenuGap - MenuHeight(count) : Height + MenuGap;
@@ -231,7 +262,7 @@ internal sealed partial class UiTargetDeck : UiElement
 
     /// <summary>Menu line <paramref name="i"/> in local coordinates.</summary>
     internal DeckRect MenuEntryRect(int i) =>
-        new(Width - MenuWidth, MenuTop(Entries().Count) + MenuInset + i * MenuLine, MenuWidth, MenuLine);
+        new(Width - MenuWidth, MenuTop(Entries().Count) + MenuInset + i * MenuLineHeight, MenuWidth, MenuLineHeight);
 
     private int MenuEntryAt(float x, float y)
     {
@@ -320,7 +351,7 @@ internal sealed partial class UiTargetDeck : UiElement
     protected override bool ExpandsClipForPopup => true;
 
     /// <summary>The open menu hangs below the plate, so a hit test must reach past its bounds.
-    /// The deck has no children, and draws inside its frame.</summary>
+    /// The deck's only child is its text menu, a popup, and it draws inside its frame.</summary>
     protected override bool ClipsChildren => false;
 
     protected override void OnDrawOverlay(UiRenderContext ctx)
@@ -337,7 +368,8 @@ internal sealed partial class UiTargetDeck : UiElement
         try
         {
             HudTooltip.Draw(ctx, tip, HudTooltipStyle.Card, RectFor(_hover, _view),
-                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts);
+                ScreenPosition, FindRoot()?.Width, _tooltipLayout, _fonts,
+                textFactor: TextFactor);
         }
         finally { ctx.PopAlpha(); }
     }

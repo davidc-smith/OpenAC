@@ -452,6 +452,11 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.ModernHudSwitch? _hudSwitch;
     private Hud.UiCommandDeck? _commandDeck;
     private Hud.DeckFonts? _deckFonts;
+    private Hud.HudText? _hudText;
+
+    /// <summary>The Modern HUD text size, per client: loaded once from the settings file the
+    /// Modern HUD switch lives in, saved there on every change.</summary>
+    internal Hud.HudText HudTextSize => _hudText ??= Hud.HudText.Load(_bindings.Persistence?.Store, Console.WriteLine);
     private Hud.SpellDeckController? _spellDeckController;
     private Hud.UiSpellDeck? _spellDeck;
     private Hud.SpellDeckCharacterSync? _spellDeckSync;
@@ -3217,6 +3222,11 @@ public sealed class RetailUiRuntime : IDisposable
                     ApplyChatFont = ApplyChatFont,
                     ExtendedLevels = _bindings.Options.ExtendedLevels,
                     ModernHud = _bindings.Options.ModernHud,
+                    HudText = _bindings.Options.ModernHud is null
+                        ? null
+                        : new Layout.ConfigOptionsPageController.HudTextBindings(
+                            Load: () => HudTextSize.Settings.Global,
+                            Save: HudTextSize.SetGlobal),
                 },
                 resolveSprite: _bindings.Assets.ResolveSprite,
                 datFont: _bindings.Assets.DefaultFont,
@@ -3689,7 +3699,8 @@ public sealed class RetailUiRuntime : IDisposable
             actions,
             _hudIcons,
             () => clock.Elapsed.TotalSeconds,
-            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache),
+            HudTextSize);
 
         RetailWindowFrame.Mount(
             Host.Root,
@@ -3750,7 +3761,8 @@ public sealed class RetailUiRuntime : IDisposable
                 else dock?.Detach();
             },
             _deckFonts,
-            itemId => magic.Objects.Get(itemId)?.GetAppropriateName());
+            itemId => magic.Objects.Get(itemId)?.GetAppropriateName(),
+            text: HudTextSize);
 
         // Detached, the Spell Deck starts just above the Command Deck's default place.
         float deckLeft = Math.Max(0f, (Host.Root.Width - Hud.DeckGeometry.Default.Width) * 0.5f);
@@ -3866,7 +3878,8 @@ public sealed class RetailUiRuntime : IDisposable
                     SettingsOpen: () => _chatDeckSettings?.IsOpen == true,
                     OpenEditor: OpenChatDeckEditor,
                     ToggleEditor: ToggleChatDeckEditor,
-                    EditorOpen: () => _chatDeckEditor?.IsOpen == true),
+                    EditorOpen: () => _chatDeckEditor?.IsOpen == true,
+                    Text: HudTextSize),
                 _deckFonts,
                 _hudIcons);
 
@@ -3983,7 +3996,8 @@ public sealed class RetailUiRuntime : IDisposable
                     Keyboard: Host.Keyboard,
                     // The salvage window mounts after the deck, so the controller is read when asked.
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
-                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage)),
+                        () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
+                    Text: HudTextSize),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
@@ -4033,7 +4047,8 @@ public sealed class RetailUiRuntime : IDisposable
                 CreateTargetDeckActions(b),
                 _hudIcons,
                 () => clock.Elapsed.TotalSeconds,
-                _deckFonts);
+                _deckFonts,
+                HudTextSize);
             // Ticks only while shown, so auto-ID follows the target only under Modern HUD.
             deck.Ticked += () => _targetAuto?.Tick();
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

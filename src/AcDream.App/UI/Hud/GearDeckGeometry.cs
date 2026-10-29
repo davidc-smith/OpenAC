@@ -64,6 +64,13 @@ internal sealed class GearDeckGeometry
     public required GearDeckLayoutInput Input { get; init; }
     /// <summary>The deck scale every size here was multiplied by.</summary>
     public required float Scale { get; init; }
+    /// <summary>Points every text row (list rows, suggestions) is grown by: <see cref="DeckFonts.RowGrow"/> at the deck's text size.</summary>
+    public required float TextGrow { get; init; }
+
+    /// <summary>A list row's height: its height at the scale, grown for the text size.</summary>
+    public float ListRowHeight => S(ListRowH) + TextGrow;
+    /// <summary>A suggestion row's height: its height at the scale, grown for the text size.</summary>
+    public float SuggestRowHeight => S(SuggestH) + TextGrow;
 
     /// <summary>The column's width at <paramref name="scale"/>.</summary>
     public static float WidthAt(float scale) => Width * scale;
@@ -89,7 +96,7 @@ internal sealed class GearDeckGeometry
     private float S(float points) => points * Scale;
 
     public int VisibleGridRows => Math.Max(0, (int)MathF.Floor((Contents.H + S(ItemGap)) / (S(ItemCell) + S(ItemGap))));
-    public int VisibleListRows => Math.Max(0, (int)MathF.Floor(Contents.H / S(ListRowH)));
+    public int VisibleListRows => Math.Max(0, (int)MathF.Floor(Contents.H / ListRowHeight));
 
     /// <summary>How many side-column cells (main pack included) are shown: the pack count, clipped to the area.</summary>
     public int VisibleSidePacks =>
@@ -118,7 +125,8 @@ internal sealed class GearDeckGeometry
         return rows * WornCellSize * scale + (rows - 1) * WornGap * scale;
     }
 
-    public static GearDeckGeometry Create(float height, GearDeckLayoutInput input, GearPills? pills = null, float scale = 1f)
+    public static GearDeckGeometry Create(float height, GearDeckLayoutInput input, GearPills? pills = null, float scale = 1f,
+        float textGrow = 0f)
     {
         float S(float points) => points * scale;
         float h = MathF.Max(height, MinHeightAt(scale));
@@ -197,7 +205,7 @@ internal sealed class GearDeckGeometry
             SavedRow = savedRow, FooterButton = footerButton,
             Chips = chips, SavedStuds = savedStuds, ChipMore = chipMore, SavedMore = savedMore,
             HiddenChips = hiddenChips, HiddenSaved = hiddenSaved,
-            Input = input, Scale = scale,
+            Input = input, Scale = scale, TextGrow = MathF.Max(0f, textGrow),
         };
     }
 
@@ -222,7 +230,7 @@ internal sealed class GearDeckGeometry
     }
 
     public DeckRect Suggestion(int index) =>
-        new(QueryText.X, QueryBar.Y + S(QueryH) + S(1f) + index * S(SuggestH), QueryText.W, S(SuggestH));
+        new(QueryText.X, QueryBar.Y + S(QueryH) + S(1f) + index * SuggestRowHeight, QueryText.W, SuggestRowHeight);
 
     public DeckRect? GridCell(int index, int scrollRow)
     {
@@ -239,7 +247,7 @@ internal sealed class GearDeckGeometry
         if (index < 0) return null;
         int row = index - scrollRow;
         if (row < 0 || row >= VisibleListRows) return null;
-        return new DeckRect(Contents.X, Contents.Y + row * S(ListRowH), Contents.W, S(ListRowH));
+        return new DeckRect(Contents.X, Contents.Y + row * ListRowHeight, Contents.W, ListRowHeight);
     }
 
     public DeckRect EquipSlot(int index)

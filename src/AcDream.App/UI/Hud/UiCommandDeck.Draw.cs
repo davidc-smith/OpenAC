@@ -57,14 +57,16 @@ internal sealed partial class UiCommandDeck
             trail: vital.Known ? vital.Trail : 0f);
         if (vital.Known && pulse > 0f)
             ctx.FillRoundedRect(r.X, r.Y, r.W * vital.Fill, r.H, P(3), new Vector4(1f, 1f, 1f, pulse * 0.4f));
-        DrawText(ctx, label, r.X + P(8), r, LabelInk, small: true);
-        DrawTextRight(ctx, vital.Text, r.X + r.W - P(8), r, TextInk);
+        float left = r.X + P(8), right = r.X + r.W - P(8);
+        float valueW = FaceIn(r, small: false).Measure(ctx, vital.Text);
+        DrawText(ctx, FitLabel(ctx, label, r, BarLabelRoom(r, valueW, _geometry.Scale)), left, r, LabelInk, small: true);
+        DrawTextRight(ctx, vital.Text, right, r, TextInk);
     }
 
     private void DrawPowerRow(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = _geometry.RowLabel;
-        DrawText(ctx, v.PowerLabel, label.X, label, LabelInk, small: true);
+        DrawText(ctx, FitLabel(ctx, v.PowerLabel, label), label.X, label, LabelInk, small: true);
 
         DeckRect t = _geometry.PowerTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, P(5), Track);
@@ -82,9 +84,9 @@ internal sealed partial class UiCommandDeck
     private void DrawCastingRow(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = _geometry.RowLabel;
-        DrawText(ctx, "CASTING", label.X, label, LabelInk, small: true);
+        DrawText(ctx, FitLabel(ctx, "CASTING", label), label.X, label, LabelInk, small: true);
         DeckRect text = _geometry.CastingText;
-        DrawText(ctx, FitCastingText(v.CastingText, t => Face(small: true).Measure(ctx, t), text.W), text.X, text,
+        DrawText(ctx, FitCastingText(v.CastingText, t => FaceIn(text, small: true).Measure(ctx, t), text.W), text.X, text,
             v.CastingLit ? CastLit : v.CastingDim ? StudOffInk : TextInk, small: true);
         DrawCastButton(ctx, _geometry.Cast, dim: !v.CastEnabled);
     }
@@ -93,8 +95,8 @@ internal sealed partial class UiCommandDeck
     private void DrawCastButton(UiRenderContext ctx, DeckRect r, bool dim)
     {
         Vector4 ink = DeckChrome.DrawStud(ctx, r, _geometry.Scale, on: false, dim);
-        DeckFace face = DeckFace.SmallBoldFor(_fonts, _geometry.Scale);
-        const string word = "CAST";
+        DeckFace face = FaceIn(r, small: true, bold: true);
+        string word = FitCastingText("CAST", t => face.Measure(ctx, t), CastWordRoom(r, _geometry.Scale));
         var (iconX, iconY, iconSize, textX) = DeckGeometry.CastLabel(r, face.Measure(ctx, word), _geometry.Scale);
         DrawIcon(ctx, HudIcons.Cast, iconX, iconY, iconSize, ink);
         face.Draw(ctx, word, textX, r.Y + (r.H - face.LineHeight(ctx)) / 2f, ink);
@@ -108,7 +110,7 @@ internal sealed partial class UiCommandDeck
     private void DrawRecallRow(UiRenderContext ctx)
     {
         DeckRect label = _geometry.RowLabel;
-        DrawText(ctx, "RECALL", label.X, label, LabelInk, small: true);
+        DrawText(ctx, FitLabel(ctx, "RECALL", label), label.X, label, LabelInk, small: true);
         for (int i = 0; i < 5; i++)
             DrawStud(ctx, _geometry.RecallStud(i), on: false, icon: RecallIcons[i], letter: null);
     }
@@ -116,7 +118,7 @@ internal sealed partial class UiCommandDeck
     private void DrawJump(UiRenderContext ctx, CommandDeckView v)
     {
         DeckRect label = _geometry.JumpLabel;
-        DrawText(ctx, "JUMP", label.X, label, v.JumpCharging ? JumpInk : LabelInk with { W = 0.5f }, small: true);
+        DrawText(ctx, FitLabel(ctx, "JUMP", label), label.X, label, v.JumpCharging ? JumpInk : LabelInk with { W = 0.5f }, small: true);
         DeckRect t = _geometry.JumpTrack;
         ctx.FillRoundedRect(t.X, t.Y, t.W, t.H, P(3), Track);
         if (v.JumpFill > 0f)
@@ -176,18 +178,32 @@ internal sealed partial class UiCommandDeck
         if (texture != 0) ctx.DrawCoverageIcon(texture, x, y, pixels, ink);
     }
 
-    private DeckFace Face(bool small) => DeckFace.For(_fonts, _geometry.Scale, small);
+    /// <summary>The face for text in <paramref name="band"/>: the deck's text size, dropped to the largest that fits the band.</summary>
+    private DeckFace FaceIn(DeckRect band, bool small, bool bold = false) =>
+        DeckFace.In(_fonts, small ? DeckFonts.SmallPixelHeight : DeckFonts.TextPixelHeight,
+            bold ? BundledUiFontWeight.SemiBold : BundledUiFontWeight.Regular, _geometry.Scale, TextFactor, band.H);
+
+    /// <summary>A small label shortened with "..." to <paramref name="width"/> (its band's width by default).</summary>
+    private string FitLabel(UiRenderContext ctx, string text, DeckRect band, float? width = null) =>
+        FitCastingText(text, t => FaceIn(band, small: true).Measure(ctx, t), width ?? band.W);
+
+    /// <summary>The room a bar's label has: the bar inside its pads, less the value and a gap before it.</summary>
+    internal static float BarLabelRoom(DeckRect bar, float valueWidth, float scale) =>
+        MathF.Max(0f, bar.W - 16f * scale - valueWidth - 6f * scale);
+
+    /// <summary>The room the word CAST has beside its icon, gap and edge pad.</summary>
+    internal static float CastWordRoom(DeckRect cast, float scale) => cast.W - (14f + 3f + 4f) * scale;
 
     /// <summary>Text from <paramref name="x"/>, centred on <paramref name="band"/>'s height.</summary>
     private void DrawText(UiRenderContext ctx, string text, float x, DeckRect band, Vector4 ink, bool small = false)
     {
-        DeckFace face = Face(small);
+        DeckFace face = FaceIn(band, small);
         face.Draw(ctx, text, x, band.Y + (band.H - face.LineHeight(ctx)) / 2f, ink);
     }
 
     private void DrawTextRight(UiRenderContext ctx, string text, float right, DeckRect band, Vector4 ink) =>
-        DrawText(ctx, text, right - Face(small: false).Measure(ctx, text), band, ink);
+        DrawText(ctx, text, right - FaceIn(band, small: false).Measure(ctx, text), band, ink);
 
     private void DrawTextCentered(UiRenderContext ctx, string text, float centre, DeckRect band, Vector4 ink, bool small = false) =>
-        DrawText(ctx, text, centre - Face(small).Measure(ctx, text) / 2f, band, ink, small);
+        DrawText(ctx, text, centre - FaceIn(band, small).Measure(ctx, text) / 2f, band, ink, small);
 }

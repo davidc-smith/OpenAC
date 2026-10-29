@@ -107,13 +107,14 @@ internal static class HudTooltip
     }
 
     /// <summary>Draws the tooltip pointing at <paramref name="anchor"/> (local coordinates), at deck scale
-    /// <paramref name="scale"/>: the faces are the deck's at that scale, and every size follows it.</summary>
+    /// <paramref name="scale"/>: the faces are the deck's at that scale, and every size follows it.
+    /// <paramref name="textFactor"/> sizes the faces only; pads, gaps and the wrap width follow <paramref name="scale"/>.</summary>
     internal static void Draw(
         UiRenderContext ctx, HudTooltipContent c, HudTooltipStyle s, DeckRect anchor,
         Vector2 screenPosition, float? screenWidth, HudTooltipLayoutCache? cache = null,
-        DeckFonts? fonts = null, float scale = 1f)
+        DeckFonts? fonts = null, float scale = 1f, float textFactor = 1f)
     {
-        DeckFontSet? set = fonts?.At(scale);
+        DeckFontSet? set = fonts?.At(scale, textFactor);
         var bodyFace = new DeckFace(set?.Text);
         // The title is measured in the body face: the bold face is barely wider.
         var titleFace = new DeckFace(set?.Bold);

@@ -329,4 +329,17 @@ public sealed class UiMarkupContextMenuTests
         Assert.Equal(0, MarkupDrawProbe.CountQuads(themed, UiMarkupContextMenu.ClassicBackground));
         Assert.True(MarkupDrawProbe.CountQuads(themed, PluginUiPalette.Moss.Field) >= 1);
     }
+
+    [Fact]
+    public void RowGrow_AddsToEveryItemRow_NotToSeparators()
+    {
+        var m = Mount(CopyPaste);
+        m.Menu.RowGrow = 6f;
+        int picked = -1;
+        m.Menu.Selected = i => picked = i;
+        RightClick(m.Root, 100, 100);
+        Assert.Equal((100f, 100f, 80f, 61f), m.Menu.PopupScreenRect);   // 3 + 24 + 7 + 24 + 3
+        Click(m.Root, 110, 100 + 50);   // Paste is 34 .. 58 with the growth
+        Assert.Equal(2, picked);
+    }
 }

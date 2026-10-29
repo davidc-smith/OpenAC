@@ -27,8 +27,13 @@ internal sealed partial class UiGearDeck
     /// <summary>How far the frame is drawn inside the element, so its dark edge stays inside too.</summary>
     private const float FrameInset = 2f;
 
-    private DeckFace Small => DeckFace.For(_fonts, _scale, small: true);
-    private DeckFace Bold => DeckFace.SmallBoldFor(_fonts, _scale);
+    /// <summary>The small face for text in <paramref name="box"/>: the deck's text size, dropped to the largest that fits the box.</summary>
+    private DeckFace SmallIn(DeckRect box) =>
+        DeckFace.In(_fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, _scale, _textFactor, box.H);
+
+    /// <summary>The small SemiBold face for text in <paramref name="box"/>.</summary>
+    private DeckFace BoldIn(DeckRect box) =>
+        DeckFace.In(_fonts, DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold, _scale, _textFactor, box.H);
 
     /// <summary>A size in points at scale 1, at the deck's scale.</summary>
     private float P(float points) => points * _scale;
@@ -42,7 +47,7 @@ internal sealed partial class UiGearDeck
         // The side grips scale the deck, so they light as the Command Deck's do; the height edges draw nothing.
         DeckChrome.DrawResizeGrip(ctx, FindRoot()?.ResizeEdgesFor(this) ?? ResizeEdges.None,
             new DeckRect(f.X + inset, f.Y + inset, f.W - 2f * inset, f.H - 2f * inset), _scale);
-        DrawText(ctx, Bold, "Gear", P(GearDeckGeometry.Pad + 2f), g.Title, LabelInk);
+        DrawText(ctx, BoldIn(g.Title), "Gear", P(GearDeckGeometry.Pad + 2f), g.Title, LabelInk);
         DrawClose(ctx);
         if (_model.Packs.Count == 0) return;   // no player yet: the frame and title only
 
@@ -64,12 +69,13 @@ internal sealed partial class UiGearDeck
         finally { ctx.PopClip(); }
 
         DrawSideColumn(ctx, objects);
-        DrawText(ctx, Small, g.Input.SalvageButton ? FittedFooterLeft(ctx, g.FooterButton.X - g.Footer.X - P(4f)) : FooterLeftText, g.Footer.X, g.Footer, LabelInk);
+        DeckFace footerFace = SmallIn(g.Footer);
+        DrawText(ctx, footerFace, g.Input.SalvageButton ? FittedFooterLeft(ctx, g.FooterButton.X - g.Footer.X - P(4f)) : FooterLeftText, g.Footer.X, g.Footer, LabelInk);
         if (g.Input.SalvageButton) DrawSalvageButton(ctx);
         else if (!ShowsResults)
         {
             string footer = FooterText;
-            DrawText(ctx, Small, footer, g.Footer.X + g.Footer.W - Small.Measure(ctx, footer), g.Footer, LabelInk);
+            DrawText(ctx, footerFace, footer, g.Footer.X + g.Footer.W - footerFace.Measure(ctx, footer), g.Footer, LabelInk);
         }
 
         if (DropHighlight is { } drop && RectFor(drop.Hit) is { } target)
@@ -85,7 +91,7 @@ internal sealed partial class UiGearDeck
         string text = FooterLeftText;
         if (_fittedFooter is null || !ReferenceEquals(_fittedFooterSrc, text) || _fittedFooterWidth != width)
         {
-            _fittedFooter = Fit(ctx, Small, text, MathF.Max(0f, width));
+            _fittedFooter = Fit(ctx, SmallIn(_g.Footer), text, MathF.Max(0f, width));
             _fittedFooterSrc = text;
             _fittedFooterWidth = width;
         }
@@ -102,9 +108,10 @@ internal sealed partial class UiGearDeck
         Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: true);
         string label = SalvageButtonText;
         float room = r.W - P(8f);
+        DeckFace face = SmallIn(r);
         if (_fittedSalvage is not { } f || !ReferenceEquals(f.Src, label) || f.Width != room)
-            _fittedSalvage = f = (label, room, Fit(ctx, Small, label, room));
-        DrawCentred(ctx, Small, f.Text, r, ink);
+            _fittedSalvage = f = (label, room, Fit(ctx, face, label, room));
+        DrawCentred(ctx, face, f.Text, r, ink);
     }
 
     // ---- text and cells ----
@@ -173,7 +180,7 @@ internal sealed partial class UiGearDeck
 
         Vector4 ink = DeckChrome.DrawStud(ctx, g.FoldStud, _scale, on: false);
         DrawChevron(ctx, g.FoldStud, g.Input.Folded ? Chevron.Right : Chevron.Down, ink);
-        DrawText(ctx, Bold, "Equipment", g.FoldStud.X + g.FoldStud.W + P(6f), h, LabelInk);
+        DrawText(ctx, BoldIn(h), "Equipment", g.FoldStud.X + g.FoldStud.W + P(6f), h, LabelInk);
 
         DrawLabelledStud(ctx, g.FigureStud, "Figure", on: false, dim: true);
         DrawLabelledStud(ctx, g.SlotsStud, "Slots", on: true);
@@ -184,10 +191,11 @@ internal sealed partial class UiGearDeck
         GearDeckGeometry g = _g;
         DeckRect h = g.PacksHeader;
         ctx.FillRoundedRect(h.X, h.Y, h.W, h.H, P(5f), HeaderFill);
-        DrawText(ctx, Bold, "Packs", h.X + P(6f), h, LabelInk);
+        DrawText(ctx, BoldIn(h), "Packs", h.X + P(6f), h, LabelInk);
 
         string burden = _burdenText;
-        DrawText(ctx, Small, burden, g.GridStud.X - P(6f) - Small.Measure(ctx, burden), h, LabelInk);
+        DeckFace small = SmallIn(h);
+        DrawText(ctx, small, burden, g.GridStud.X - P(6f) - small.Measure(ctx, burden), h, LabelInk);
 
         bool list = g.Input.List;
         DrawLabelledStud(ctx, g.GridStud, "Grid", on: !list);
@@ -197,7 +205,7 @@ internal sealed partial class UiGearDeck
     private void DrawLabelledStud(UiRenderContext ctx, DeckRect r, string label, bool on, bool dim = false)
     {
         Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on, dim);
-        DrawCentred(ctx, Bold, label, r, ink);   // fixed labels that fit their studs
+        DrawCentred(ctx, BoldIn(r), label, r, ink);   // fixed labels that fit their studs
     }
 
     private enum Chevron { Down, Right, Up }
@@ -259,17 +267,19 @@ internal sealed partial class UiGearDeck
         _ => AetheriaUnlockState.None,
     };
 
-    /// <summary>An empty slot's label: one line when it fits, else split at its first space over two.</summary>
+    /// <summary>An empty slot's label: one line when it fits, else split at its first space over two
+    /// (each line in the face that fits half the cell).</summary>
     private void DrawSlotLabel(UiRenderContext ctx, int index, string label, DeckRect r)
     {
-        DeckFace face = Small;
+        DeckFace face = SmallIn(r);
+        DeckFace half = SmallIn(r with { H = r.H / 2f });
         if (_slotLabels[index] is not { } lines)
         {
             float room = r.W - P(4f);
             int space = label.IndexOf(' ');
             lines = face.Measure(ctx, label) <= room || space < 0
                 ? (Fit(ctx, face, label, room), null)
-                : (Fit(ctx, face, label[..space], room), Fit(ctx, face, label[(space + 1)..], room));
+                : (Fit(ctx, half, label[..space], room), Fit(ctx, half, label[(space + 1)..], room));
             _slotLabels[index] = lines;
         }
         if (lines.Second is null)
@@ -277,9 +287,9 @@ internal sealed partial class UiGearDeck
             DrawCentred(ctx, face, lines.First, r, LabelInk);
             return;
         }
-        float lh = face.LineHeight(ctx), top = r.Y + (r.H - 2f * lh) / 2f;
-        DrawCentred(ctx, face, lines.First, new DeckRect(r.X, top, r.W, lh), LabelInk);
-        DrawCentred(ctx, face, lines.Second, new DeckRect(r.X, top + lh, r.W, lh), LabelInk);
+        float lh = half.LineHeight(ctx), top = r.Y + (r.H - 2f * lh) / 2f;
+        DrawCentred(ctx, half, lines.First, new DeckRect(r.X, top, r.W, lh), LabelInk);
+        DrawCentred(ctx, half, lines.Second, new DeckRect(r.X, top + lh, r.W, lh), LabelInk);
     }
 
     /// <summary>The folded Equipment section: a row (or up to three) of worn icons.</summary>
@@ -307,10 +317,16 @@ internal sealed partial class UiGearDeck
     {
         IReadOnlyList<GearItemView> rows = Shown;
         bool results = ShowsResults;
-        DeckFace face = Small;
+        DeckFace face = default;
+        bool faced = false;
         for (int i = _scrollRow * GearDeckGeometry.Columns; i < rows.Count; i++)
         {
             if (_g.GridCell(i, _scrollRow) is not { } r) break;
+            if (!faced)
+            {
+                face = SmallIn(r with { H = r.H / 2f });   // every cell is the same size; two captions share one
+                faced = true;
+            }
             GearItemView row = rows[i];
             if (objects.Get(row.Id) is not { } o) continue;   // gone since the model was built
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
@@ -340,10 +356,16 @@ internal sealed partial class UiGearDeck
     {
         IReadOnlyList<GearItemView> rows = Shown;
         bool results = ShowsResults;
-        DeckFace face = Small;
+        DeckFace face = default;
+        bool faced = false;
         for (int i = _scrollRow; i < rows.Count; i++)
         {
             if (_g.ListRow(i, _scrollRow) is not { } r) break;
+            if (!faced)
+            {
+                face = SmallIn(r);   // the rows have grown for the text size and are all the same height
+                faced = true;
+            }
             GearItemView row = rows[i];
             if (objects.Get(row.Id) is not { } o) continue;   // gone since the model was built
             ctx.PushAlpha(_b.IsPending(o.ObjectId) ? DimAlpha : 1f);
@@ -423,7 +445,7 @@ internal sealed partial class UiGearDeck
         {
             ctx.FillRoundedRect(well.X, well.Y + P(2f), well.W, well.H - P(4f), P(4f), ChatDeckPalette.FieldFill);
             if (QueryInput.Text.Length == 0 && !QueryInput.IsFocused)
-                DrawText(ctx, Small, QueryPlaceholder, well.X + P(4f), well, LabelInk);
+                DrawText(ctx, SmallIn(well), QueryPlaceholder, well.X + P(4f), well, LabelInk);
         }
 
         IReadOnlyList<string> labels = Pills().Chips;
@@ -432,7 +454,7 @@ internal sealed partial class UiGearDeck
         if (g.ChipMore is { } more)
         {
             DrawCell(ctx, more, HeaderFill, CellEdge, 5f);
-            DrawCentred(ctx, Bold, MoreText, more, Hover.Zone == GearZone.ChipMore ? TextInk : LabelInk);
+            DrawCentred(ctx, BoldIn(more), MoreText, more, Hover.Zone == GearZone.ChipMore ? TextInk : LabelInk);
         }
         DrawQueryStuds(ctx);
         DrawSavedRow(ctx);
@@ -450,8 +472,8 @@ internal sealed partial class UiGearDeck
         GearSortField field = _query.Sort.Field;
         Vector4 ink = DeckChrome.DrawStud(ctx, g.SortStud, _scale, on: false, SortStudDim);
         if (_sortText is not { } cached || cached.Field != field)
-            _sortText = cached = (field, Fit(ctx, Bold, GearChipText.SortLabel(field), g.SortStud.W - P(6f)));
-        DrawCentred(ctx, Bold, cached.Text, g.SortStud, ink);
+            _sortText = cached = (field, Fit(ctx, BoldIn(g.SortStud), GearChipText.SortLabel(field), g.SortStud.W - P(6f)));
+        DrawCentred(ctx, BoldIn(g.SortStud), cached.Text, g.SortStud, ink);
 
         ink = DeckChrome.DrawStud(ctx, g.DirStud, _scale, on: false, DirStudDim);
         DrawChevron(ctx, g.DirStud, _query.Sort.Descending ? Chevron.Down : Chevron.Up, ink);
@@ -488,9 +510,9 @@ internal sealed partial class UiGearDeck
             Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: SavedLit(saved, i));
             string text = i < _fittedSaved.Length && _fittedSaved[i] is { } fitted
                 ? fitted
-                : Fit(ctx, Bold, names[i], MathF.Max(0f, r.W - 2f * P(GearDeckGeometry.PillPadX)));
+                : Fit(ctx, BoldIn(r), names[i], MathF.Max(0f, r.W - 2f * P(GearDeckGeometry.PillPadX)));
             if (i < _fittedSaved.Length) _fittedSaved[i] = text;
-            DrawCentred(ctx, Bold, text, r, hot ? TextInk : ink);
+            DrawCentred(ctx, BoldIn(r), text, r, hot ? TextInk : ink);
         }
         if (g.SavedMore is { } more)
         {
@@ -500,7 +522,7 @@ internal sealed partial class UiGearDeck
                 _savedMoreFor = g.HiddenSaved;
             }
             DrawCell(ctx, more, HeaderFill, CellEdge, 5f);
-            DrawCentred(ctx, Bold, _savedMoreText, more, Hover.Zone == GearZone.SavedMore ? TextInk : LabelInk);
+            DrawCentred(ctx, BoldIn(more), _savedMoreText, more, Hover.Zone == GearZone.SavedMore ? TextInk : LabelInk);
         }
     }
 
@@ -512,10 +534,10 @@ internal sealed partial class UiGearDeck
         float pad = P(GearDeckGeometry.PillPadX), closeW = P(GearDeckGeometry.ChipCloseW);
         string text = index < _fittedChips.Length && _fittedChips[index] is { } fitted
             ? fitted
-            : Fit(ctx, Bold, label, MathF.Max(0f, r.W - 2f * pad - closeW));
+            : Fit(ctx, BoldIn(r), label, MathF.Max(0f, r.W - 2f * pad - closeW));
         if (index < _fittedChips.Length) _fittedChips[index] = text;
         Vector4 ink = hot ? TextInk : LabelInk;
-        DrawText(ctx, Bold, text, r.X + pad, r, ink);
+        DrawText(ctx, BoldIn(r), text, r.X + pad, r, ink);
 
         float arm = P(2.5f), stroke = P(1.2f);
         float cx = r.X + r.W - pad - closeW / 2f, cy = r.Y + r.H / 2f;
@@ -532,7 +554,7 @@ internal sealed partial class UiGearDeck
         DeckRect first = _g.Suggestion(0), last = _g.Suggestion(count - 1);
         var panel = new DeckRect(first.X, first.Y, first.W, last.Y + last.H - first.Y);
         DrawCell(ctx, panel, CellFill, CellEdge, 4f);
-        DeckFace face = Small;
+        DeckFace face = SmallIn(first);   // every row is the same height, grown for the text size
         for (int i = 0; i < count; i++)
         {
             DeckRect row = _g.Suggestion(i);
@@ -554,7 +576,8 @@ internal sealed partial class UiGearDeck
     private void DrawSideColumn(UiRenderContext ctx, ClientObjectTable objects)
     {
         uint selected = SelectedPackId;
-        DeckFace face = Small;
+        DeckRect cell = _g.SidePack(0);
+        DeckFace face = SmallIn(cell with { H = cell.H / 2f });   // the badge sits in the cell's lower half
         int shown = _g.VisibleSidePacks;
         for (int i = 0; i < shown; i++)
         {

@@ -1,3 +1,4 @@
+using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 
 namespace AcDream.App.Tests.UI.Hud;
@@ -115,5 +116,23 @@ public sealed class HudTooltipTests
         var one = cache.Get(Long, HudTooltipStyle.Compact, null, SixPerChar, 14f);
         var big = cache.Get(Long, HudTooltipStyle.Compact, null, SixPerChar, 14f, scale: 2f);
         Assert.Equal(one.W + 2 * 9f + 6f, big.W, 3);   // the pads and the state gap doubled; the text did not
+    }
+
+    private sealed class TipHost(DeckFonts fonts, float factor) : UiElement
+    {
+        protected override void OnDraw(UiRenderContext ctx) =>
+            HudTooltip.Draw(ctx, Long, HudTooltipStyle.Card, new DeckRect(200f, 200f, 20f, 10f),
+                System.Numerics.Vector2.Zero, 800f, null, fonts, scale: 1f, textFactor: factor);
+    }
+
+    [Fact]
+    public void TheTextFactorSizesTheFaces()
+    {
+        var baked = new List<(float Px, BundledUiFontWeight Weight)>();
+        DeckFonts fonts = FakeDeckFonts.Make(baked: baked);
+        MarkupDrawProbe.Draw(new TipHost(fonts, 1.5f) { Width = 800f, Height = 600f }, 800f, 600f);
+        Assert.Contains((21f, BundledUiFontWeight.Regular), baked);
+        Assert.Contains((21f, BundledUiFontWeight.SemiBold), baked);
+        Assert.DoesNotContain((14f, BundledUiFontWeight.Regular), baked);
     }
 }

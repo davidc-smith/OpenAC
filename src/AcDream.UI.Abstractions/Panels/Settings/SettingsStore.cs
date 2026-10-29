@@ -468,6 +468,48 @@ public sealed class SettingsStore
         WriteMutableRoot(root);
     }
 
+    /// <summary>
+    /// The Modern HUD text size, as JSON text, read from the top-level <c>hudText</c>
+    /// section: per client, beside <c>misc</c> where the Modern HUD switch is. Null when
+    /// there is none or the file cannot be read; the HUD parses and checks it itself.
+    /// </summary>
+    public string? LoadHudText()
+    {
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            return root?["hudText"] is JsonObject text ? text.ToJsonString() : null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load HUD text size from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>Replaces the top-level <c>hudText</c> section with <paramref name="json"/>, keeping every other section.</summary>
+    /// <exception cref="ArgumentException">The text is not a JSON object.</exception>
+    public void SaveHudText(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        JsonObject text;
+        try
+        {
+            text = JsonNode.Parse(json) as JsonObject
+                ?? throw new ArgumentException("The HUD text size is not a JSON object.", nameof(json));
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException("The HUD text size is not valid JSON.", nameof(json), ex);
+        }
+
+        JsonObject root = LoadMutableRoot();
+        root["hudText"] = text;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
     public StoredSpellDeck? LoadSpellDeck(string toonKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);

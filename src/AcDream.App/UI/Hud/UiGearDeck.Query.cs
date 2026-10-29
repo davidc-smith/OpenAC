@@ -118,13 +118,15 @@ internal sealed partial class UiGearDeck
         PlaceQueryInput();
     }
 
-    /// <summary>The query and name fields type in the deck's small face at its scale.</summary>
+    /// <summary>The query and name fields type in the deck's small face at its text size, capped to the field's box.</summary>
     private void SetFieldFonts()
     {
-        UiDatFont? face = _fonts?.At(_scale).Small;
+        float padding = 4f * _scale;
+        UiDatFont? face = _fonts?.FitFace(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, _scale, _textFactor,
+            GearDeckGeometry.QueryH * _scale - 2f * padding);
         QueryInput.DatFont = face;
         SaveNameInput.DatFont = face;
-        QueryInput.Padding = SaveNameInput.Padding = 4f * _scale;
+        QueryInput.Padding = SaveNameInput.Padding = padding;
     }
 
     /// <summary>★: opens the name field, pre-filled from the chip labels and selected. Does nothing while the query is empty.</summary>
@@ -247,7 +249,7 @@ internal sealed partial class UiGearDeck
         for (int i = 0; i < chips.Length; i++) chips[i] = GearChipText.Label(_query.Chips[i], PackName);
         var names = new string[saved.Count];
         for (int i = 0; i < names.Length; i++) names[i] = saved[i].Name;
-        DeckFace bold = Bold;
+        DeckFace bold = DeckFace.SmallBoldFor(_fonts, _scale);   // pill widths at the deck's own size: the pills are fixed boxes
         float fallback = 6f * _scale;   // the fontless estimate at the scale, as the faces are
         _pills = new GearPills(chips, names, t => bold.Font?.MeasureWidth(t) ?? t.Length * fallback);
         _pillsFor = (chipsNow, saved);
