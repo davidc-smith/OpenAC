@@ -177,8 +177,15 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>The live query; an empty one shows the selected pack.</summary>
     internal GearQuery Query => _query;
 
-    /// <summary>A non-empty query shows its matches from every pack instead of the selected pack.</summary>
+    /// <summary>A non-empty query shows its matches from every pack instead of the selected pack. A sort alone
+    /// is no query: it orders the selected pack's view.</summary>
     internal bool ShowsResults => !_query.IsEmpty;
+
+    /// <summary>The sort applies to the pack view and to results alike, so its stud is never dim.</summary>
+    internal bool SortStudDim => false;
+
+    /// <summary>Pack order has no direction: the ↑/↓ stud is dim and inert under it.</summary>
+    internal bool DirStudDim => _query.Sort.Field == GearSortField.Pack;
 
     /// <summary>Sets the live query and shows its first row; the same query changes nothing.</summary>
     internal void SetQuery(GearQuery q)
@@ -194,7 +201,9 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>
     /// The rows the contents area shows and every item hit indexes: the query's
     /// matches across all packs while <see cref="ShowsResults"/>, else the selected
-    /// pack's rows in slot order. Rebuilt only when the model, query or pack changed.
+    /// pack's rows in the query's sort (slot order under Pack order). Each row keeps
+    /// its own <see cref="GearItemView.Slot"/>, which a drop on it uses. Rebuilt only
+    /// when the model, query or pack changed.
     /// </summary>
     internal IReadOnlyList<GearItemView> Shown
     {
@@ -203,7 +212,9 @@ internal sealed partial class UiGearDeck : UiElement
             uint pack = SelectedPackId;
             if (_shownFor != (_modelBuild, _queryVersion, pack))
             {
-                _shown = ShowsResults ? GearQueryEngine.Run(_projection.All, _query) : _projection.ForPack(pack);
+                _shown = ShowsResults
+                    ? GearQueryEngine.Run(_projection.All, _query)
+                    : GearQueryEngine.Sort(_projection.ForPack(pack), _query.Sort);
                 _shownFor = (_modelBuild, _queryVersion, pack);
                 PruneSelection(_shown);
             }
@@ -412,14 +423,14 @@ internal sealed partial class UiGearDeck : UiElement
         }
     }
 
-    /// <summary>The results list's value columns: the sort field when it is not Name, then
+    /// <summary>The results list's value columns: the sort field when it is not Name or Pack, then
     /// the first range chip's field when that differs from the sort.</summary>
     private (GearSortField? A, GearSortField? B) ResultColumns
     {
         get
         {
             if (_columnsFor == _queryVersion) return _columns;
-            GearSortField? sort = _query.Sort.Field == GearSortField.Name ? null : _query.Sort.Field;
+            GearSortField? sort = _query.Sort.Field is GearSortField.Name or GearSortField.Pack ? null : _query.Sort.Field;
             GearSortField? range = null;
             IReadOnlyList<GearChip> chips = _query.Chips;
             for (int i = 0; i < chips.Count; i++)

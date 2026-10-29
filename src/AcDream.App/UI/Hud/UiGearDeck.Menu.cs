@@ -28,9 +28,9 @@ internal sealed partial class UiGearDeck
     private string? _menuSalvageLabel;
     private string[] _menuItems = [];
 
-    /// <summary>The sort menu's fields, in the order it lists them.</summary>
+    /// <summary>The sort menu's fields, in the order it lists them: Pack order (the default) first.</summary>
     private static readonly GearSortField[] SortFields =
-        [GearSortField.Name, GearSortField.Type, GearSortField.Material, GearSortField.Workmanship,
+        [GearSortField.Pack, GearSortField.Name, GearSortField.Type, GearSortField.Material, GearSortField.Workmanship,
          GearSortField.Value, GearSortField.Burden, GearSortField.Stack];
 
     internal UiMarkupContextMenu Menu => _menu;
@@ -120,7 +120,7 @@ internal sealed partial class UiGearDeck
             case MenuKind.Sort:
                 var labels = new string[SortFields.Length];
                 for (int i = 0; i < labels.Length; i++)
-                    labels[i] = (SortFields[i] == _query.Sort.Field ? "* " : "") + GearChipText.SortLabel(SortFields[i]);
+                    labels[i] = (SortFields[i] == _query.Sort.Field ? "* " : "") + GearChipText.SortMenuLabel(SortFields[i]);
                 return labels;
             case MenuKind.SavedFilter:
                 return ["Delete"];

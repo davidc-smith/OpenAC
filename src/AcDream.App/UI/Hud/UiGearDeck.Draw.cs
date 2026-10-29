@@ -435,22 +435,22 @@ internal sealed partial class UiGearDeck
         DrawSavedRow(ctx);
     }
 
-    /// <summary>The ★, sort and direction studs. Sort applies to results only, so the sort pair is dim
-    /// (but live) while none are shown; ★ is dim while the query is empty.</summary>
+    /// <summary>The ★, sort and direction studs. The sort stud is always live (it orders the pack view and
+    /// results alike); the direction stud is dim under Pack order, which has none; ★ is dim while the query
+    /// is empty (a sort alone is not one).</summary>
     private void DrawQueryStuds(UiRenderContext ctx)
     {
         GearDeckGeometry g = _g;
         Vector4 star = DeckChrome.DrawStud(ctx, g.SaveStud, _scale, on: _naming, dim: _query.IsEmpty || SavedFull);
         DrawStar(ctx, g.SaveStud, star);
 
-        bool dim = !ShowsResults;
         GearSortField field = _query.Sort.Field;
-        Vector4 ink = DeckChrome.DrawStud(ctx, g.SortStud, _scale, on: false, dim);
+        Vector4 ink = DeckChrome.DrawStud(ctx, g.SortStud, _scale, on: false, SortStudDim);
         if (_sortText is not { } cached || cached.Field != field)
             _sortText = cached = (field, Fit(ctx, Bold, GearChipText.SortLabel(field), g.SortStud.W - P(6f)));
         DrawCentred(ctx, Bold, cached.Text, g.SortStud, ink);
 
-        ink = DeckChrome.DrawStud(ctx, g.DirStud, _scale, on: false, dim);
+        ink = DeckChrome.DrawStud(ctx, g.DirStud, _scale, on: false, DirStudDim);
         DrawChevron(ctx, g.DirStud, _query.Sort.Descending ? Chevron.Down : Chevron.Up, ink);
     }
 

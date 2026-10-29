@@ -92,9 +92,9 @@ public sealed class UiGearDeckSavedFilterTests
         var (root, deck) = Rooted();
         RootClick(root, deck, deck.Geometry.SortStud);
         Assert.True(deck.Menu.IsOpen);
-        Assert.Equal(new[] { "* Name", "Type", "Material", "Work", "Value", "Burden", "Stack" }, deck.Menu.ItemsSource());
+        Assert.Equal(new[] { "* Pack order", "Name", "Type", "Material", "Work", "Value", "Burden", "Stack" }, deck.Menu.ItemsSource());
 
-        deck.Menu.Selected!(3);
+        deck.Menu.Selected!(4);
         deck.Menu.Close();
         Assert.Equal(new GearSort(GearSortField.Workmanship, true), deck.Query.Sort);
 
@@ -102,6 +102,30 @@ public sealed class UiGearDeckSavedFilterTests
         Assert.Equal(new GearSort(GearSortField.Workmanship, false), deck.Query.Sort);
         RootClick(root, deck, deck.Geometry.DirStud);
         Assert.True(deck.Query.Sort.Descending);
+    }
+
+    [Fact]
+    public void PickingPackOrder_RestoresTheSlotOrder_AndASortAloneLeavesTheStarDim()
+    {
+        var (root, deck) = Rooted();
+        uint[] bySlot = deck.Shown.Select(v => v.Id).ToArray();
+        Assert.Equal(new[] { First, First + 1 }, bySlot);
+
+        RootClick(root, deck, deck.Geometry.SortStud);
+        deck.Menu.Selected!(4);   // Work, best first
+        deck.Menu.Close();
+        Assert.False(deck.ShowsResults);
+        Assert.Equal(new[] { First + 1, First }, deck.Shown.Select(v => v.Id));
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        Assert.False(deck.SaveNameInput.Visible);   // a sort alone is not a query to save
+
+        RootClick(root, deck, deck.Geometry.SortStud);
+        Assert.Equal("* Work", deck.Menu.ItemsSource()[4]);
+        deck.Menu.Selected!(0);
+        deck.Menu.Close();
+        Assert.Equal(GearSort.Default, deck.Query.Sort);
+        Assert.Equal(GearQuery.Empty, deck.Query);
+        Assert.Equal(bySlot, deck.Shown.Select(v => v.Id));
     }
 
     [Fact]

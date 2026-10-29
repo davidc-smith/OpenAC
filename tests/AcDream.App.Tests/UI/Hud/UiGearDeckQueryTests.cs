@@ -282,11 +282,11 @@ public sealed class UiGearDeckQueryTests
         Assert.True(deck.Menu.IsOpen);
         Assert.Equal(scale, deck.Menu.Scale);
         var (_, _, w, h) = deck.Menu.PopupScreenRect;
-        // Seven rows of 18 between insets of 3, and at least the 80-point minimum width, all at the scale.
-        Assert.Equal((2f * UiMarkupContextMenu.Inset + 7f * UiMarkupContextMenu.ItemHeight) * scale, h, 3);
+        // Eight rows of 18 between insets of 3, and at least the 80-point minimum width, all at the scale.
+        Assert.Equal((2f * UiMarkupContextMenu.Inset + 8f * UiMarkupContextMenu.ItemHeight) * scale, h, 3);
         Assert.True(w >= UiMarkupContextMenu.MinPopupWidth * scale);
 
-        ClickMenuRow(root, deck, 4);   // Name, Type, Material, Workmanship, Value
+        ClickMenuRow(root, deck, 5);   // Pack order, Name, Type, Material, Workmanship, Value
         Assert.Equal(GearSortField.Value, deck.Query.Sort.Field);
     }
 

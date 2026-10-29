@@ -211,10 +211,11 @@ internal sealed partial class UiGearDeck
         _selectionVersion++;
     }
 
-    /// <summary>The menu's Show in pack: leaves the search, opens the row's pack, scrolls to the row and selects it.</summary>
+    /// <summary>The menu's Show in pack: leaves the search (keeping the sort, which orders the pack view too),
+    /// opens the row's pack, scrolls to the row where that order shows it and selects it.</summary>
     private void ShowInPack(GearItemView row)
     {
-        SetQuery(GearQuery.Empty);
+        SetQuery(GearQuery.Empty with { Sort = _query.Sort });
         QueryInput.SetText("");
         foreach (GearPack pack in _model.Packs)
             if (pack.Id == row.PackId) { SelectPack(pack); break; }
@@ -284,7 +285,7 @@ internal sealed partial class UiGearDeck
                 OpenMenuAt(_g.SortStud);
                 return true;
             case GearZone.DirStud:
-                SetQuery(_query with { Sort = _query.Sort with { Descending = !_query.Sort.Descending } });
+                if (!DirStudDim) SetQuery(_query with { Sort = _query.Sort with { Descending = !_query.Sort.Descending } });
                 return true;
             case GearZone.SaveStud:
                 if (!_starCloses) StartSave();   // UiGearDeck.Query.cs; a press that closed the name field only closes it
@@ -460,8 +461,8 @@ internal sealed partial class UiGearDeck
                 break;
             case GearZone.Item:
             {
-                // In the pack view the row is in the selected pack at its own index; a result
-                // row names its own pack and slot, or is a side pack or a worn item.
+                // Every row names its own pack and slot (a sorted pack view's index is not the
+                // slot), or is a side pack or a worn item.
                 GearItemView row = Shown[hit.Index];
                 if (row.Worn)
                 {

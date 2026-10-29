@@ -84,7 +84,7 @@ public sealed class UiGearDeckResultsTests
     }
 
     private static Rig Make(Func<GearDeckSettings, GearDeckSettings>? settings = null, DeckFonts? fonts = null,
-        EmbeddedSvgSpriteCache? icons = null, uint icon = 0u)
+        EmbeddedSvgSpriteCache? icons = null, uint icon = 0u, Func<(bool Toggle, bool Range)>? modifiers = null)
     {
         ClientObjectTable table = World();
         var session = new GearDeckSession(null, () => "", () => false);
@@ -102,7 +102,8 @@ public sealed class UiGearDeckResultsTests
             Actions: actions,
             IsPending: _ => false,
             Close: () => { },
-            Log: log.Add);
+            Log: log.Add,
+            Modifiers: modifiers);
         var deck = new UiGearDeck(b, fonts, icons, () => 0.0);
         var rig = new Rig { Deck = deck, Actions = actions, Session = session, Log = log };
         deck.Refresh();
@@ -394,5 +395,128 @@ public sealed class UiGearDeckResultsTests
         Rig list = Make(s => s with { Folded = true, View = GearPackView.List }, fonts, icons, 7u);
         list.Deck.SetQuery(Columns());
         DrawInside(list.Deck);
+    }
+
+    // ---- sorting the plain pack view ----
+
+    /// <summary>A sort with no filter: the main pack's five items by name, Z to A.</summary>
+    private static readonly GearQuery NameZtoA = GearQuery.Empty with { Sort = new GearSort(GearSortField.Name, true) };
+    private static readonly uint[] MainZtoA = [Salvage75, Salvage60, First + 2, First + 1, First];
+    private static readonly uint[] MainBySlot = [Salvage75, Salvage60, First, First + 1, First + 2];
+
+    private static DeckRect Row(Rig r, int index, bool list) =>
+        list ? r.Deck.Geometry.ListRow(index, r.Deck.ScrollRow)!.Value : Cell(r.Deck, index);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ASortWithNoFilter_SortsTheOpenPack_InGridAndList(bool list)
+    {
+        Rig r = Make(list ? s => s with { View = GearPackView.List } : null);
+        Assert.Equal(MainBySlot, r.Deck.Shown.Select(v => v.Id));
+        r.Deck.SetQuery(NameZtoA);
+        Assert.False(r.Deck.ShowsResults);
+        Assert.Equal(MainZtoA, r.Deck.Shown.Select(v => v.Id));
+        Assert.Equal(5, r.Deck.Geometry.Input.ItemCount);   // compacted: just the pack's items
+        Assert.Equal("", r.Deck.FooterLeftText);   // no match text: this is the pack view
+
+        // The row under the pointer is the shown one: it drags, and shows its caption.
+        Send(r.Deck, UiEventType.MouseDown, Row(r, 2, list));
+        Assert.Equal(First + 2, Assert.IsType<ItemDragPayload>(r.Deck.GetDragPayload()).ObjId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ADropOnASortedPackRow_UsesThatRowsOwnSlot(bool list)
+    {
+        Rig r = Make(list ? s => s with { View = GearPackView.List } : null);
+        r.Deck.SetQuery(NameZtoA);
+        Assert.Equal(4, r.Deck.Shown[2].Slot);   // Item 2, shown third
+        var payload = new ItemDragPayload(Food, ItemDragSource.Inventory, 0, null);
+        var (x, y) = Centre(Row(r, 2, list));
+        Assert.True(r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DropReleased, Data1: (int)x, Data2: (int)y, Payload: payload)));
+        Assert.Equal([$"put {Food:X} {Player:X} 4"], r.Actions.Calls);
+    }
+
+    [Fact]
+    public void ADropOnEmptySpace_OfASortedPack_StillPutsAfterTheLastItem()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(NameZtoA);
+        var payload = new ItemDragPayload(Food, ItemDragSource.Inventory, 0, null);
+        var (x, y) = Centre(Cell(r.Deck, 7));
+        Assert.True(r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DropReleased, Data1: (int)x, Data2: (int)y, Payload: payload)));
+        Assert.Equal([$"put {Food:X} {Player:X} 5"], r.Actions.Calls);
+    }
+
+    [Fact]
+    public void ARangeClick_InASortedPack_SpansTheShownOrder()
+    {
+        (bool Toggle, bool Range) mods = (false, false);
+        Rig r = Make(modifiers: () => mods);
+        r.Deck.SetQuery(NameZtoA);
+        Click(r.Deck, Cell(r.Deck, 1));
+        mods = (false, true);
+        Click(r.Deck, Cell(r.Deck, 3));
+        Assert.Equal(new[] { Salvage60, First + 2, First + 1 }.Order(), r.Deck.Selection.Order());
+    }
+
+    [Fact]
+    public void DoubleClickingASortedPackRow_UsesThatItem()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(NameZtoA);
+        DoubleClick(r.Deck, Cell(r.Deck, 2));
+        Assert.Equal([$"use {First + 2:X}"], r.Actions.Calls);
+    }
+
+    [Fact]
+    public void ASortWithAFilter_StillSortsTheResults_FromEveryPack()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(SteelBy(new GearSort(GearSortField.Workmanship, false)));
+        Assert.Equal(new[] { Salvage60, Salvage75, Salvage90 }, r.Deck.Shown.Select(v => v.Id));
+        r.Deck.SetQuery(SteelBy(GearSort.Default));   // Pack order: main pack by slot, then the bag
+        Assert.Equal(new[] { Salvage75, Salvage60, Salvage90 }, r.Deck.Shown.Select(v => v.Id));
+    }
+
+    [Fact]
+    public void TheDirectionStud_IsDimAndInert_UnderPackOrderOnly_AndTheSortStudIsNeverDim()
+    {
+        Rig r = Make();
+        Assert.Equal(GearSortField.Pack, r.Deck.Query.Sort.Field);
+        Assert.False(r.Deck.SortStudDim);
+        Assert.True(r.Deck.DirStudDim);
+        Click(r.Deck, r.Deck.Geometry.DirStud);
+        Assert.Equal(GearSort.Default, r.Deck.Query.Sort);
+        Assert.Equal(MainBySlot, r.Deck.Shown.Select(v => v.Id));
+
+        r.Deck.SetQuery(GearQuery.Empty with { Sort = new GearSort(GearSortField.Name, false) });
+        Assert.False(r.Deck.ShowsResults);
+        Assert.False(r.Deck.SortStudDim);
+        Assert.False(r.Deck.DirStudDim);
+        Click(r.Deck, r.Deck.Geometry.DirStud);
+        Assert.Equal(new GearSort(GearSortField.Name, true), r.Deck.Query.Sort);
+        Assert.Equal(MainZtoA, r.Deck.Shown.Select(v => v.Id));
+
+        r.Deck.SetQuery(SteelBy(GearSort.Default));   // results under Pack order: still dim
+        Assert.False(r.Deck.SortStudDim);
+        Assert.True(r.Deck.DirStudDim);
+    }
+
+    [Fact]
+    public void ShowInPack_KeepsTheSort_AndSelectsTheRowWhereItIsShown()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(GearQuery.Empty.With(GearChip.NameContains("Item 0")) with { Sort = new GearSort(GearSortField.Name, true) });
+        Send(r.Deck, UiEventType.MouseDown, Cell(r.Deck, 0));
+        r.Deck.Menu.Opening!(Centre(Cell(r.Deck, 0)).X, Centre(Cell(r.Deck, 0)).Y);
+        Assert.Equal("Show in pack", r.Deck.Menu.ItemsSource()[0]);
+        r.Deck.Menu.Selected!(0);
+        Assert.False(r.Deck.ShowsResults);
+        Assert.Equal(new GearSort(GearSortField.Name, true), r.Deck.Query.Sort);
+        Assert.Equal(MainZtoA, r.Deck.Shown.Select(v => v.Id));
+        Assert.Equal(new[] { First }, r.Deck.Selection);
     }
 }
