@@ -421,6 +421,53 @@ public sealed class SettingsStore
         WriteMutableRoot(root);
     }
 
+    /// <summary>
+    /// The Gear Deck's saved object for one character, as JSON text, read from
+    /// <c>character[toonKey].gearDeck</c>; null when there is none or the file
+    /// cannot be read. The Gear Deck parses and checks it itself.
+    /// </summary>
+    public string? LoadGearDeck(string toonKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        if (!File.Exists(_path)) return null;
+        try
+        {
+            var root = JsonNode.Parse(ReadSettingsText()) as JsonObject;
+            return root?["character"]?[toonKey]?["gearDeck"] is JsonObject deck ? deck.ToJsonString() : null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"settings: failed to load gear deck from {_path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Replaces <c>character[toonKey].gearDeck</c> with <paramref name="json"/>,
+    /// keeping the character's other keys, other characters and every other section.
+    /// </summary>
+    /// <exception cref="ArgumentException">The text is not a JSON object.</exception>
+    public void SaveGearDeck(string toonKey, string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);
+        ArgumentNullException.ThrowIfNull(json);
+        JsonObject deck;
+        try
+        {
+            deck = JsonNode.Parse(json) as JsonObject
+                ?? throw new ArgumentException("The Gear Deck settings are not a JSON object.", nameof(json));
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException("The Gear Deck settings are not valid JSON.", nameof(json), ex);
+        }
+
+        JsonObject root = LoadMutableRoot();
+        GetOrCreateObject(GetOrCreateObject(root, "character"), toonKey)["gearDeck"] = deck;
+        root["version"] = CurrentSchemaVersion;
+        WriteMutableRoot(root);
+    }
+
     public StoredSpellDeck? LoadSpellDeck(string toonKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toonKey);

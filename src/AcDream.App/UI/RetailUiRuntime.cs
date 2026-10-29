@@ -550,6 +550,8 @@ public sealed class RetailUiRuntime : IDisposable
 
     private Hud.ChatDeckSession? _chatDeckSession;
     private Hud.UiTargetDeck? _targetDeck;
+    private Hud.UiGearDeck? _gearDeck;
+    private Hud.GearDeckSession? _gearDeckSession;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
     private TargetAutoAppraisal? _targetAuto;
@@ -645,9 +647,10 @@ public sealed class RetailUiRuntime : IDisposable
         // Before the retail vitals, combat and jump windows mount: their
         // controllers' show calls go through the switch's gate.
         _hudSwitch = new Hud.ModernHudSwitch(
-            show: Host.ShowWindow,
-            hide: Host.HideWindow,
-            isVisible: Host.IsWindowVisible,
+            // Raw: the switch's own show and hide must not be redirected back to it.
+            show: RawShowWindow,
+            hide: RawHideWindow,
+            isVisible: RawIsWindowVisible,
             gameplayActive: () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
             [
                 new Hud.ModernHudReplacement(
@@ -680,6 +683,7 @@ public sealed class RetailUiRuntime : IDisposable
                     HoldsRetailVisibility: true),
                 // Selections made under the retail HUD were refused, so auto-ID starts over on show.
                 TargetDeckReplacement(() => _targetDeck, () => _targetAuto?.Resync()),
+                GearDeckReplacement(() => _gearDeck),
             ],
             // _persistence is nulled once disposed, so a late Apply never reaches it.
             holdVisibility: window => _persistence?.HoldVisibility(window),
@@ -716,6 +720,7 @@ public sealed class RetailUiRuntime : IDisposable
         MountPlugins();
         _pluginsMounted = true;
         MountInventory();
+        MountGearDeck();
         MountExternalContainer();
         MountVendor();
         MountSecureTrade();
@@ -758,6 +763,7 @@ public sealed class RetailUiRuntime : IDisposable
                     WindowNames.SpellDeck,
                     WindowNames.ChatDeck,
                     WindowNames.TargetDeck,
+                    WindowNames.GearDeck,
                 ]);
             // Closed from mount: an attached Spell Deck is placed by its dock, never by the layout.
             _persistence.SetCaptureGate(WindowNames.SpellDeck, () => !(_spellDeckController?.Attached ?? true));
@@ -971,6 +977,9 @@ public sealed class RetailUiRuntime : IDisposable
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
         _hudSwitch?.Tick();
+        // Every frame, shown or not: a change made just before the deck closed is still saved.
+        // The deck's own tick loads the character's settings; this only writes.
+        _gearDeckSession?.TickSave();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
@@ -1451,6 +1460,9 @@ public sealed class RetailUiRuntime : IDisposable
         Host.HideWindow(WindowNames.Examination);
         SocialPanelController?.ResetSessionDeclaration();
         _chatDeckSession?.EndSession();
+        // The next character starts with the Gear Deck closed (hidden on the next tick) and its own settings.
+        _hudSwitch?.CloseAllOnDemand();
+        _gearDeckSession?.EndSession();
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
         _bindings.Plugins?.TargetPlateStore.InvalidateAll();
@@ -1514,10 +1526,41 @@ public sealed class RetailUiRuntime : IDisposable
         _chatDeck?.FollowLayout();
     }
 
-    public bool ToggleWindow(string name)
+    /// <summary>Toggles a retained window by its <see cref="WindowNames"/> name; under Modern HUD
+    /// a replaced on-demand window (the inventory) toggles its Modern HUD window instead.</summary>
+    public bool ToggleWindow(string name) => RouteWindow(_hudSwitch, name, WindowOp.Toggle, RawToggleWindow);
+
+    private bool RawToggleWindow(string name)
         => RetailPanelCatalog.TryGetPanelId(name, out uint panelId)
             ? _panelUi.TogglePanel(panelId)
             : Host.ToggleWindow(name);
+
+    /// <summary>A window call the runtime routes through <see cref="RouteWindow"/>.</summary>
+    internal enum WindowOp { Toggle, Show, Hide, IsVisible }
+
+    /// <summary>
+    /// Sends a window call for <paramref name="name"/> to the Modern HUD window that stands in
+    /// for it (<see cref="Hud.ModernHudSwitch.RedirectTarget"/>), or else to <paramref name="raw"/>.
+    /// A redirected toggle, show or hide opens or closes that window through the switch and
+    /// applies it at once; a redirected visibility query reports whether it is open.
+    /// </summary>
+    internal static bool RouteWindow(Hud.ModernHudSwitch? hudSwitch, string name, WindowOp op, Func<string, bool> raw)
+    {
+        if (hudSwitch?.RedirectTarget(name) is not { } deck) return raw(name);
+        switch (op)
+        {
+            case WindowOp.IsVisible:
+                return hudSwitch.IsOpen(deck);
+            case WindowOp.Toggle:
+                hudSwitch.ToggleOpen(deck);
+                break;
+            default:
+                hudSwitch.SetOpen(deck, op == WindowOp.Show);
+                break;
+        }
+        hudSwitch.Tick();
+        return true;
+    }
 
     public IReadOnlyList<FloatingChatWindowController?> FloatingChatWindows => _floatingChatControllers;
 
@@ -1591,19 +1634,26 @@ public sealed class RetailUiRuntime : IDisposable
     }
 
     /// <summary>Shows a retained window by its <see cref="WindowNames"/> name.</summary>
-    public bool ShowWindow(string name)
+    public bool ShowWindow(string name) => RouteWindow(_hudSwitch, name, WindowOp.Show, RawShowWindow);
+
+    /// <summary>Hides a retained window by its <see cref="WindowNames"/> name.</summary>
+    public bool HideWindow(string name) => RouteWindow(_hudSwitch, name, WindowOp.Hide, RawHideWindow);
+
+    /// <summary>Whether a retained window by its <see cref="WindowNames"/> name is currently visible.</summary>
+    public bool IsWindowVisible(string name) => RouteWindow(_hudSwitch, name, WindowOp.IsVisible, RawIsWindowVisible);
+
+    // The window itself, never redirected: catalogued panels through the panel controller, the rest through the host.
+    private bool RawShowWindow(string name)
         => RetailPanelCatalog.TryGetPanelId(name, out uint panelId)
             ? _panelUi.SetPanelVisibility(panelId, visible: true)
             : Host.ShowWindow(name);
 
-    /// <summary>Hides a retained window by its <see cref="WindowNames"/> name.</summary>
-    public bool HideWindow(string name)
+    private bool RawHideWindow(string name)
         => RetailPanelCatalog.TryGetPanelId(name, out uint panelId)
             ? _panelUi.SetPanelVisibility(panelId, visible: false)
             : Host.HideWindow(name);
 
-    /// <summary>Whether a retained window by its <see cref="WindowNames"/> name is currently visible.</summary>
-    public bool IsWindowVisible(string name)
+    private bool RawIsWindowVisible(string name)
         => RetailPanelCatalog.TryGetPanelId(name, out uint panelId)
             ? _panelUi.IsPanelVisible(panelId)
             : Host.IsWindowVisible(name);
@@ -1631,7 +1681,49 @@ public sealed class RetailUiRuntime : IDisposable
     {
         if (ToolbarController is null) return;
         foreach (var (panelId, windowName) in RetailPanelCatalog.ToolbarPanels)
-            ToolbarController.SetPanelOpen(panelId, Host.IsWindowVisible(windowName));
+            ToolbarController.SetPanelOpen(panelId, ToolbarButtonLit(windowName, Host.IsWindowVisible(windowName)));
+    }
+
+    /// <summary>
+    /// The inventory controller's own show (a carried pack used from a shortcut). Under Modern
+    /// HUD it takes the routed path and opens the Gear Deck: showing the retail panel would
+    /// first close whichever main panel shares its slot (the Character panel).
+    /// </summary>
+    internal static void ShowInventoryForController(
+        Hud.ModernHudSwitch? hudSwitch, RetailPanelUiController panelUi, Func<string, bool> routedShow)
+    {
+        if (hudSwitch?.RedirectTarget(WindowNames.Inventory) is not null)
+        {
+            routedShow(WindowNames.Inventory);
+            return;
+        }
+        if (!panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
+            panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
+    }
+
+    /// <summary>The toolbar button a window lights: its catalogued panel, and the Inventory
+    /// button for the Gear Deck that stands in for the inventory.</summary>
+    internal static bool TryGetToolbarPanel(string windowName, out uint panelId)
+    {
+        if (windowName == WindowNames.GearDeck)
+        {
+            panelId = RetailPanelCatalog.Inventory;
+            return true;
+        }
+        return RetailPanelCatalog.TryGetPanelId(windowName, out panelId);
+    }
+
+    /// <summary>While a window is redirected, its button follows the Modern HUD window
+    /// shown for it; the retail window, hidden by the switch, would unlight it.</summary>
+    private bool ToolbarButtonLit(string windowName, bool visible)
+        => _hudSwitch?.RedirectTarget(windowName) is { } deck ? _hudSwitch.IsShown(deck) : visible;
+
+    /// <summary>The indicator bar's panel buttons: a catalogued panel is toggled by window name,
+    /// so it reaches the Modern HUD redirect; any other id goes to the panel controller.</summary>
+    internal static void ToggleIndicatorPanel(uint panelId, Func<string, bool> toggleWindow, Func<uint, bool> togglePanel)
+    {
+        if (RetailPanelCatalog.TryGetWindowName(panelId, out string name)) toggleWindow(name);
+        else togglePanel(panelId);
     }
 
     private void BindToolbarPanelButtons()
@@ -1649,8 +1741,8 @@ public sealed class RetailUiRuntime : IDisposable
     private void OnWindowVisibilityChanged(string windowName, bool visible)
     {
         _panelUi.ObserveWindowVisibility(windowName, visible);
-        if (RetailPanelCatalog.TryGetPanelId(windowName, out uint panelId))
-            ToolbarController?.SetPanelOpen(panelId, visible);
+        if (TryGetToolbarPanel(windowName, out uint panelId))
+            ToolbarController?.SetPanelOpen(panelId, ToolbarButtonLit(windowName, visible));
 
         if (TryGetFloatingChatWindowId(windowName, out int chatWindowId))
         {
@@ -2845,7 +2937,7 @@ public sealed class RetailUiRuntime : IDisposable
                 b.Strength,
                 b.LinkStatus,
                 b.CurrentTime,
-                panelId => _panelUi.TogglePanel(panelId),
+                panelId => ToggleIndicatorPanel(panelId, ToggleWindow, _panelUi.TogglePanel),
                 RequestEndCharacterSession));
         if (controller is null)
         {
@@ -3842,6 +3934,89 @@ public sealed class RetailUiRuntime : IDisposable
             Mounted: () => deck() is not null,
             OnShown: () => onShown?.Invoke(),
             OnHidden: () => deck()?.OnHidden());
+
+    /// <summary>The Gear Deck's place before the player moves it: the right edge, under the radar.</summary>
+    internal const float GearDeckDefaultTop = 120f;
+
+    internal static float GearDeckDefaultLeft(float rootWidth) =>
+        Math.Max(0f, rootWidth - Hud.GearDeckGeometry.Width - 10f);
+
+    /// <summary>
+    /// The Gear Deck's Modern HUD entry: it stands in for the retail inventory, shown only
+    /// while the player has it open. On show it first loads the character's settings, so
+    /// the first open after login never draws the defaults.
+    /// </summary>
+    internal static Hud.ModernHudReplacement GearDeckReplacement(Func<Hud.UiGearDeck?> deck) =>
+        new("Gear Deck", WindowNames.GearDeck, [WindowNames.Inventory],
+            Mounted: () => deck() is not null,
+            OnShown: () =>
+            {
+                if (deck() is not { } d) return;
+                d.Bindings.Session.Tick();
+                d.OnShown();
+            },
+            OnHidden: () => deck()?.OnHidden(),
+            HoldsRetailVisibility: true,
+            OnDemand: true);
+
+    /// <summary>
+    /// The Gear Deck (Modern HUD's inventory and paper doll) and its per-character
+    /// settings. Without it the retail inventory stays while Modern HUD is on.
+    /// </summary>
+    private void MountGearDeck()
+    {
+        if (_bindings.CommandDeck is null || _bindings.Inventory.ItemInteraction is not { } items) return;
+
+        InventoryRuntimeBindings b = _bindings.Inventory;
+        Hud.UiGearDeck? deck = null;
+        Hud.GearDeckSession? session = null;
+        try
+        {
+            session = new Hud.GearDeckSession(
+                _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreGearDeckStore(store) : null,
+                _bindings.Persistence?.CharacterKey ?? (() => "default"),
+                () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
+                report: Console.WriteLine);
+            _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
+            _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+
+            deck = new Hud.UiGearDeck(
+                new Hud.GearDeckBindings(
+                    Objects: () => b.Objects,
+                    PlayerGuid: b.PlayerGuid,
+                    Strength: b.Strength,
+                    ResolveIcon: b.ResolveIcon,
+                    ResolveDragIcon: b.ResolveDragIcon,
+                    // The retail inventory's tooltip captions use the same composed name.
+                    DisplayName: ResolveAppropriateItemName,
+                    Session: session,
+                    Actions: new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge),
+                    IsPending: items.IsPendingInventorySource,
+                    Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
+                    // One line per drag and drop, beside the mount line, for live checks.
+                    Log: Console.WriteLine),
+                _deckFonts,
+                _hudIcons);
+            RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
+                Hud.UiGearDeck.MountOptions(GearDeckDefaultLeft(Host.Root.Width), GearDeckDefaultTop));
+        }
+        catch (Exception ex)
+        {
+            // Anything that fails here leaves the retail inventory as the only inventory; undo what was built.
+            if (deck is not null)
+            {
+                UiElement window = deck;
+                while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
+                if (window.Parent is not null) Host.Root.RemoveChild(window);
+            }
+            Console.WriteLine($"[UI] Gear Deck unavailable; keeping the retail inventory. ({ex.GetType().Name}: {ex.Message})");
+            return;
+        }
+
+        _gearDeck = deck;
+        _gearDeckSession = session;
+        Console.WriteLine("[UI] Gear Deck mounted (Modern HUD).");
+    }
 
     /// <summary>The deck is mounted and Modern HUD shows it: plugins may describe targets, and auto-ID may ask.</summary>
     private bool TargetDeckShown =>
@@ -5348,18 +5523,14 @@ public sealed class RetailUiRuntime : IDisposable
             contents, sideBag, mainPack, b.SendUse,
             b.SendPutItemInContainer, b.SendStackableSplitToContainer, b.SendStackableMerge,
             notifyMergeAttempt, b.ItemInteraction,
-            () => CloseWindow(WindowNames.Inventory),
+            () => RawHideWindow(WindowNames.Inventory),
             StackSplitQuantity,
             b.ResolveDragIcon,
             b.Spellbook,
             _bindings.Toolbar.Shortcuts,
             LoadShortcutDigitGraphics(),
             _bindings.Toolbar.Combat,
-            showWindow: () =>
-            {
-                if (!_panelUi.IsPanelVisible(RetailPanelCatalog.Inventory))
-                    _panelUi.SetPanelVisibility(RetailPanelCatalog.Inventory, visible: true);
-            });
+            showWindow: () => ShowInventoryForController(_hudSwitch, _panelUi, ShowWindow));
         InventoryPanelController = inventory;
         PaperdollController paperdoll = PaperdollController.Bind(
             layout, b.Objects, b.PlayerGuid, b.ResolveIcon, b.Selection, b.ItemInteraction,
@@ -6331,6 +6502,9 @@ public sealed class RetailUiRuntime : IDisposable
                 _chatDeckSession?.Dispose();
                 _chatDeckSession = null;
                 UnmountTargetDeck();
+                _gearDeck?.OnHidden();
+                _gearDeckSession?.EndSession();   // writes a pending settings change
+                _gearDeckSession = null;
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

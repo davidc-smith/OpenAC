@@ -1112,7 +1112,7 @@ public sealed class ClientObjectTable
         }
     }
 
-    private static bool IsContainerListMember(ClientObject item) =>
+    internal static bool IsContainerListMember(ClientObject item) =>
         item.ContainerTypeHint != 0u
         || (item.Type & ItemType.Container) != 0
         || item.ItemsCapacity > 0;
