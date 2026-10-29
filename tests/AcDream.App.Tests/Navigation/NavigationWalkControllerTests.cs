@@ -2171,7 +2171,154 @@ public sealed class NavigationWalkControllerTests
         }
     }
 
-    private static void AssertKeepsClearOf(NavRoute route, NavAvoidance portal)
+    /// <summary>
+    /// How near a body's middle comes to a housing portal's when ACE sends it through: the
+    /// portal's one sphere (setup 0x020001B3, 1.357 m) and the player's (0x02000001, 0.48 m).
+    /// </summary>
+    private const float ServerPortalReach = 1.357f + 0.48f;
+
+    /// <summary>The least room a walk leaves between a body and a portal's reach.</summary>
+    private const float PortalRoom = 0.5f;
+
+    /// <summary>
+    /// Asandra Cottages Portal sent a walk to Midhill Cottages somewhere else. A portal the
+    /// client comes to know of while the walk runs on a route planned without it, standing
+    /// across the route ahead, is walked around.
+    /// </summary>
+    [Fact]
+    public void APortalThatAppearsAcrossTheRouteMidWalkIsWalkedAround()
+    {
+        var body = new SimulatedBody(new Vector3(96f, 20f, 0f));
+        var goals = new Goals();
+        var said = new List<string>();
+        var walk = new NavigationWalkController(FlatWorld(), body, goals, said.Add);
+        var portal = new NavAvoidance(new Vector3(96f, 110f, 0f), 0f);
+        goals.PortalIds[0x7CC95009u] = portal.Centre;
+        goals.Names[0x7CC95009u] = "Asandra Cottages Portal";
+
+        walk.WalkToPlace(0u, new Vector3(96f, 170f, 0f));
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking && body.Position.Y > 60f);
+        goals.Portals.Add(portal);
+        (NavigationWalkReport settled, float closest) = RunUntilSettledBeside(walk, body, portal);
+
+        Assert.Equal(NavigationWalkState.Arrived, settled.State);
+        Assert.True(closest >= ServerPortalReach + PortalRoom, $"the body came within {closest:0.00} m of the portal");
+        Assert.Contains(said, line => line.Contains("Asandra Cottages Portal (0x7CC95009) stands across the route", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A housing portal's physics gives the client no shape, so the walk keeps out of it by a
+    /// least radius. A route that brushed that radius left the body within the server's reach
+    /// of it; it passes with room to spare.
+    /// </summary>
+    [Fact]
+    public void AShapelessPortalBesideTheLineIsPassedWithRoomToSpare()
+    {
+        var body = new SimulatedBody(new Vector3(96f, 20f, 0f));
+        var goals = new Goals();
+        var portal = new NavAvoidance(new Vector3(97.9f, 100f, 0f), 0f);
+        goals.Portals.Add(portal);
+        var walk = new NavigationWalkController(FlatWorld(), body, goals);
+
+        walk.WalkToPlace(0u, new Vector3(96f, 170f, 0f));
+        (NavigationWalkReport settled, float closest) = RunUntilSettledBeside(walk, body, portal);
+
+        Assert.Equal(NavigationWalkState.Arrived, settled.State);
+        Assert.True(closest >= ServerPortalReach + PortalRoom, $"the body came within {closest:0.00} m of the portal");
+    }
+
+    /// <summary>
+    /// A stage of a way round ends at a point of it, not at the walk's goal. A portal at that
+    /// point is not the one the walk is going to, so the stage keeps out of it.
+    /// </summary>
+    [Fact]
+    public void AStageOfAWayRoundKeepsOutOfAPortalAtItsPoint()
+    {
+        var start = new Vector3(96f, 20f, 0f);
+        var body = new SimulatedBody(start);
+        var goals = new Goals();
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+        NavAvoidance portal = default;
+        walk.CorridorPlanned = corridor =>
+        {
+            if (goals.Portals.Count > 0)
+                return corridor;
+            Vector3 point = corridor.Points[corridor.IndexAhead(corridor.NearestIndex(start, 0), NavCorridor.StageLookahead)];
+            portal = new NavAvoidance(point, 0f);
+            goals.Portals.Add(portal);
+            return corridor;
+        };
+
+        walk.WalkToPlace(0u, new Vector3(96f, 500f, 0f));
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking || RunUntilSettledState(report));
+        Assert.True(walk.IsStaged);
+        (NavigationWalkReport settled, float closest) = RunUntilSettledBeside(walk, body, portal);
+
+        Assert.Equal(NavigationWalkState.Arrived, settled.State);
+        Assert.True(closest >= ServerPortalReach + PortalRoom, $"the body came within {closest:0.00} m of the portal");
+    }
+
+    /// <summary>A far walk's way round keeps out of the portals the client knows of, so no stage is aimed through one.</summary>
+    [Fact]
+    public void AWayRoundKeepsOutOfTheKnownPortals()
+    {
+        var body = new SimulatedBody(new Vector3(96f, 20f, 0f));
+        var goals = new Goals();
+        var portal = new NavAvoidance(new Vector3(96f, 250f, 0f), 0f);
+        goals.Portals.Add(portal);
+        var walk = new NavigationWalkController(FlatWorld(landblocksNorth: 3), body, goals);
+
+        walk.WalkToPlace(0u, new Vector3(96f, 500f, 0f));
+        RunUntil(walk, body, report => report.State == NavigationWalkState.Walking || RunUntilSettledState(report));
+
+        NavCorridor corridor = Assert.IsType<NavCorridor>(walk.Corridor);
+        Assert.All(corridor.Points, point => Assert.True(
+            Vector2.Distance(new Vector2(point.X, point.Y), new Vector2(portal.Centre.X, portal.Centre.Y)) >= ServerPortalReach + PortalRoom,
+            $"the way round passes {point}"));
+    }
+
+    /// <summary>
+    /// Where the only way to the goal runs through a portal the walk is not going to, it
+    /// finds no route and says which portal stands in the way, rather than walk through.
+    /// </summary>
+    [Fact]
+    public void AWalkWhoseOnlyWayRunsThroughAPortalSaysWhichPortal()
+    {
+        var body = new SimulatedBody(new Vector3(5f, 5f, -30f));
+        var goals = new Goals { [Target] = new Vector3(5f, 15f, -30f) };
+        var portal = new NavAvoidance(new Vector3(5f, 10f, -30f), 0.8f);
+        goals.Portals.Add(portal);
+        goals.PortalIds[0x7CC95009u] = portal.Centre;
+        goals.Names[0x7CC95009u] = "Asandra Cottages Portal";
+        var walk = new NavigationWalkController(RoomWithDoorways(5f), body, goals);
+
+        walk.WalkTo(Target);
+        NavigationWalkReport report = RunUntilSettled(walk, body);
+
+        Assert.Equal(NavigationWalkState.NoRoute, report.State);
+        Assert.Contains("the only way runs through Asandra Cottages Portal (0x7CC95009)", report.Reason, StringComparison.Ordinal);
+    }
+
+    private static bool RunUntilSettledState(NavigationWalkReport report) =>
+        report.State is not (NavigationWalkState.Planning or NavigationWalkState.Walking or NavigationWalkState.Waiting);
+
+    /// <summary>Runs a walk until it settles, measuring how near the body came to a portal on the way.</summary>
+    private static (NavigationWalkReport Report, float Closest) RunUntilSettledBeside(NavigationWalkController walk, SimulatedBody body, NavAvoidance portal)
+    {
+        var centre = new Vector2(portal.Centre.X, portal.Centre.Y);
+        float closest = Vector2.Distance(body.Flat, centre);
+        NavigationWalkReport report = RunUntil(walk, body, report =>
+        {
+            closest = MathF.Min(closest, Vector2.Distance(body.Flat, centre));
+            return RunUntilSettledState(report);
+        });
+        return (report, closest);
+    }
+
+    private static void AssertKeepsClearOf(NavRoute route, NavAvoidance portal) =>
+        AssertKeepsClearOf(route, portal, RuntimeNavigationGoalSource.PortalLeastRadius);
+
+    private static void AssertKeepsClearOf(NavRoute route, NavAvoidance portal, float room)
     {
         var centre = new Vector2(portal.Centre.X, portal.Centre.Y);
         for (int index = 1; index < route.Path.Count; index++)
@@ -2183,8 +2330,8 @@ public sealed class NavigationWalkControllerTests
                 ? Math.Clamp(Vector2.Dot(centre - from, along) / along.LengthSquared(), 0f, 1f)
                 : 0f;
             Assert.True(
-                Vector2.Distance(centre, from + (along * t)) > RuntimeNavigationGoalSource.PortalLeastRadius,
-                $"the route passes within {RuntimeNavigationGoalSource.PortalLeastRadius} m of the portal between {from} and {to}");
+                Vector2.Distance(centre, from + (along * t)) > room,
+                $"the route passes within {room} m of the portal between {from} and {to}");
         }
     }
 
@@ -2719,6 +2866,11 @@ public sealed class NavigationWalkControllerTests
 
         /// <summary>The portals by id and where they stand.</summary>
         public Dictionary<uint, Vector3> PortalIds { get; } = [];
+
+        /// <summary>The names of objects, by id.</summary>
+        public Dictionary<uint, string> Names { get; } = [];
+
+        public string? NameOf(uint objectId) => Names.GetValueOrDefault(objectId);
 
         public bool TryFindPortal(Vector3 near, float radius, out uint portalId, out Vector3 position)
         {

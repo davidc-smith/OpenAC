@@ -244,6 +244,9 @@ internal interface INavigationGoalSource
         position = default;
         return false;
     }
+
+    /// <summary>The name the server gave an object, or null when the client knows none.</summary>
+    string? NameOf(uint objectId) => null;
 }
 
 /// <summary>
@@ -466,6 +469,29 @@ internal sealed partial class NavigationWalkController
     internal const int CrowdCheckTicks = 15;
     internal const float CrowdMovedMeters = 0.75f;
     internal const double DetourIntervalSeconds = 1d;
+
+    /// <summary>
+    /// Room a route leaves around a portal beyond the portal's own radius and the body's.
+    /// ACE sends a body through a housing portal once their spheres touch, 1.84 m apart, and
+    /// a body running a long leg strays a little from it: a route that only brushed the
+    /// portal's least radius plus the body's left about 0.14 m.
+    /// </summary>
+    internal const float PortalClearance = 0.75f;
+
+    /// <summary>
+    /// While walking, the next <see cref="PortalLookAheadMeters"/> of the route are looked
+    /// along every <see cref="CrowdCheckTicks"/> frames for a portal the route was not planned
+    /// with, such as one the server placed only as the character came near. The walk stops
+    /// and plans again around it, at most <see cref="MaximumPortalStops"/> times. A portal
+    /// counts as one the route was planned with while it stands within
+    /// <see cref="PortalMovedMeters"/> of where it stood.
+    /// </summary>
+    internal const float PortalLookAheadMeters = 30f;
+    internal const float PortalMovedMeters = 1f;
+    internal const int MaximumPortalStops = 4;
+
+    /// <summary>How far from where a portal is kept out of the client may find the portal, to name it.</summary>
+    private const float PortalNamingReach = 2f;
 
     /// <summary>
     /// A walk stopped by a creature or player waits this long for it to move aside,
@@ -994,13 +1020,18 @@ internal sealed partial class NavigationWalkController
         Vector3 from = sample.Position;
         Vector3 to = stageTarget ?? active.Goal;
         float arrival = PlanningRadius(active.Chasing is null ? active.ArrivalMeters : PortalArrivalMeters);
-        NavAvoidance[] avoid = [.. active.Avoid, .. active.StuckSpots, .. active.PassingAvoid, .. Portals(grid, sample.Body, active.GoalObjectId, to)];
+        // Only the walk's own goal leaves a portal out: a stage's point is not where the walk is going.
+        NavAvoidance[] portals = Portals(grid, sample.Body, active.GoalObjectId, active.Goal);
+        NavAvoidance[] apart = [.. active.Avoid, .. active.StuckSpots, .. active.PassingAvoid];
+        NavAvoidance[] avoid = [.. apart, .. portals];
         active.PassingAvoid.Clear();
         NavAvoidance[] obstacles = Obstacles(grid, sample.Body, active.GoalObjectId);
         NavAvoidance[] crowd = Crowd(sample, active.GoalObjectId);
         active.PlannedObstacles = obstacles;
         active.PlannedAvoid = avoid;
+        active.PlannedPortals = portals;
         active.PlannedCrowd = crowd;
+        active.PortalInTheWay = null;
         active.Detouring = detour;
         NavLeapAbility? leaps = sample.Leaps;
         // A walk to a place ends on the floor the place stands on; a walk to an object ends
@@ -1034,14 +1065,42 @@ internal sealed partial class NavigationWalkController
         }
         // A follow that plans again around where it stuck holds only if planning through that spot fails too.
         ConcurrentQueue<string>? notes = active.StuckSpots.Count > 0 ? null : _searchNotes;
-        _routingFor = active;
-        _routing = staged
-            ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.Find(grid, from, to, NavCorridor.StageArrival, spots, leaps, crowd)))
+        Func<IReadOnlyList<NavAvoidance>, NavRoute> find = staged
+            ? spots => NavRouter.Find(grid, from, to, NavCorridor.StageArrival, spots, leaps, crowd)
             : onto is not null
-                ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.FindOnto(grid, from, onto, arrival, spots, leaps, crowd)))
+                ? spots => NavRouter.FindOnto(grid, from, onto, arrival, spots, leaps, crowd)
                 : followFloor
-                    ? Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => FollowRoute(grid, from, to, arrival, spots, leaps, crowd, goalRadius, notes)))
-                    : Task.Run(() => AroundObstacles(to, avoid, obstacles, spots => NavRouter.Find(grid, from, to, arrival, spots, leaps, crowd, onGoalFloor, goalRadius)));
+                    ? spots => FollowRoute(grid, from, to, arrival, spots, leaps, crowd, goalRadius, notes)
+                    : spots => NavRouter.Find(grid, from, to, arrival, spots, leaps, crowd, onGoalFloor, goalRadius);
+        _routingFor = active;
+        _routing = Task.Run(() =>
+        {
+            NavRoute route = AroundObstacles(to, avoid, obstacles, find);
+            // Read on the update thread only once this search has finished. A detour that finds
+            // nothing leaves the walk on its route, so has nothing to name.
+            if (route.Outcome != NavRouteOutcome.Routed && portals.Length > 0 && !detour)
+                active.PortalInTheWay = PortalTheOnlyWayRunsThrough(AroundObstacles(to, apart, obstacles, find), portals);
+            return route;
+        });
+    }
+
+    /// <summary>
+    /// The portal a route found only once portals were let in runs through, which the walk
+    /// names when it finds no route that keeps out of them, or null when there is none.
+    /// </summary>
+    private static Vector3? PortalTheOnlyWayRunsThrough(NavRoute through, NavAvoidance[] portals)
+    {
+        if (through.Outcome != NavRouteOutcome.Routed)
+            return null;
+        for (int index = 1; index < through.Legs.Count; index++)
+        {
+            foreach (NavAvoidance portal in portals)
+            {
+                if (FlatDistanceToSegment(portal.Centre, through.Legs[index - 1], through.Legs[index]) < portal.Radius)
+                    return portal.Centre;
+            }
+        }
+        return null;
     }
 
     /// <summary>The creatures and players near the character, each widened by the body's radius, for a route to pass.</summary>
@@ -1066,24 +1125,78 @@ internal sealed partial class NavigationWalkController
             {
                 continue;
             }
-            Vector3 from = sample.Position;
-            float left = CrowdLookAheadMeters;
-            for (int index = driver.LegIndex; index < driver.Legs.Count && left > 0f; index++)
-            {
-                Vector3 to = driver.Legs[index];
-                float length = HorizontalDistance(from, to);
-                Vector3 end = length > left ? Vector3.Lerp(from, to, left / length) : to;
-                if (FlatDistanceToSegment(spot.Centre, from, end) < spot.Radius
-                    && MathF.Abs(spot.Centre.Z - end.Z) <= NavigationObstacleHeight)
-                {
-                    return true;
-                }
-                left -= length;
-                from = to;
-            }
+            if (StandsAcross(spot, driver, sample.Position, CrowdLookAheadMeters))
+                return true;
         }
         return false;
     }
+
+    /// <summary>
+    /// A portal the route was not planned with, standing across the next stretch of it, such
+    /// as one the server placed only once the character came near.
+    /// </summary>
+    private NavAvoidance? PortalSteppedOnto(Request active, RuntimeRouteDriver driver, in NavigationWalkBodySample sample)
+    {
+        if (driver.LegIndex >= driver.Legs.Count)
+            return null;
+        foreach (NavAvoidance found in _goals.FindPortals(sample.Position, PortalLookAheadMeters, active.GoalObjectId, active.Goal))
+        {
+            NavAvoidance portal = KeptOutOfPortal(found, sample.Body);
+            if (active.PlannedPortals.Any(planned => HorizontalDistance(planned.Centre, portal.Centre) <= PortalMovedMeters))
+                continue;
+            if (StandsAcross(portal, driver, sample.Position, PortalLookAheadMeters))
+                return portal;
+        }
+        return null;
+    }
+
+    /// <summary>Whether a spot stands across the route within <paramref name="lookAhead"/> of where the character is.</summary>
+    private static bool StandsAcross(NavAvoidance spot, RuntimeRouteDriver driver, Vector3 position, float lookAhead)
+    {
+        Vector3 from = position;
+        float left = lookAhead;
+        for (int index = driver.LegIndex; index < driver.Legs.Count && left > 0f; index++)
+        {
+            Vector3 to = driver.Legs[index];
+            float length = HorizontalDistance(from, to);
+            Vector3 end = length > left ? Vector3.Lerp(from, to, left / length) : to;
+            if (FlatDistanceToSegment(spot.Centre, from, end) < spot.Radius
+                && MathF.Abs(spot.Centre.Z - end.Z) <= NavigationObstacleHeight)
+            {
+                return true;
+            }
+            left -= length;
+            from = to;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Stops a walk that is running toward a portal it did not plan around, and plans again
+    /// from where it stops, now keeping out of it.
+    /// </summary>
+    private void StopForPortal(Request active, RuntimeRouteDriver driver, NavAvoidance portal)
+    {
+        Apply(driver.Cancel());
+        _driver = null;
+        active.Builds = 0;
+        active.PortalStops++;
+        string portalName = PortalLabel(portal.Centre);
+        if (active.PortalStops > MaximumPortalStops)
+        {
+            End(active, NavigationWalkState.NoRoute, $"{portalName} kept coming to stand across the route");
+            return;
+        }
+        string around = $"{portalName} stands across the route; planning a way around it";
+        Publish(active, NavigationWalkState.Planning, around, float.NaN);
+        Say($"{Doing(active)} {Label(active)}: {around}");
+    }
+
+    /// <summary>A portal by its name and id where the client knows them, or else by where it stands.</summary>
+    private string PortalLabel(Vector3 at) =>
+        _goals.TryFindPortal(at, PortalNamingReach, out uint portalId, out _)
+            ? $"{_goals.NameOf(portalId) ?? "a portal"} (0x{portalId:X8})"
+            : $"a portal at {Point(at)}";
 
     /// <summary>Starts planning a way around creatures on the route from where the character is, while the walk goes on.</summary>
     private void StartDetour(Request active, in NavigationWalkBodySample sample)
@@ -1150,6 +1263,13 @@ internal sealed partial class NavigationWalkController
             && CrowdSteppedOnto(active, driver, sample))
         {
             StartDetour(active, sample);
+        }
+        if (_tick % CrowdCheckTicks == 0
+            && !driver.IsLeaping
+            && PortalSteppedOnto(active, driver, sample) is { } portal)
+        {
+            StopForPortal(active, driver, portal);
+            return;
         }
         bool wasLeaping = driver.IsLeaping;
         RuntimeRouteDriveStep step = driver.Advance(new RuntimeRouteDriveSample(
@@ -1749,16 +1869,27 @@ internal sealed partial class NavigationWalkController
     /// body's radius. Unlike the objects the server placed, a route never goes through
     /// one because no other way arrives: that would end the walk somewhere else.
     /// </summary>
-    private NavAvoidance[] Portals(NavGrid grid, NavBody body, uint goalObjectId, Vector3 goal)
+    private NavAvoidance[] Portals(NavGrid grid, NavBody body, uint goalObjectId, Vector3 goal) =>
+        Portals(grid.OriginX, grid.OriginY, grid.Size, body, goalObjectId, goal);
+
+    /// <summary>The portals over a square other than the one the walk goes to, each widened as <see cref="KeptOutOfPortal"/> says.</summary>
+    private NavAvoidance[] Portals(float originX, float originY, float size, NavBody body, uint goalObjectId, Vector3 goal)
     {
-        float half = grid.Size * 0.5f;
-        var centre = new Vector3(grid.OriginX + half, grid.OriginY + half, 0f);
+        float half = size * 0.5f;
+        var centre = new Vector3(originX + half, originY + half, 0f);
         IReadOnlyList<NavAvoidance> found = _goals.FindPortals(centre, half * MathF.Sqrt(2f), goalObjectId, goal);
         var portals = new NavAvoidance[found.Count];
         for (int index = 0; index < found.Count; index++)
-            portals[index] = found[index] with { Radius = found[index].Radius + body.Radius };
+            portals[index] = KeptOutOfPortal(found[index], body);
         return portals;
     }
+
+    /// <summary>
+    /// How far a route keeps a body's middle from a portal's: the portal's radius, the
+    /// body's, and <see cref="PortalClearance"/> besides.
+    /// </summary>
+    internal static NavAvoidance KeptOutOfPortal(NavAvoidance portal, NavBody body) =>
+        portal with { Radius = portal.Radius + body.Radius + PortalClearance };
 
     /// <summary>
     /// The route that keeps out of the objects the server placed, unless only a
@@ -1845,6 +1976,8 @@ internal sealed partial class NavigationWalkController
         float remaining = request.GoalKnown && _body.TrySample(out NavigationWalkBodySample sample)
             ? HorizontalDistance(sample.Position, Locate(request))
             : float.NaN;
+        if (state == NavigationWalkState.NoRoute && request.PortalInTheWay is { } portal)
+            reason = $"{reason}; the only way runs through {PortalLabel(portal)}, which a walk keeps out of";
         Publish(request, state, reason, remaining);
         Say($"{(request.Walk ? "Walk" : "Route")} to {Label(request)}: {reason}");
         if (request.Drives.Count > 0)
@@ -3178,6 +3311,19 @@ internal sealed partial class NavigationWalkController
 
         /// <summary>The spots the latest plan kept out of: where the walk stuck, and portals.</summary>
         public NavAvoidance[] PlannedAvoid { get; set; } = [];
+
+        /// <summary>The portals the latest plan kept out of, each widened as it was kept out of.</summary>
+        public NavAvoidance[] PlannedPortals { get; set; } = [];
+
+        /// <summary>
+        /// Where the portal stands that the only way the latest search found runs through, once
+        /// the search kept out of every portal and found none; set off the update thread by the
+        /// search, and read once it has finished.
+        /// </summary>
+        public Vector3? PortalInTheWay { get; set; }
+
+        /// <summary>How often the walk stopped for a portal that came to stand across its route.</summary>
+        public int PortalStops { get; set; }
 
         /// <summary>The objects the server placed that the latest plan was asked to keep out of.</summary>
         public NavAvoidance[] PlannedObstacles { get; set; } = [];
