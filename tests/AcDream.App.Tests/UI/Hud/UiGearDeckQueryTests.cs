@@ -50,13 +50,13 @@ public sealed class UiGearDeckQueryTests
         return t;
     }
 
-    private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null)
+    private static UiGearDeck Make(DeckFonts? fonts = null, Func<double>? clock = null, Func<uint>? player = null)
     {
         ClientObjectTable table = World();
         var session = new GearDeckSession(null, () => "", () => false);
         var b = new GearDeckBindings(
             Objects: () => table,
-            PlayerGuid: () => Player,
+            PlayerGuid: player ?? (() => Player),
             Strength: () => 100,
             ResolveIcon: (_, _, _, _, _) => 0u,
             ResolveDragIcon: (_, _, _, _, _) => 0u,
@@ -254,6 +254,78 @@ public sealed class UiGearDeckQueryTests
 
         deck.Menu.Selected!(0);
         Assert.Equal(q.Without(shown).Chips, deck.Query.Chips);
+    }
+
+    [Fact]
+    public void ChipsChangingWhileTheMenuIsOpen_RemoveTheListedChipByValue()
+    {
+        var (root, deck) = Rooted();
+        GearQuery q = GearQuery.Empty.With(GearChip.WornOnly);
+        for (int i = 0; i < 3; i++) q = q.With(LongName(i));
+        deck.SetQuery(q);
+        Assert.Single(deck.Geometry.Chips);   // Worn shows; the long names are behind "+3"
+
+        RootClick(root, deck, deck.Geometry.ChipMore!.Value);
+        Assert.True(deck.Menu.IsOpen);
+        deck.SetQuery(deck.Query.Without(0));   // Worn goes: an index would now name LongName(1)
+        deck.Menu.Selected!(0);
+        Assert.Equal(new[] { LongName(1), LongName(2) }, deck.Query.Chips);
+    }
+
+    [Fact]
+    public void AChipGoneWhileTheMenuIsOpen_IsNotReplacedByAnother()
+    {
+        var (root, deck) = Rooted();
+        GearQuery q = GearQuery.Empty.With(GearChip.WornOnly);
+        for (int i = 0; i < 3; i++) q = q.With(LongName(i));
+        deck.SetQuery(q);
+
+        RootClick(root, deck, deck.Geometry.ChipMore!.Value);
+        deck.SetQuery(deck.Query.Without(1));   // LongName(0), the first listed, goes
+        GearQuery before = deck.Query;
+        deck.Menu.Selected!(0);
+        Assert.Equal(before, deck.Query);
+    }
+
+    [Fact]
+    public void HidingTheField_WithoutAPlayer_ReleasesItsFocus()
+    {
+        uint player = Player;
+        var root = new UiRoot { Width = 1200, Height = 900 };
+        UiGearDeck deck = Make(player: () => player);
+        root.AddChild(deck);
+        root.SetKeyboardFocus(deck.QueryInput);
+        Assert.Same(deck.QueryInput, root.KeyboardFocus);
+
+        player = 0u;
+        deck.Refresh();
+        Assert.False(deck.QueryInput.Visible);
+        Assert.Null(root.KeyboardFocus);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Enter_WithNothingToTake_ReleasesFocus(string text)
+    {
+        var (root, deck) = Rooted();
+        Type(root, deck, text);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        Assert.Empty(deck.Query.Chips);
+        Assert.Null(root.KeyboardFocus);
+    }
+
+    [Fact]
+    public void Enter_ThatTakesASuggestion_KeepsFocus_ThenABlankEnterReleasesIt()
+    {
+        var (root, deck) = Rooted();
+        Type(root, deck, "steel");
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        Assert.Single(deck.Query.Chips);
+        Assert.Same(deck.QueryInput, root.KeyboardFocus);
+
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        Assert.Null(root.KeyboardFocus);
     }
 
     [Fact]

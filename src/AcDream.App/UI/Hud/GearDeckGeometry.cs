@@ -22,8 +22,8 @@ internal sealed class GearDeckGeometry
     public const float CloseSize = 16f, StudW = 52f, StudH = 18f, StudGap = 4f, FoldW = 20f, ViewStudW = 30f;
     public const float SlotCell = 38f, SlotGap = 4f, WornCellSize = 24f, WornGap = 3f;
     public const float ItemCell = 36f, ItemGap = 2f, ListRowH = 22f, SideW = 36f, SideCell = 34f, SideGap = 4f;
-    public const float QueryH = 22f, SavedH = 18f, PillH = 18f, PillGap = 4f, PillPadX = 6f, ChipCloseW = 8f, MaxPillW = 110f;
-    public const float MoreW = 26f, SortW = 58f, DirW = 18f, SaveW = 18f, FieldMinW = 60f, SuggestH = 18f, FooterButtonW = 120f;
+    public const float QueryH = 22f, SavedH = 18f, PillH = 18f, PillGap = 4f, PillPadX = 5f, ChipCloseW = 8f, MaxPillW = 110f;
+    public const float MoreW = 26f, SortW = 58f, DirW = 18f, SaveW = 18f, FieldMinW = 44f, SuggestH = 18f, FooterButtonW = 120f;
     public const int Columns = 6, WornPerRow = 10, SlotRows = 4, MaxWornRows = 3;
 
     public required DeckRect Frame { get; init; }

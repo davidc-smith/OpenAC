@@ -13,6 +13,8 @@ internal sealed partial class UiGearDeck
     /// <summary>Each suggestion's row text fitted to its row; reset with the suggestions.</summary>
     private string?[] _suggestTexts = [];
     private int _suggestIndex;
+    /// <summary>Set when an Enter took a suggestion: only then does the field keep focus after the submit.</summary>
+    private bool _tookOnSubmit;
 
     // The pills the geometry was built with: rebuilt when the chips, the saved names or the packs change.
     private GearPills _pills = new([], [], static t => t.Length * 6f);
@@ -53,8 +55,13 @@ internal sealed partial class UiGearDeck
             SetQuery(_query with { Text = text.Trim() });
             SyncGeometry();
         };
-        QueryInput.OnSubmit = _ => TakeSuggestion(_suggestIndex);
-        QueryInput.StayFocusedAfterSubmit = () => true;   // Enter adds a chip and keeps typing
+        QueryInput.OnSubmit = _ => _tookOnSubmit = TakeSuggestion(_suggestIndex);
+        QueryInput.StayFocusedAfterSubmit = () =>   // Enter that added a chip keeps typing; else it ends the edit
+        {
+            bool took = _tookOnSubmit;
+            _tookOnSubmit = false;
+            return took;
+        };
         QueryInput.OnEscape = () => QueryInput.SetText("");   // the field then releases focus itself
         QueryInput.OnBackspaceWhenEmpty = () => SetQuery(_query.Without(_query.Chips.Count - 1));
         QueryInput.OnUp = () => MoveSuggestion(-1);
@@ -71,13 +78,15 @@ internal sealed partial class UiGearDeck
         _suggestIndex = Math.Clamp(_suggestIndex + step, 0, _suggestions.Count - 1);
     }
 
-    /// <summary>Adds suggestion <paramref name="index"/> as a chip and clears the text, keeping the field focused.</summary>
-    internal void TakeSuggestion(int index)
+    /// <summary>Adds suggestion <paramref name="index"/> as a chip and clears the text, keeping the field
+    /// focused; false (and nothing changed) when there is no such suggestion.</summary>
+    internal bool TakeSuggestion(int index)
     {
-        if (index < 0 || index >= _suggestions.Count) return;
+        if (index < 0 || index >= _suggestions.Count) return false;
         SetQuery(_query.With(_suggestions[index]) with { Text = "" });
         QueryInput.SetText("");
         FindRoot()?.SetKeyboardFocus(QueryInput);
+        return true;
     }
 
     /// <summary>Puts the field over the bar's free space after the chips; hidden until there is a player.</summary>
@@ -89,7 +98,11 @@ internal sealed partial class UiGearDeck
         QueryInput.Top = r.Y;
         QueryInput.Width = MathF.Max(0f, r.W - 4f);
         QueryInput.Height = r.H;
-        QueryInput.Visible = _model.Packs.Count > 0;
+        bool shown = _model.Packs.Count > 0;
+        QueryInput.Visible = shown;
+        // A hidden field must not keep typing into a query nobody can see.
+        if (!shown && QueryInput.IsFocused && FindRoot() is { } root && ReferenceEquals(root.KeyboardFocus, QueryInput))
+            root.SetKeyboardFocus(null);
     }
 
     /// <summary>The chip labels and saved names the geometry lays out, rebuilt when they change.</summary>

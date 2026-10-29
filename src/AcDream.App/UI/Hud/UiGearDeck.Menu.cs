@@ -1,3 +1,5 @@
+using AcDream.Core.Items.Gear;
+
 namespace AcDream.App.UI.Hud;
 
 /// <summary>The deck's one popup menu. What it lists depends on where it was opened.</summary>
@@ -8,8 +10,10 @@ internal sealed partial class UiGearDeck
 
     private readonly UiMarkupContextMenu _menu = new() { ThemePalette = ChatDeckPalette.Menu };
     private MenuKind _menuKind;
-    /// <summary>For <see cref="MenuKind.HiddenChips"/>: the index of the first hidden chip when the menu opened.</summary>
-    private int _menuFirstChip;
+    /// <summary>For <see cref="MenuKind.HiddenChips"/>: the hidden chips and their labels when the menu opened.
+    /// A choice removes its chip by value, so chips that change while the menu is open never shift it.</summary>
+    private GearChip[] _menuChips = [];
+    private string[] _menuLabels = [];
 
     internal UiMarkupContextMenu Menu => _menu;
 
@@ -31,7 +35,14 @@ internal sealed partial class UiGearDeck
             GearZone.ChipMore when _g.HiddenChips > 0 => MenuKind.HiddenChips,
             _ => MenuKind.None,
         };
-        _menuFirstChip = _g.Chips.Count;
+        _menuChips = [];
+        _menuLabels = [];
+        if (_menuKind != MenuKind.HiddenChips) return;
+        int first = _g.Chips.Count;
+        IReadOnlyList<string> labels = ChipLabels;
+        int count = Math.Max(0, Math.Min(_query.Chips.Count, labels.Count) - first);
+        _menuChips = _query.Chips.Skip(first).Take(count).ToArray();
+        _menuLabels = labels.Skip(first).Take(count).ToArray();
     }
 
     private IReadOnlyList<string> MenuItems()
@@ -39,11 +50,7 @@ internal sealed partial class UiGearDeck
         switch (_menuKind)
         {
             case MenuKind.HiddenChips:
-            {
-                IReadOnlyList<string> labels = ChipLabels;
-                if (_menuFirstChip >= labels.Count) return [];
-                return labels.Skip(_menuFirstChip).ToArray();
-            }
+                return _menuLabels;
             default:
                 return [];
         }
@@ -53,10 +60,18 @@ internal sealed partial class UiGearDeck
     {
         switch (_menuKind)
         {
-            case MenuKind.HiddenChips:
-                SetQuery(_query.Without(_menuFirstChip + index));
+            case MenuKind.HiddenChips when index >= 0 && index < _menuChips.Length:
+                int at = IndexOfChip(_menuChips[index]);
+                if (at >= 0) SetQuery(_query.Without(at));   // gone since the menu opened: nothing to remove
                 break;
         }
+    }
+
+    private int IndexOfChip(GearChip chip)
+    {
+        for (int i = 0; i < _query.Chips.Count; i++)
+            if (_query.Chips[i].Equals(chip)) return i;
+        return -1;
     }
 
     /// <summary>Opens the menu from a left-click on <paramref name="stud"/>, at a point just inside its

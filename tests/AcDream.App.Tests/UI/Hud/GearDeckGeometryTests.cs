@@ -184,6 +184,16 @@ public sealed class GearDeckGeometryTests
     }
 
     [Fact]
+    public void TheHeadlineQuery_SteelAndSalvage_FitsWithoutAMorePill()
+    {
+        var input = new GearDeckLayoutInput(false, false, 0, 0, 7, 0);
+        var g = GearDeckGeometry.Create(620f, input, new GearPills(["Steel", "Salvage"], [], s => s.Length * 5.5f));
+        Assert.Equal(2, g.Chips.Count);
+        Assert.Null(g.ChipMore);
+        Assert.True(g.QueryField.W >= GearDeckGeometry.FieldMinW);
+    }
+
+    [Fact]
     public void NoChips_FieldFillsQueryText()
     {
         var g = GearDeckGeometry.Create(620f, new GearDeckLayoutInput(false, false, 0, 0, 7, 0));
