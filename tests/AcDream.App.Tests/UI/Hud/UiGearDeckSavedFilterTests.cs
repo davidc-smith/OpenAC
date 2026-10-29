@@ -15,8 +15,9 @@ public sealed class UiGearDeckSavedFilterTests
 
     private sealed class NoActions : IGearItemActions
     {
+        public static readonly List<string> Reports = [];
         public bool Ready() => true;
-        public void Report(string text) { }
+        public void Report(string text) => Reports.Add(text);
         public bool PutInContainer(uint item, uint container, int placement, bool fromGround) => true;
         public bool Merge(uint from, uint to) => true;
         public bool WieldFromPaperdoll(uint item, EquipMask mask) => true;
@@ -128,6 +129,61 @@ public sealed class UiGearDeckSavedFilterTests
         Assert.Equal(Steely, saved.Query);
         Assert.Single(deck.Geometry.SavedStuds);
         Assert.Equal(before + GearDeckGeometry.SavedH + GearDeckGeometry.Gap, deck.MinHeight);
+    }
+
+    [Fact]
+    public void ApplyingAFilterWithText_PutsTheTextInTheField_AndEscClearsBoth()
+    {
+        var (root, deck) = Rooted();
+        GearQuery texty = GearQuery.Empty with { Text = "steel" };
+        Save(root, deck, texty, "Texty");
+        deck.SetQuery(GearQuery.Empty);
+        deck.QueryInput.SetText("");
+
+        RootClick(root, deck, deck.Geometry.SavedStuds[0]);
+        Assert.Equal("steel", deck.Query.Text);
+        Assert.Equal("steel", deck.QueryInput.Text);
+        Assert.Equal(texty, deck.Query);   // still the lit query
+
+        root.SetKeyboardFocus(deck.QueryInput);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Escape);
+        Assert.Equal("", deck.QueryInput.Text);
+        Assert.Equal("", deck.Query.Text);
+    }
+
+    [Fact]
+    public void TheNameField_TakesRealKeys_EnterSaves_EscCancels()
+    {
+        var (root, deck) = Rooted();
+        deck.SetQuery(Steely);
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Escape);
+        Assert.False(deck.SaveNameInput.Visible);
+        Assert.Empty(deck.Bindings.Session.Settings.SavedFilters);
+
+        RootClick(root, deck, deck.Geometry.SaveStud);
+        root.OnKeyDown((int)Silk.NET.Input.Key.Enter);
+        Assert.False(deck.SaveNameInput.Visible);
+        Assert.Null(root.KeyboardFocus);
+        Assert.Equal("Steel", Assert.Single(deck.Bindings.Session.Settings.SavedFilters).Name);
+    }
+
+    [Fact]
+    public void AtTheCap_ANewNameReports_AndAnExistingNameStillReplaces()
+    {
+        var (root, deck) = Rooted();
+        for (int i = 0; i < SavedFilter.MaxCount; i++)
+            Save(root, deck, GearQuery.Empty.With(GearChip.NameContains($"f{i}")), $"F{i}");
+        Assert.Equal(SavedFilter.MaxCount, deck.Bindings.Session.Settings.SavedFilters.Count);
+        NoActions.Reports.Clear();
+
+        Save(root, deck, Steely, "Brand new");
+        Assert.Equal(SavedFilter.MaxCount, deck.Bindings.Session.Settings.SavedFilters.Count);
+        Assert.Equal(new[] { $"You can keep up to {SavedFilter.MaxCount} saved filters." }, NoActions.Reports);
+
+        Save(root, deck, Steely, "f3");
+        Assert.Equal(Steely, deck.Bindings.Session.Settings.SavedFilters.Single(f => f.Name == "f3").Query);
+        Assert.Single(NoActions.Reports);
     }
 
     [Fact]

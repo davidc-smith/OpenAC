@@ -44,6 +44,9 @@ internal sealed partial class UiGearDeck
     };
 
     private bool _naming;
+
+    /// <summary>No room for a new saved filter (a same-named one can still be replaced).</summary>
+    private bool SavedFull => _b.Session.Settings.SavedFilters.Count >= SavedFilter.MaxCount;
     private string?[] _fittedSaved = [];
     private string _savedMoreText = "";
     private int _savedMoreFor = -1;
@@ -120,16 +123,19 @@ internal sealed partial class UiGearDeck
         if (name is not null && name.Trim().Length > 0 && !_query.IsEmpty)
         {
             GearQuery query = _query;
+            if (SavedFull && !_b.Session.Settings.SavedFilters.Any(f => string.Equals(f.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                _b.Actions.Report($"You can keep up to {SavedFilter.MaxCount.ToString(CultureInfo.InvariantCulture)} saved filters.");
             _b.Session.Update(s => s.WithSaved(new SavedFilter(name, query)));
         }
         SyncGeometry();
     }
 
-    /// <summary>Makes <paramref name="filter"/>'s query the live one and empties the field.</summary>
+    /// <summary>Makes <paramref name="filter"/>'s query the live one, with its text in the field so both agree.</summary>
     private void ApplySaved(SavedFilter filter)
     {
         QueryInput.SetText("");   // first: its change handler would strip the filter's own text
         SetQuery(filter.Query);
+        QueryInput.SetText(filter.Query.Text);   // the handler then sets the same trimmed text: no change
     }
 
     /// <summary>A click on saved stud <paramref name="index"/>: applies it, or clears the query when it is already lit.</summary>

@@ -390,7 +390,7 @@ internal sealed partial class UiGearDeck
     private void DrawQueryStuds(UiRenderContext ctx)
     {
         GearDeckGeometry g = _g;
-        Vector4 star = DeckChrome.DrawStud(ctx, g.SaveStud, 1f, on: _naming, dim: _query.IsEmpty);
+        Vector4 star = DeckChrome.DrawStud(ctx, g.SaveStud, 1f, on: _naming, dim: _query.IsEmpty || SavedFull);
         DrawStar(ctx, g.SaveStud, star);
 
         bool dim = !ShowsResults;
