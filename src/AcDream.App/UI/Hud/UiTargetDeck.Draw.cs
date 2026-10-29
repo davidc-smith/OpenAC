@@ -255,7 +255,7 @@ internal sealed partial class UiTargetDeck
         try
         {
             DeckChrome.DrawFrame(ctx, m, 1f);
-                        for (int i = 0; i < entries.Count; i++)
+            for (int i = 0; i < entries.Count; i++)
             {
                 TargetMenuEntry e = entries[i];
                 DeckRect r = MenuEntryRect(i);
