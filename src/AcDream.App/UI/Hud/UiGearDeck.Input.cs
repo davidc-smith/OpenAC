@@ -78,6 +78,7 @@ internal sealed partial class UiGearDeck
                     FindRoot()?.SetKeyboardFocus(QueryInput);
                 // A press on the figure where nothing is worn turns it; a worn part lifts instead.
                 _turnFromX = _press.Zone == GearZone.Figure && WornAt(_press) is null ? e.Data1 : null;
+                _turning = false;
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
             case UiEventType.CaptureChanged:

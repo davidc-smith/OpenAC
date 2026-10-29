@@ -60,8 +60,16 @@ internal sealed partial class UiGearDeck
     /// <summary>Radians the figure turns per point dragged, at scale 1.</summary>
     internal const float TurnPerPoint = 0.012f;
 
-    /// <summary>The pointer x the last turn step was measured from, while a press on the figure turns it.</summary>
+    /// <summary>Points a press must move before the figure turns: UiRoot.DragDistanceThreshold's 3, so a
+    /// click's wobble never turns the figure (a turned figure names no region until stood back up).</summary>
+    internal const float TurnDeadZone = 3f;
+
+    /// <summary>The pointer x the last turn step was measured from (the press itself until the turn
+    /// starts), while a press on the figure is held.</summary>
     private float? _turnFromX;
+
+    /// <summary>Whether the held press has passed <see cref="TurnDeadZone"/> and turns the figure.</summary>
+    private bool _turning;
 
     /// <summary>
     /// The geometry's hit with the body filled in: a Figure hit's Index is the
@@ -94,10 +102,13 @@ internal sealed partial class UiGearDeck
         return id == 0u || id == player ? null : id;
     }
 
-    /// <summary>Turns the figure as a held press moves; true while a turn is under way.</summary>
+    /// <summary>Turns the figure as a held press moves; true while a press on bare figure is held.</summary>
     private bool TurnTo(float x)
     {
         if (_turnFromX is not float from) return false;
+        // Inside the dead zone nothing turns; past it the first step counts the whole way from the press.
+        if (!_turning && MathF.Abs(x - from) <= TurnDeadZone) return true;
+        _turning = true;
         FigurePose = FigurePose.Turned((x - from) / _scale * TurnPerPoint);
         _turnFromX = x;
         return true;

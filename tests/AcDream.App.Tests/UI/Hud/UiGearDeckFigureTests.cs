@@ -274,25 +274,52 @@ public sealed class UiGearDeckFigureTests
         Assert.Contains(r.Actions.Calls, c => c.StartsWith($"put {Helm:X} "));
     }
 
-    [Fact]
-    public void DragWhereNothingIsWorn_Turns_AndTheMapGoesQuiet()
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void DragWhereNothingIsWorn_Turns_AndTheMapGoesQuiet(float scale)
     {
-        Rig r = Make();
+        Rig r = Make(scale: scale);
         var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.MouseMove, chest);
+        GearDeckHit hovered = r.Deck.Hover;
         Assert.True(r.Deck.HitTestLocal(chest.X, chest.Y));
         Assert.False(r.Deck.IsDragSource);
         SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 2f, chest.Y));
+        Assert.True(r.Deck.FigurePose.IsDefault);       // inside the dead zone
+        // Past the dead zone the turn counts the whole way from the press: 50 points, in scale-1 points.
         SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
-        Assert.Equal(0.6f, r.Deck.FigurePose.Yaw, 3);
+        float yaw = 50f / scale * UiGearDeck.TurnPerPoint;
+        Assert.Equal(yaw, r.Deck.FigurePose.Yaw, 3);
+        Assert.Equal(hovered, r.Deck.Hover);            // a turn's moves leave the hover alone
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 30f, chest.Y));
+        Assert.Equal(30f / scale * UiGearDeck.TurnPerPoint, r.Deck.FigurePose.Yaw, 3);   // then by deltas, back inside too
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
         SendAt(r.Deck, UiEventType.MouseUp, (chest.X + 50f, chest.Y));
         SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 90f, chest.Y));
-        Assert.Equal(0.6f, r.Deck.FigurePose.Yaw, 3);   // released: no more turning
+        Assert.Equal(yaw, r.Deck.FigurePose.Yaw, 3);    // released: no more turning
 
         var head = MapPoint(r.Deck, 50, 10);
         SendAt(r.Deck, UiEventType.MouseMove, head);
         Assert.Equal(0, r.Deck.Hover.Index);            // turned: no region
         Assert.True(r.Deck.HitTestLocal(head.X, head.Y));
         Assert.False(r.Deck.IsDragSource);
+    }
+
+    [Fact]
+    public void AClickWobble_DoesNotTurn()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 2f, chest.Y));
+        SendAt(r.Deck, UiEventType.MouseUp, chest);   // the root sends it before the Click
+        SendAt(r.Deck, UiEventType.Click, chest);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.MouseMove, head);
+        Assert.Equal((int)EquipMask.HeadWear, r.Deck.Hover.Index);   // the map still names regions
     }
 
     [Fact]
