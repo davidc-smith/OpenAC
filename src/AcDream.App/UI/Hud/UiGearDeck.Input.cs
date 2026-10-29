@@ -335,8 +335,9 @@ internal sealed partial class UiGearDeck
     /// <summary>Whether the query has a Pack chip for <paramref name="packId"/> (the side column outlines it).</summary>
     private bool HasPackChip(uint packId)
     {
-        foreach (GearChip chip in _query.Chips)
-            if (chip.Field == GearField.Pack && chip.Id == packId) return true;
+        IReadOnlyList<GearChip> chips = _query.Chips;
+        for (int i = 0; i < chips.Count; i++)
+            if (chips[i].Field == GearField.Pack && chips[i].Id == packId) return true;
         return false;
     }
 

@@ -25,6 +25,25 @@ public sealed class GearQueryEngineTests
     private static GearQuery Q(params GearChip[] chips) => GearQuery.Empty with { Chips = chips };
 
     [Fact]
+    public void Workmanship_ComparesAsDisplayed_SoA73fRowMatches73()
+    {
+        GearItemView[] rows = [Row(1, "A", work: 7.3f)];
+        Assert.Single(GearQueryEngine.Run(rows, Q(GearChip.Range(GearField.Workmanship, 7.3, 7.3))));
+        Assert.Single(GearQueryEngine.Run(rows, Q(GearChip.Range(GearField.Workmanship, null, 7.3))));
+        Assert.Single(GearQueryEngine.Run(rows, Q(GearChip.Range(GearField.Workmanship, 7.3, null))));
+    }
+
+    [Fact]
+    public void Sort_TiesEndInIdOrder_ForWornRowsWithTheSameName()
+    {
+        GearItemView[] ab = [Row(9, "Ring", worn: true), Row(4, "Ring", worn: true)];
+        GearItemView[] ba = [ab[1], ab[0]];
+        var q = Q(GearChip.WornOnly);
+        Assert.Equal([4u, 9], GearQueryEngine.Run(ab, q).Select(v => v.Id).ToArray());
+        Assert.Equal([4u, 9], GearQueryEngine.Run(ba, q).Select(v => v.Id).ToArray());
+    }
+
+    [Fact]
     public void EmptyQuery_ReturnsItemsUnchanged()
     {
         Assert.Same(Items, GearQueryEngine.Run(Items, GearQuery.Empty));

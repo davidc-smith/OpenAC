@@ -255,7 +255,7 @@ internal sealed partial class UiGearDeck : UiElement
         _scrollRow,
         SavedCount: _b.Session.Settings.SavedFilters.Count,
         Suggestions: VisibleSuggestions,
-        SalvageButton: _b.Salvage?.IsOpen == true && SalvageCount > 0);
+        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0);
 
     private void SyncGeometry()
     {
@@ -362,8 +362,9 @@ internal sealed partial class UiGearDeck : UiElement
             if (_columnsFor == _queryVersion) return _columns;
             GearSortField? sort = _query.Sort.Field == GearSortField.Name ? null : _query.Sort.Field;
             GearSortField? range = null;
-            foreach (GearChip chip in _query.Chips)
-                if (chip.IsRange) { range = GearChipText.SortFieldOf(chip.Field); break; }
+            IReadOnlyList<GearChip> chips = _query.Chips;
+            for (int i = 0; i < chips.Count; i++)
+                if (chips[i].IsRange) { range = GearChipText.SortFieldOf(chips[i].Field); break; }
             if (range == sort) range = null;
             _columns = sort is null ? (range, null) : (sort, range);
             _columnsFor = _queryVersion;
@@ -387,11 +388,12 @@ internal sealed partial class UiGearDeck : UiElement
     private (ulong Build, int QueryVersion, int Selection, int Revision)? _salvageFor;
     private readonly Dictionary<int, string> _salvageTexts = [];
 
-    /// <summary>The rows an Add to salvage acts on: the selection in <see cref="Shown"/> order, else all of Shown.</summary>
+    /// <summary>The rows the footer's Add to salvage acts on: the selection in <see cref="Shown"/> order, else all
+    /// of Shown while results show; none in the plain pack view with nothing selected.</summary>
     private IReadOnlyList<GearItemView> SalvageTargets()
     {
         IReadOnlyList<GearItemView> shown = Shown;   // prunes the selection
-        if (_selection.Count == 0) return shown;
+        if (_selection.Count == 0) return ShowsResults ? shown : [];
         var picked = new List<GearItemView>(_selection.Count);
         foreach (GearItemView row in shown)
             if (_selection.Contains(row.Id)) picked.Add(row);

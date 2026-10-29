@@ -150,6 +150,23 @@ public sealed class GearSalvageHandOffTests
     }
 
     [Fact]
+    public void PlainPackView_ShowsTheFooterButtonOnlyWhileSomethingIsSelected()
+    {
+        var (deck, salvage) = MakeDeck();
+        deck.SetQuery(GearQuery.Empty);
+        deck.Refresh();
+        Assert.False(deck.ShowsResults);
+        Assert.False(deck.Geometry.Input.SalvageButton);
+
+        Click(deck, deck.Geometry.GridCell(0, 0)!.Value);
+        deck.Refresh();
+        Assert.True(deck.Geometry.Input.SalvageButton);
+        Assert.Equal(1, deck.SalvageCount);
+        Click(deck, deck.Geometry.FooterButton);
+        Assert.Single(salvage.Added);
+    }
+
+    [Fact]
     public void FooterButton_WithNoSelection_AddsEveryShownRow()
     {
         var (deck, salvage) = MakeDeck();

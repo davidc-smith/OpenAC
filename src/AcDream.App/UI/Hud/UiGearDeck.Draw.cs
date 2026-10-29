@@ -57,7 +57,7 @@ internal sealed partial class UiGearDeck
         finally { ctx.PopClip(); }
 
         DrawSideColumn(ctx, objects);
-        DrawText(ctx, Small, FooterLeftText, g.Footer.X, g.Footer, LabelInk);
+        DrawText(ctx, Small, g.Input.SalvageButton ? FittedFooterLeft(ctx, g.FooterButton.X - g.Footer.X - 4f) : FooterLeftText, g.Footer.X, g.Footer, LabelInk);
         if (g.Input.SalvageButton) DrawSalvageButton(ctx);
         else if (!ShowsResults)
         {
@@ -67,6 +67,22 @@ internal sealed partial class UiGearDeck
 
         if (DropHighlight is { } drop && RectFor(drop.Hit) is { } target)
             StrokeAround(ctx, target, drop.Accept ? DropAccept : DropReject);
+    }
+
+    private string? _fittedFooterSrc, _fittedFooter;
+    private float _fittedFooterWidth = -1f;
+
+    /// <summary>The left footer text fitted to <paramref name="width"/>, cached per text and width.</summary>
+    private string FittedFooterLeft(UiRenderContext ctx, float width)
+    {
+        string text = FooterLeftText;
+        if (_fittedFooter is null || !ReferenceEquals(_fittedFooterSrc, text) || _fittedFooterWidth != width)
+        {
+            _fittedFooter = Fit(ctx, Small, text, MathF.Max(0f, width));
+            _fittedFooterSrc = text;
+            _fittedFooterWidth = width;
+        }
+        return _fittedFooter;
     }
 
     /// <summary>The footer's lit "Add N to salvage" stud.</summary>
@@ -446,7 +462,7 @@ internal sealed partial class UiGearDeck
         {
             DeckRect r = g.SavedStuds[i];
             bool hot = Hover.Zone == GearZone.SavedFilter && Hover.Index == i;
-            Vector4 ink = DeckChrome.DrawStud(ctx, r, 1f, on: _query.Equals(saved[i].Query));
+            Vector4 ink = DeckChrome.DrawStud(ctx, r, 1f, on: SavedLit(saved, i));
             string text = i < _fittedSaved.Length && _fittedSaved[i] is { } fitted
                 ? fitted
                 : Fit(ctx, Bold, names[i], MathF.Max(0f, r.W - 2f * GearDeckGeometry.PillPadX));

@@ -48,6 +48,22 @@ internal sealed partial class UiGearDeck
     /// <summary>No room for a new saved filter (a same-named one can still be replaced).</summary>
     private bool SavedFull => _b.Session.Settings.SavedFilters.Count >= SavedFilter.MaxCount;
     private string?[] _fittedSaved = [];
+    /// <summary>Which saved filters equal the live query, cached per query version and saved-filters list.</summary>
+    private bool[] _savedLit = [];
+    private int _savedLitVersion = -1;
+    private IReadOnlyList<SavedFilter>? _savedLitFor;
+
+    private bool SavedLit(IReadOnlyList<SavedFilter> saved, int index)
+    {
+        if (_savedLitVersion != _queryVersion || !ReferenceEquals(_savedLitFor, saved) || _savedLit.Length != saved.Count)
+        {
+            if (_savedLit.Length != saved.Count) _savedLit = new bool[saved.Count];
+            for (int i = 0; i < _savedLit.Length; i++) _savedLit[i] = _query.Equals(saved[i].Query);
+            _savedLitVersion = _queryVersion;
+            _savedLitFor = saved;
+        }
+        return index < _savedLit.Length && _savedLit[index];
+    }
     private string _savedMoreText = "";
     private int _savedMoreFor = -1;
     private (GearSortField Field, string Text)? _sortText;
@@ -198,8 +214,8 @@ internal sealed partial class UiGearDeck
         IReadOnlyList<SavedFilter> saved = _b.Session.Settings.SavedFilters;
         // Only a Pack chip's label ("Pack N") follows the model; any other leaves the pills alone.
         ulong build = 0;
-        foreach (GearChip chip in chipsNow)
-            if (chip.Field == GearField.Pack) { build = _modelBuild; break; }
+        for (int i = 0; i < chipsNow.Count; i++)
+            if (chipsNow[i].Field == GearField.Pack) { build = _modelBuild; break; }
         if (_pillsFor is { } k && ReferenceEquals(k.Chips, chipsNow) && ReferenceEquals(k.Saved, saved) && k.Build == build)
             return _pills;
         var chips = new string[_query.Chips.Count];

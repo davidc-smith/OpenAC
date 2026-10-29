@@ -35,7 +35,7 @@ public static class GearQueryEngine
         GearField.Type => item.Group == chip.Group,
         GearField.Material => item.Material != 0 && item.Material == chip.Id,
         GearField.Pack => !item.Worn && item.PackId == chip.Id,
-        GearField.Workmanship => item.Workmanship > 0 && InRange(chip, item.Workmanship),
+        GearField.Workmanship => item.Workmanship > 0 && InRange(chip, Math.Round((double)item.Workmanship, 2)),
         GearField.Value => InRange(chip, item.Value),
         GearField.Burden => InRange(chip, item.Burden),
         GearField.Stack => InRange(chip, item.Stack),
@@ -82,6 +82,8 @@ public static class GearQueryEngine
         c = string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
         if (c != 0) return c;
         c = a.PackIndex.CompareTo(b.PackIndex);
-        return c != 0 ? c : a.Slot.CompareTo(b.Slot);
+        if (c != 0) return c;
+        c = a.Slot.CompareTo(b.Slot);
+        return c != 0 ? c : a.Id.CompareTo(b.Id);
     }
 }
