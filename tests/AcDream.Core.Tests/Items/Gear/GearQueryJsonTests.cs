@@ -57,6 +57,28 @@ public sealed class GearQueryJsonTests
     }
 
     [Fact]
+    public void PackOrder_RoundTrips_AsThePackKey()
+    {
+        var filter = new SavedFilter("a", GearQuery.Empty.With(GearChip.WornOnly));
+        JsonObject o = GearQueryJson.Write(filter);
+        Assert.Equal("pack", (string?)o["sort"]);
+        Assert.True(GearQueryJson.TryRead(JsonNode.Parse(o.ToJsonString()), out SavedFilter? back));
+        Assert.Equal(filter, back);
+    }
+
+    [Theory]
+    [InlineData("name", GearSortField.Name)]
+    [InlineData("type", GearSortField.Type)]
+    [InlineData("work", GearSortField.Workmanship)]
+    [InlineData("stack", GearSortField.Stack)]
+    public void AFilterSavedBeforePackOrder_KeepsItsSort(string key, GearSortField field)
+    {
+        string json = $"{{\"name\":\"Old\",\"chips\":[{{\"f\":\"worn\"}}],\"text\":\"\",\"sort\":\"{key}\",\"desc\":false}}";
+        Assert.True(GearQueryJson.TryRead(JsonNode.Parse(json), out SavedFilter? f));
+        Assert.Equal(new GearSort(field, false), f!.Query.Sort);
+    }
+
+    [Fact]
     public void MissingTextAndSort_Default()
     {
         Assert.True(GearQueryJson.TryRead(JsonNode.Parse("{\"name\":\"a\",\"chips\":[{\"f\":\"worn\"}]}"), out SavedFilter? f));

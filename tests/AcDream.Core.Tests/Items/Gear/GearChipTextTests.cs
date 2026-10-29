@@ -66,5 +66,9 @@ public sealed class GearChipTextTests
         Assert.Equal("", GearChipText.Value(GearSortField.Material, row with { Material = 0 }));
         Assert.Equal("Burden", GearChipText.SortLabel(GearSortField.Burden));
         Assert.Equal("Name", GearChipText.SortLabel(GearSortField.Name));
+        Assert.Equal("Pack", GearChipText.SortLabel(GearSortField.Pack));
+        Assert.Equal("Pack order", GearChipText.SortMenuLabel(GearSortField.Pack));
+        Assert.Equal("Work", GearChipText.SortMenuLabel(GearSortField.Workmanship));
+        Assert.Equal("", GearChipText.Value(GearSortField.Pack, row));
     }
 }

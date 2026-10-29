@@ -22,7 +22,9 @@ public sealed class GearQueryEngineTests
     ];
 
     private static uint[] Ids(GearQuery q) => GearQueryEngine.Run(Items, q).Select(v => v.Id).ToArray();
-    private static GearQuery Q(params GearChip[] chips) => GearQuery.Empty with { Chips = chips };
+    /// <summary>A query of <paramref name="chips"/> sorted by name (the default is Pack order).</summary>
+    private static GearQuery Q(params GearChip[] chips) =>
+        GearQuery.Empty with { Chips = chips, Sort = new GearSort(GearSortField.Name, false) };
 
     [Fact]
     public void Workmanship_ComparesAsDisplayed_SoA73fRowMatches73()
@@ -134,6 +136,62 @@ public sealed class GearQueryEngineTests
     {
         GearQuery q = Q(GearChip.OfMaterial(64));
         Assert.Same(q, q.Without(index));
+    }
+
+    [Fact]
+    public void PackOrder_IsTheDefaultSort_AndASortAloneIsNoQuery()
+    {
+        Assert.Equal(new GearSort(GearSortField.Pack, false), GearSort.Default);
+        Assert.Equal(GearSort.Default, GearQuery.Empty.Sort);
+        Assert.False(GearSort.DefaultFor(GearSortField.Pack).Descending);
+        Assert.True((GearQuery.Empty with { Sort = new GearSort(GearSortField.Name, false) }).IsEmpty);
+    }
+
+    [Fact]
+    public void SortFieldNumbers_AreUnchanged_WithPackAddedLast()
+    {
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5, 6, 7 }, new[]
+        {
+            (int)GearSortField.Name, (int)GearSortField.Type, (int)GearSortField.Material, (int)GearSortField.Workmanship,
+            (int)GearSortField.Value, (int)GearSortField.Burden, (int)GearSortField.Stack, (int)GearSortField.Pack,
+        });
+    }
+
+    /// <summary>The rows as a projection lists them: main pack by slot, the bag by slot, the bag row itself, worn.</summary>
+    private static readonly IReadOnlyList<GearItemView> Projected =
+    [
+        Row(3, "Zinc", value: 5, slot: 0),
+        Row(1, "Apple", value: 50, slot: 1),
+        Row(2, "Mace", value: 20, pack: Bag, packIndex: 1, slot: 0),
+        new(9, "Pack", GearTypeGroup.Containers, 0, 0, 1, 0, 1, 1, Main, 0, -1, false, true),
+        Row(5, "Helm", value: 30, worn: true),
+    ];
+
+    [Fact]
+    public void PackOrder_KeepsTheResultsInProjectionOrder_EitherDirection()
+    {
+        GearQuery any = GearQuery.Empty.With(GearChip.Range(GearField.Value, 0, null));   // the default sort
+        Assert.Equal([3u, 1, 2, 9], GearQueryEngine.Run(Projected, any).Select(v => v.Id));
+        Assert.Equal([3u, 1, 2, 9], GearQueryEngine.Run(Projected, any with { Sort = new GearSort(GearSortField.Pack, true) }).Select(v => v.Id));
+        Assert.Equal([5u], GearQueryEngine.Run(Projected, GearQuery.Empty.With(GearChip.WornOnly)).Select(v => v.Id));
+    }
+
+    [Fact]
+    public void SortRows_UnderPackOrder_ReturnsTheRowsAsTheyAre()
+    {
+        Assert.Same(Projected, GearQueryEngine.Sort(Projected, GearSort.Default));
+        Assert.Same(Projected, GearQueryEngine.Sort(Projected, new GearSort(GearSortField.Pack, true)));
+    }
+
+    [Fact]
+    public void SortRows_UsesTheResultsComparator()
+    {
+        GearItemView[] pack = [Row(7, "Gem", value: 10, slot: 0), Row(4, "Axe", value: 30, slot: 1), Row(8, "Gem", value: 10, slot: 2),
+            Row(6, "Gem", value: 10, slot: 2)];
+        Assert.Equal([4u, 7, 6, 8], GearQueryEngine.Sort(pack, GearSort.DefaultFor(GearSortField.Value)).Select(v => v.Id));
+        Assert.Equal([7u, 6, 8, 4], GearQueryEngine.Sort(pack, new GearSort(GearSortField.Value, false)).Select(v => v.Id));
+        Assert.Equal([4u, 7, 6, 8], GearQueryEngine.Sort(pack, new GearSort(GearSortField.Name, false)).Select(v => v.Id));
+        Assert.Equal([7u, 4, 8, 6], pack.Select(v => v.Id));   // the input is left as it was
     }
 
     [Fact]

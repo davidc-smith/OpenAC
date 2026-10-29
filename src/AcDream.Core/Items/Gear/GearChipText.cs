@@ -24,7 +24,11 @@ public static class GearChipText
         _ => Label(chip, _ => "Pack"),
     };
 
+    /// <summary>The sort stud's text.</summary>
     public static string SortLabel(GearSortField field) => field == GearSortField.Workmanship ? "Work" : field.ToString();
+
+    /// <summary>A sort menu row's text: the stud's, but Pack order in full.</summary>
+    public static string SortMenuLabel(GearSortField field) => field == GearSortField.Pack ? "Pack order" : SortLabel(field);
 
     /// <summary>A row's value for a list column; empty where the row has none.</summary>
     public static string Value(GearSortField field, GearItemView row) => field switch

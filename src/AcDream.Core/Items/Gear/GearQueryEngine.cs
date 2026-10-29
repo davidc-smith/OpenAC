@@ -25,8 +25,21 @@ public static class GearQueryEngine
             if (ok) hits.Add(item);
         }
         GearSort sort = query.Sort;
-        hits.Sort((a, b) => Compare(sort, a, b));
+        if (sort.Field != GearSortField.Pack) hits.Sort((a, b) => Compare(sort, a, b));   // Pack: as the items came
         return hits;
+    }
+
+    /// <summary>
+    /// <paramref name="rows"/> in <paramref name="sort"/>'s order with the results' comparator, as a new list;
+    /// under Pack order, <paramref name="rows"/> themselves (a pack's rows are already in slot order).
+    /// </summary>
+    public static IReadOnlyList<GearItemView> Sort(IReadOnlyList<GearItemView> rows, GearSort sort)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (sort.Field == GearSortField.Pack) return rows;
+        var sorted = new List<GearItemView>(rows);
+        sorted.Sort((a, b) => Compare(sort, a, b));
+        return sorted;
     }
 
     private static bool Matches(GearChip chip, GearItemView item) => chip.Field switch

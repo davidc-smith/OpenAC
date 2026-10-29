@@ -16,7 +16,7 @@ public static class GearQueryJson
     [
         (GearSortField.Name, "name"), (GearSortField.Type, "type"), (GearSortField.Material, "material"),
         (GearSortField.Workmanship, "work"), (GearSortField.Value, "value"), (GearSortField.Burden, "burden"),
-        (GearSortField.Stack, "stack"),
+        (GearSortField.Stack, "stack"), (GearSortField.Pack, "pack"),
     ];
 
     public static JsonObject Write(SavedFilter filter)
