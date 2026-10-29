@@ -1,3 +1,4 @@
+using System.Numerics;
 using AcDream.App.Plugins;
 using AcDream.App.Rendering;
 using AcDream.App.UI;
@@ -79,6 +80,7 @@ public sealed class UiGearDeckResultsTests
         public required UiGearDeck Deck;
         public required Fake Actions;
         public required GearDeckSession Session;
+        public required List<string> Log;
     }
 
     private static Rig Make(Func<GearDeckSettings, GearDeckSettings>? settings = null, DeckFonts? fonts = null,
@@ -88,6 +90,7 @@ public sealed class UiGearDeckResultsTests
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
         var actions = new Fake();
+        var log = new List<string>();
         var b = new GearDeckBindings(
             Objects: () => table,
             PlayerGuid: () => Player,
@@ -98,9 +101,10 @@ public sealed class UiGearDeckResultsTests
             Session: session,
             Actions: actions,
             IsPending: _ => false,
-            Close: () => { });
+            Close: () => { },
+            Log: log.Add);
         var deck = new UiGearDeck(b, fonts, icons, () => 0.0);
-        var rig = new Rig { Deck = deck, Actions = actions, Session = session };
+        var rig = new Rig { Deck = deck, Actions = actions, Session = session, Log = log };
         deck.Refresh();
         return rig;
     }
@@ -206,6 +210,46 @@ public sealed class UiGearDeckResultsTests
     }
 
     [Fact]
+    public void ADropOnAResultRow_UsesTheRowsOwnSlot_NotItsPlaceInTheResults()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(SteelBy(new GearSort(GearSortField.Workmanship, false)));   // 6.0, 7.5, then the bag's 9.0
+        int index = IndexOf(r.Deck, Salvage90);
+        Assert.Equal(2, index);
+        Assert.Equal(0, r.Deck.Shown[index].Slot);
+        Drop(r, Cell(r.Deck, index));
+        Assert.Equal([$"put {First:X} B1 0"], r.Actions.Calls);   // slot 0 of the bag, not 2
+    }
+
+    [Fact]
+    public void ADropOnAWornResultRow_WieldsIntoThatItemsSlot()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(GearQuery.Empty.With(GearChip.WornOnly));
+        Drop(r, Cell(r.Deck, 0));
+        Assert.Contains(r.Log, l => l.Contains("on Item 0 -> DropOnSlot"));
+    }
+
+    [Fact]
+    public void ADropOnAPackResultRow_PutsIntoThatPack()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(GearQuery.Empty.With(GearChip.OfType(GearTypeGroup.Containers)));
+        GearItemView bag = Assert.Single(r.Deck.Shown);
+        Assert.True(bag.IsPack);
+        Drop(r, Cell(r.Deck, 0));
+        Assert.Contains(r.Log, l => l.Contains("on Item 0 -> DropOnPack"));
+        Assert.Contains(r.Actions.Calls, c => c.StartsWith($"put {First:X} B1 "));
+    }
+
+    private static void Drop(Rig r, DeckRect at)
+    {
+        var payload = new ItemDragPayload(First, ItemDragSource.Inventory, 0, null);
+        var (x, y) = Centre(at);
+        Assert.True(r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.DropReleased, Data1: (int)x, Data2: (int)y, Payload: payload)));
+    }
+
+    [Fact]
     public void ADoubleClickOnASidePack_WhileResultsAreShown_TogglesItsChipOnce()
     {
         Rig r = Make();
@@ -215,6 +259,41 @@ public sealed class UiGearDeckResultsTests
         DoubleClick(r.Deck, r.Deck.Geometry.SidePack(1));
         Assert.DoesNotContain(GearChip.InPack(Bag), r.Deck.Query.Chips);
         Assert.Empty(r.Actions.Calls);
+    }
+
+    [Fact]
+    public void WhileResultsAreShown_OnlyPacksWithAChipAreOutlined()
+    {
+        Rig r = Make();
+        r.Deck.SetQuery(SteelBy(GearSort.Default));
+        TextRenderer before = MarkupDrawProbe.Draw(r.Deck, GearDeckGeometry.Width, r.Deck.Height);
+        Assert.False(OutlinedLeft(before, r.Deck.Geometry.SidePack(0)), "the selected main pack is not outlined in results");
+        Assert.False(OutlinedLeft(before, r.Deck.Geometry.SidePack(1)));
+
+        Click(r.Deck, r.Deck.Geometry.SidePack(1));
+        TextRenderer after = MarkupDrawProbe.Draw(r.Deck, GearDeckGeometry.Width, r.Deck.Height);
+        Assert.True(OutlinedLeft(after, r.Deck.Geometry.SidePack(1)));
+        Assert.False(OutlinedLeft(after, r.Deck.Geometry.SidePack(0)));
+    }
+
+    /// <summary>A handle-coloured vertex just outside <paramref name="r"/>'s left edge, within its height (the
+    /// outline's 2-point stroke lies a point outside the cell; a neighbour's stays above or below it).</summary>
+    private static bool OutlinedLeft(TextRenderer renderer, DeckRect r)
+    {
+        Vector4 c = DeckChrome.Handle;
+        foreach (var s in renderer.DebugSpriteSegmentVerts)
+        {
+            if (s.Texture != 0u) continue;
+            for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+            {
+                float x = s.Verts[i], y = s.Verts[i + 1];
+                if (x >= r.X - 3.5f && x <= r.X - 0.5f && y >= r.Y && y <= r.Y + r.H
+                    && MathF.Abs(s.Verts[i + 4] - c.X) < 0.01f && MathF.Abs(s.Verts[i + 5] - c.Y) < 0.01f
+                    && MathF.Abs(s.Verts[i + 6] - c.Z) < 0.01f)
+                    return true;
+            }
+        }
+        return false;
     }
 
     [Fact]
