@@ -4046,7 +4046,8 @@ public sealed class RetailUiRuntime : IDisposable
                 CreateTargetDeckActions(b),
                 _hudIcons,
                 () => clock.Elapsed.TotalSeconds,
-                _deckFonts);
+                _deckFonts,
+                HudTextSize);
             // Ticks only while shown, so auto-ID follows the target only under Modern HUD.
             deck.Ticked += () => _targetAuto?.Tick();
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

@@ -20,8 +20,9 @@ internal sealed partial class UiTargetDeck
         DeckChrome.DrawFrame(ctx, TargetDeckGeometry.Body, 1f);
         DrawPortrait(ctx, v);
         DrawIdentity(ctx, v);
-        DrawText(ctx, Fit(ctx, Small, v.SubLine, TargetDeckGeometry.Sub.W), TargetDeckGeometry.Sub.X,
-            TargetDeckGeometry.Sub, LabelInk, Small);
+        DeckFace sub = SmallIn(TargetDeckGeometry.Sub);
+        DrawText(ctx, Fit(ctx, sub, v.SubLine, TargetDeckGeometry.Sub.W), TargetDeckGeometry.Sub.X,
+            TargetDeckGeometry.Sub, LabelInk, sub);
 
         if (v.Vitals is { } vitals) DrawVitals(ctx, vitals);
         for (int i = 0; i < KindRowCount(v); i++)
@@ -33,10 +34,19 @@ internal sealed partial class UiTargetDeck
 
     // ---- faces ----
 
-    private DeckFace Small => new(_fonts?.Small);
-    /// <summary>The name: the 14 px SemiBold face.</summary>
-    private DeckFace NameFace => new(_fonts?.Bold);
-    private DeckFace ChipFace => new(_fonts?.Face(ChipPixels, BundledUiFontWeight.SemiBold));
+    private DeckFace SmallIn(DeckRect box) => In(DeckFonts.SmallPixelHeight, BundledUiFontWeight.Regular, box.H);
+    /// <summary>The name: the 14 px SemiBold face at the deck's text size, capped to its band.</summary>
+    private DeckFace NameIn(DeckRect box) => In(DeckFonts.TextPixelHeight, BundledUiFontWeight.SemiBold, box.H);
+    private DeckFace HeaderIn(DeckRect box) => In(DeckFonts.SmallPixelHeight, BundledUiFontWeight.SemiBold, box.H);
+    private DeckFace ChipIn(float height) => In(ChipPixels, BundledUiFontWeight.SemiBold, height);
+    /// <summary>The chip face at the deck's own size: chip widths are measured with it, so chips keep their size.</summary>
+    private DeckFace ChipBase => new(_fonts?.Face(ChipPixels, BundledUiFontWeight.SemiBold));
+
+    /// <summary>A chip's width: its text in the deck's own chip face plus its pads, whatever the text size.</summary>
+    internal float ChipWidth(UiRenderContext ctx, string text) => ChipBase.Measure(ctx, text) + 8f;
+
+    private DeckFace In(float basePixels, BundledUiFontWeight weight, float boxHeight) =>
+        DeckFace.In(_fonts, basePixels, weight, 1f, TextFactor, boxHeight);
 
     /// <summary>A name shortened with "..." to fit <paramref name="width"/>; the same helper as the Command Deck's casting line.</summary>
     internal static string FitName(string text, Func<string, float> measure, float width) =>
@@ -71,7 +81,8 @@ internal sealed partial class UiTargetDeck
         else
         {
             string glyph = v.Kind.ToString()[..1];
-            DrawText(ctx, glyph, p.X + (p.W - NameFace.Measure(ctx, glyph)) / 2f, p, LabelInk, NameFace);
+            DeckFace glyphFace = NameIn(p);
+            DrawText(ctx, glyph, p.X + (p.W - glyphFace.Measure(ctx, glyph)) / 2f, p, LabelInk, glyphFace);
         }
     }
 
@@ -81,7 +92,6 @@ internal sealed partial class UiTargetDeck
         DeckRect n = TargetDeckGeometry.Name;
         DrawClose(ctx);
         float right = TargetDeckGeometry.Close.X - ChipGap;
-        DeckFace chipFace = ChipFace;
 
         if (v.Level is int level)
         {
@@ -93,15 +103,15 @@ internal sealed partial class UiTargetDeck
                 TargetCon.Lower => ConBlue,
                 _ => null,
             };
-            float w = chipFace.Measure(ctx, text) + 8f;
+            float w = ChipWidth(ctx, text);
             right -= w;
             if (pill is { } ink)
             {
-                DrawChip(ctx, right, n, w, ink, text, chipFace);
+                DrawChip(ctx, right, n, w, ink, text);
             }
             else
             {
-                DrawText(ctx, text, right + 4f, n, LabelInk, Small);
+                DrawText(ctx, text, right + 4f, n, LabelInk, SmallIn(n));
             }
             right -= ChipGap;
         }
@@ -109,14 +119,14 @@ internal sealed partial class UiTargetDeck
         for (int i = v.Chips.Count - 1; i >= 0; i--)
         {
             if (ChipStyle(v.Chips[i]) is not { } chip) continue;
-            float w = chipFace.Measure(ctx, chip.Text) + 8f;
+            float w = ChipWidth(ctx, chip.Text);
             if (right - w < n.X + 40f) break;   // keep room for the name
             right -= w;
-            DrawChip(ctx, right, n, w, chip.Ink, chip.Text, chipFace);
+            DrawChip(ctx, right, n, w, chip.Ink, chip.Text);
             right -= ChipGap;
         }
 
-        DeckFace face = NameFace;
+        DeckFace face = NameIn(n);
         DrawText(ctx, Fit(ctx, face, v.Name, right - n.X), n.X, n, TextInk, face);
     }
 
@@ -142,11 +152,12 @@ internal sealed partial class UiTargetDeck
         _ => null,
     };
 
-    private static void DrawChip(UiRenderContext ctx, float x, DeckRect band, float w, Vector4 ink, string text, DeckFace face)
+    private void DrawChip(UiRenderContext ctx, float x, DeckRect band, float w, Vector4 ink, string text)
     {
         float y = band.Y + (band.H - ChipHeight) / 2f;
         ctx.FillRoundedRect(x, y, w, ChipHeight, 3f, ink);
-        DrawText(ctx, text, x + 4f, new DeckRect(x, y, w, ChipHeight), FrameBottom, face);
+        DeckFace face = ChipIn(ChipHeight);
+        DrawText(ctx, Fit(ctx, face, text, w - 8f), x + 4f, new DeckRect(x, y, w, ChipHeight), FrameBottom, face);
     }
 
     // ---- vitals and rows ----
@@ -167,7 +178,9 @@ internal sealed partial class UiTargetDeck
         DeckChrome.DrawGauge(ctx, r, fraction, ink, alpha);
         if (text is null) return;
         ctx.PushAlpha(alpha);
-        try { DrawText(ctx, text, r.X + (r.W - Small.Measure(ctx, text)) / 2f, r, TextInk, Small); }
+        DeckFace face = SmallIn(r);
+        string fitted = Fit(ctx, face, text, r.W - 4f);
+        try { DrawText(ctx, fitted, r.X + (r.W - face.Measure(ctx, fitted)) / 2f, r, TextInk, face); }
         finally { ctx.PopAlpha(); }
     }
 
@@ -186,7 +199,7 @@ internal sealed partial class UiTargetDeck
 
     private void DrawLabelValue(UiRenderContext ctx, float x, DeckRect r, string label, string value, Vector4 valueInk)
     {
-        DeckFace face = Small;
+        DeckFace face = SmallIn(r);
         float right = r.X + r.W;
         if (label.Length > 0)
         {
@@ -218,7 +231,8 @@ internal sealed partial class UiTargetDeck
             else
             {
                 string letter = stud.Action == TargetAction.More ? "..." : LabelFor(stud.Action)[..1];
-                DrawText(ctx, letter, r.X + (r.W - Small.Measure(ctx, letter)) / 2f, r, ink, Small);
+                DeckFace face = SmallIn(r);
+                DrawText(ctx, letter, r.X + (r.W - face.Measure(ctx, letter)) / 2f, r, ink, face);
             }
         }
     }
@@ -241,17 +255,16 @@ internal sealed partial class UiTargetDeck
         try
         {
             DeckChrome.DrawFrame(ctx, m, 1f);
-            DeckFace face = Small, header = new(_fonts?.At(1f).SmallBold);
-            for (int i = 0; i < entries.Count; i++)
+                        for (int i = 0; i < entries.Count; i++)
             {
                 TargetMenuEntry e = entries[i];
                 DeckRect r = MenuEntryRect(i);
+                DeckFace face = e.Header ? HeaderIn(r) : SmallIn(r);
                 if (i == _menuHover && !e.Header && e.Enabled)
                     ctx.FillRoundedRect(r.X + 4f, r.Y, r.W - 8f, r.H, 3f, MenuHighlight);
                 Vector4 ink = e.Header ? LabelInk : e.Enabled ? TextInk : StudOffInk with { W = 0.5f };
                 float x = r.X + (e.Header ? 10f : 16f);
-                DrawText(ctx, Fit(ctx, e.Header ? header : face, e.Label, r.X + r.W - 10f - x), x, r, ink,
-                    e.Header ? header : face);
+                DrawText(ctx, Fit(ctx, face, e.Label, r.X + r.W - 10f - x), x, r, ink, face);
             }
         }
         finally { ctx.PopAlpha(); }
