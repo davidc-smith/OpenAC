@@ -52,6 +52,8 @@ internal sealed class GearMoveQueue : IDisposable
     public int Total => _moves.Count;
     /// <summary>Bumped on every change, for the deck's cached progress text.</summary>
     public int Version { get; private set; }
+    /// <summary>Fires on every change, and can fire inside <see cref="Tick"/>'s send loop. Handlers may only read
+    /// state (<see cref="Version"/>, <see cref="Done"/>, <see cref="Label"/>, <see cref="IsRunning"/>); they must not call Start or Cancel.</summary>
     public event Action? Changed;
 
     public bool Start(string label, IReadOnlyList<GearMove> moves)
@@ -143,7 +145,8 @@ internal sealed class GearMoveQueue : IDisposable
 }
 
 /// <summary>Turns a <see cref="GearMove"/> into the retail inventory's request, re-checking the table as it goes:
-/// a move the game already made is skipped, a pack that can't take the item is refused with retail's text.</summary>
+/// a move the game already made is skipped, a pack that can't take the item is refused with retail's text.
+/// A Merge sends the runtime's own amount (as much as fits), not <see cref="GearMove.Amount"/>.</summary>
 internal sealed class GearMoveSender(ClientObjectTable objects, Func<uint> playerGuid, IGearItemActions actions) : IGearMoveSender
 {
     public GearMoveResult Send(GearMove move)

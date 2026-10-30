@@ -20,7 +20,8 @@ public sealed class GearMoveSenderTests
         public bool WieldSecondary(uint item) => true;
         public bool Activate(uint item) => true;
         public bool OpenPack(uint pack) => true;
-        public bool Split(uint stack, uint container, int placement, int amount) { Calls.Add($"split {stack:X} {(container == Player ? "Player" : container.ToString("X"))} {placement} {amount}"); return true; }
+        public bool SplitOk = true;
+        public bool Split(uint stack, uint container, int placement, int amount) { if (!SplitOk) return false; Calls.Add($"split {stack:X} {(container == Player ? "Player" : container.ToString("X"))} {placement} {amount}"); return true; }
     }
 
     private static (GearMoveSender s, Fake f) Rig()
@@ -50,8 +51,7 @@ public sealed class GearMoveSenderTests
     {
         var (s, f) = Rig();
         Assert.Equal(GearMoveResult.Sent, s.Send(GearMove.Put(A, Player, -1)));
-        Assert.Single(f.Calls);
-        Assert.StartsWith("put A1 Player ", f.Calls[0]);
+        Assert.Equal(["put A1 Player 2"], f.Calls);
     }
 
     [Fact]
@@ -76,5 +76,22 @@ public sealed class GearMoveSenderTests
         var (s, f) = Rig();
         Assert.Equal(GearMoveResult.Sent, s.Send(GearMove.Split(A, 3, Player, 1)));
         Assert.Equal(["split A1 Player 1 3"], f.Calls);
+    }
+
+    [Fact]
+    public void MergeWithMissingTarget_IsSkipped()
+    {
+        var (s, f) = Rig();
+        Assert.Equal(GearMoveResult.Skipped, s.Send(GearMove.Merge(A, 0xDEAD, 1)));
+        Assert.Empty(f.Calls);
+    }
+
+    [Fact]
+    public void SplitTheActionsRefuse_IsRefused()
+    {
+        var (s, f) = Rig();
+        f.SplitOk = false;
+        Assert.Equal(GearMoveResult.Refused, s.Send(GearMove.Split(A, 3, Player, 1)));
+        Assert.Empty(f.Calls);
     }
 }
