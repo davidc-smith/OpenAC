@@ -499,6 +499,22 @@ internal sealed partial class UiGearDeck
         uint fromDeck = _dragFromDeck;
         _dragFromDeck = 0u;
         if (ItemPayload(payload) is not { } p || DropTargetAt(x, y) is not { } hit) return false;
+        // Ctrl/Cmd or Shift on a loose stack dragged from the deck onto a pack place asks how many to split off,
+        // whatever the selection size; anything else falls through to the group or one-item drop.
+        (bool toggle, bool range) = ReadModifiers();
+        if ((toggle || range) && fromDeck == p.ObjId && _b.OpenSplit is { } openSplit && GroupTarget(hit) is { } where)
+        {
+            foreach (GearItemView row in Shown)
+            {
+                if (row.Id != p.ObjId) continue;
+                if (row.Stack > 1 && !row.Worn && !row.IsPack)
+                {
+                    openSplit(new GearSplitRequest(row.Id, row.Name, row.Stack, where.Pack, where.Slot));
+                    return true;
+                }
+                break;
+            }
+        }
         // A selection of two or more dragged from the deck onto a pack, a pack row, a cell or empty pack space
         // moves as a group through the queue; equipment and figure drops take the one item as before.
         // Only a dragged loose pack item carries the selection; a worn or pack row, or a selection with nothing
@@ -508,18 +524,6 @@ internal sealed partial class UiGearDeck
         {
             _b.Log?.Invoke($"[gear-deck] drop selection ({_selection.Count}) on {hit.Zone} {hit.Index}");
             return true;
-        }
-        // Ctrl/Cmd or Shift on a stack dragged from the deck, onto a pack place: ask how many to split off.
-        (bool toggle, bool range) = ReadModifiers();
-        if ((toggle || range) && fromDeck == p.ObjId && _b.OpenSplit is { } openSplit && GroupTarget(hit) is { } where)
-        {
-            foreach (GearItemView row in Shown)
-            {
-                if (row.Id != p.ObjId) continue;
-                if (row.Stack <= 1) break;
-                openSplit(new GearSplitRequest(row.Id, row.Name, row.Stack, where.Pack, where.Slot));
-                return true;
-            }
         }
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
         _actions.Last = null;

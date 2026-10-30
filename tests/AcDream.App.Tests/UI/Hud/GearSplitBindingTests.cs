@@ -24,6 +24,20 @@ public sealed class GearSplitBindingTests
     }
 
     [Fact]
+    public void Ok_StaysOpenWhenTheSendIsRefused_AndClosesOnALaterSuccess()
+    {
+        int closed = 0;
+        var b = new GearSplitBinding { Close = () => closed++ };
+        b.Open(new GearSplitRequest(1, "x", 10, 2, 0), (_, _, _, _) => false);
+        b.Ok();
+        Assert.Equal(0, closed);
+        int sends = 0;
+        b.Open(new GearSplitRequest(1, "x", 10, 2, 0), (_, _, _, _) => { sends++; return true; });
+        b.Ok();
+        Assert.Equal((1, 1), (sends, closed));
+    }
+
+    [Fact]
     public void Cancel_SendsNothing()
     {
         int sends = 0;

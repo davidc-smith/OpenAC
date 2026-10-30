@@ -398,6 +398,30 @@ public sealed class UiGearDeckOrganiseTests
     }
 
     [Fact]
+    public void AModifiedDragOfASelectedStack_WithManySelected_AsksForASplit()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Coins50, Misc0, Misc1);
+        rig.Mods = (true, false);
+        DropOn(rig, Coins50, rig.Deck.Geometry.SidePack(1));
+        Assert.Equal(Coins50, rig.SplitRequests.Single().Stack);
+        Assert.Empty(rig.Sender.Sent);
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Empty(rig.Actions.Calls);
+    }
+
+    [Fact]
+    public void AModifiedDragOfANonStack_WithManySelected_StillMovesTheGroup()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Coins50, Misc0, Misc1);
+        rig.Mods = (true, false);
+        DropOn(rig, Misc0, rig.Deck.Geometry.SidePack(1));
+        Assert.Empty(rig.SplitRequests);
+        Assert.Equal("Moving", rig.Queue.Label);
+    }
+
+    [Fact]
     public void SplitFromTheItemMenu_AsksForTheStackAndItsNextSlot()
     {
         var (root, rig) = Rooted();

@@ -37,8 +37,8 @@ public sealed class GearSplitBinding
     public Action Ok => () =>
     {
         if (_request is not { } r || _send is null) return;
+        if (!_send(r.Stack, r.Container, r.Slot, Amount)) return;   // refused: stay open to retry or cancel
         _request = null;
-        _send(r.Stack, r.Container, r.Slot, Amount);
         Close?.Invoke();
     };
 }
