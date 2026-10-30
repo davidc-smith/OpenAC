@@ -149,6 +149,30 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
         return this with { SavedFilters = list };
     }
 
+    /// <summary>Renames filter <paramref name="oldName"/> to <paramref name="filter"/>'s name and query, in place,
+    /// and points the pack rules that named it at the new name. Unchanged when the old one is gone or the new
+    /// name (ignoring case) belongs to another filter.</summary>
+    public GearDeckSettings WithRenamed(string oldName, SavedFilter filter)
+    {
+        string name = filter.Name.Trim();
+        if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength].TrimEnd();
+        if (name.Length == 0) return this;
+        var list = SavedFilters.ToList();
+        int i = list.FindIndex(f => string.Equals(f.Name, oldName.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (i < 0) return this;
+        int taken = list.FindIndex(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (taken >= 0 && taken != i) return this;
+        string old = list[i].Name;
+        list[i] = filter with { Name = name };
+        return this with
+        {
+            SavedFilters = list,
+            PackRules = PackRules
+                .Select(r => string.Equals(r.Filter, old, StringComparison.OrdinalIgnoreCase) ? r with { Filter = name } : r)
+                .ToList(),
+        };
+    }
+
     public GearDeckSettings WithoutSaved(string name) => this with
     {
         SavedFilters = SavedFilters.Where(f => !string.Equals(f.Name, name.Trim(), StringComparison.OrdinalIgnoreCase)).ToList(),

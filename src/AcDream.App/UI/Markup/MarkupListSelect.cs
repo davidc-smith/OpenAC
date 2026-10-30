@@ -10,6 +10,7 @@ internal static class MarkupListSelect
         string? mode = (string?)el.Attribute("selectmode");
         string? selected = (string?)el.Attribute("selected");
         string? onChange = (string?)el.Attribute("onchange");
+        list.KeepsKeyboardFocusOnClick = MarkupDocument.B(el, "keepfocus", false);
         switch (mode ?? "single")
         {
             case "single":

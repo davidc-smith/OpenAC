@@ -876,7 +876,7 @@ internal sealed class SelectionInteractionController
 
     private bool ValidatePickupTarget(uint serverGuid, bool showToast)
     {
-        if (_query.IsCreature(serverGuid))
+        if (_query.IsCreatureKind(serverGuid))
         {
             if (showToast)
                 _toast?.Invoke(RetailMessages.CannotPickUpCreatures);

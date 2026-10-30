@@ -64,6 +64,11 @@ internal interface IWorldSelectionQuery
     bool IsCurrent(uint serverGuid, uint localEntityId);
     string Describe(uint serverGuid);
     bool IsCreature(uint serverGuid);
+
+    /// <summary>Whether a world object is a creature by its item type alone,
+    /// dead or alive. <see cref="IsCreature"/> drops a creature playing its
+    /// death motion (it is no longer a target); pickup must still refuse it.</summary>
+    bool IsCreatureKind(uint serverGuid) => IsCreature(serverGuid);
     bool IsHostileMonster(uint serverGuid);
     bool IsAttackableTarget(uint serverGuid);
     ClosestCombatTarget? FindClosestHostileMonster();
@@ -303,6 +308,10 @@ internal sealed class WorldSelectionQuery
 
         return (GetItemType(serverGuid) & ItemType.Creature) != 0;
     }
+
+    public bool IsCreatureKind(uint serverGuid)
+        => serverGuid != _playerGuid()
+            && (GetItemType(serverGuid) & ItemType.Creature) != 0;
 
     public bool IsHostileMonster(uint serverGuid)
         => IsCreature(serverGuid)
