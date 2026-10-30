@@ -424,6 +424,8 @@ public sealed class RetailUiRuntime : IDisposable
             ? _chatDeck
             : _chatWindowController;
 
+    /// <summary>The one lock set: the Gear Deck session fills it per character; inventory, vendor, salvage and trade read it.</summary>
+    private readonly ItemLocks _itemLocks = new();
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
     private RetailItemConfirmationController? _itemConfirmationController;
@@ -979,7 +981,7 @@ public sealed class RetailUiRuntime : IDisposable
         _hudSwitch?.Tick();
         // Every frame, shown or not: a change made just before the deck closed is still saved.
         // The deck's own tick loads the character's settings; this only writes.
-        _gearDeckSession?.TickSave();
+        _gearDeckSession?.Tick();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
@@ -3970,13 +3972,15 @@ public sealed class RetailUiRuntime : IDisposable
         InventoryRuntimeBindings b = _bindings.Inventory;
         Hud.UiGearDeck? deck = null;
         Hud.GearDeckSession? session = null;
+        items.Locks = _itemLocks;
         try
         {
             session = new Hud.GearDeckSession(
                 _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreGearDeckStore(store) : null,
                 _bindings.Persistence?.CharacterKey ?? (() => "default"),
                 () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
-                report: Console.WriteLine);
+                report: Console.WriteLine,
+                locks: _itemLocks);
             _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
             _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
 
@@ -5836,8 +5840,11 @@ public sealed class RetailUiRuntime : IDisposable
                         new OpenTradeNegotiationsRuntimeCmd(partner)),
                     CloseTrade: () => _bindings.Options.CommandBus().Publish(
                         new CloseTradeNegotiationsRuntimeCmd()),
-                    AddToTrade: item => _bindings.Options.CommandBus().Publish(
-                        new AddToTradeRuntimeCmd(item)),
+                    AddToTrade: item =>
+                    {
+                        if (_bindings.Inventory.ItemInteraction?.RefuseIfLocked(item) == true) return;
+                        _bindings.Options.CommandBus().Publish(new AddToTradeRuntimeCmd(item));
+                    },
                     AcceptTrade: (selfAccepted, partnerAccepted, partner) =>
                         _bindings.Options.CommandBus().Publish(new AcceptTradeRuntimeCmd(
                             partner, selfAccepted, partnerAccepted)),

@@ -13,7 +13,7 @@ internal sealed class SettingsStoreGearDeckStore(AcDream.UI.Abstractions.Panels.
 /// <summary>Loads and saves the Gear Deck's settings for the logged-in character, coalescing saves
 /// over <see cref="SaveIdleSeconds"/> like ChatDeckSession.</summary>
 internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> characterKey, Func<bool> gameplayActive,
-    Func<double>? clock = null, Action<string>? report = null)
+    Func<double>? clock = null, Action<string>? report = null, AcDream.Core.Items.ItemLocks? locks = null)
 {
     public const double SaveIdleSeconds = 0.5;
     private readonly Func<double> _clock = clock ?? (() => Environment.TickCount64 / 1000.0);
@@ -36,6 +36,7 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
             if (_key is not null) EndSession();
             _key = key;
             Settings = GearDeckSettings.FromJson(SafeLoad(key));
+            SyncLocks();
             Changed?.Invoke();
         }
         TickSave();
@@ -57,6 +58,7 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
         GearDeckSettings next = change(Settings);
         if (next.Equals(Settings)) return;
         Settings = next;
+        SyncLocks();
         _dirty = true;
         _lastChange = _clock();
         Changed?.Invoke();
@@ -67,9 +69,12 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
         Flush();
         _key = null;
         Settings = GearDeckSettings.Default;
+        SyncLocks();
         Changed?.Invoke();
         Ended?.Invoke();
     }
+
+    private void SyncLocks() => locks?.Replace(Settings.LockedIds);
 
     private void Flush()
     {
