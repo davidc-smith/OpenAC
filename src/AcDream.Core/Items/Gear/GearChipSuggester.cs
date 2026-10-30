@@ -46,6 +46,7 @@ public static partial class GearChipSuggester
                 if (!StartsWith(name, t) && name.Contains(t, StringComparison.OrdinalIgnoreCase)) picks.Add(GearChip.OfMaterial(id));
         }
         if (t.Length >= 2 && StartsWith("worn", t)) picks.Add(GearChip.WornOnly);
+        if (t.Length >= 2 && StartsWith("locked", t)) picks.Add(GearChip.LockedOnly);
 
         var result = picks.Distinct().Take(MaxSuggestions - 1).ToList();
         result.Add(GearChip.NameContains(t));

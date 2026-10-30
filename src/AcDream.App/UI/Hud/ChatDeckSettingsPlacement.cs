@@ -1,6 +1,6 @@
 namespace AcDream.App.UI.Hud;
 
-/// <summary>Where the Chat Deck's settings popup sits when it opens: docked to the deck's top-right corner.</summary>
+/// <summary>Where a deck popup sits when it opens: docked to the deck's top-right corner, or centred on the screen.</summary>
 internal static class ChatDeckSettingsPlacement
 {
     /// <summary>
@@ -23,6 +23,17 @@ internal static class ChatDeckSettingsPlacement
         if (deck is null) return;
         (popup.Left, popup.Top) = DockedPlace(new DeckRect(deck.Left, deck.Top, deck.Width, deck.Height),
             popup.Width, popup.Height, root.Width, root.Height);
+        popup.ResetAnchorCapture();
+    }
+
+    /// <summary>The popup's top-left in the middle of the root, kept on screen when it is the larger.</summary>
+    internal static (float Left, float Top) CentredPlace(float popupW, float popupH, float rootW, float rootH) =>
+        (MathF.Max(0f, (rootW - popupW) / 2f), MathF.Max(0f, (rootH - popupH) / 2f));
+
+    /// <summary>Puts the popup in the middle of the root.</summary>
+    internal static void Centre(UiRoot root, UiElement popup)
+    {
+        (popup.Left, popup.Top) = CentredPlace(popup.Width, popup.Height, root.Width, root.Height);
         popup.ResetAnchorCapture();
     }
 }

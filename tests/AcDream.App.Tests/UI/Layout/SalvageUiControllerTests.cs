@@ -22,6 +22,7 @@ public sealed class SalvageUiControllerTests
         public List<(uint Tool, uint[] Items)> Sends { get; } = [];
         public List<string> Errors { get; } = [];
         public List<uint> Examined { get; } = [];
+        public ItemLocks Locks { get; } = new();
 
         public Harness()
         {
@@ -42,7 +43,8 @@ public sealed class SalvageUiControllerTests
                 () => Multiple, (_, icon, _, _, _) => icon,
                 visible => Visible = visible, Errors.Add,
                 ResolveAppropriateName: ItemTooltipCaptionNames.Resolve,
-                ExamineItem: Examined.Add))!;
+                ExamineItem: Examined.Add,
+                IsLocked: Locks.IsLocked))!;
             Controller.Open(Tool);
         }
 
@@ -73,6 +75,36 @@ public sealed class SalvageUiControllerTests
 
         Assert.Equal("Silver Scarab", h.List.GetItem(0)!.GetTooltipText());
         Assert.Equal("Bread Loaf", h.List.GetItem(1)!.GetTooltipText());
+    }
+
+    [Fact]
+    public void ALockedItem_CannotBeAdded_AndSaysWhy()
+    {
+        using var h = new Harness();
+        h.Item(1).Name = "Scarab";
+        h.Locks.Set(1, true);
+
+        Assert.False(h.Controller.CanAdd(1));
+        Assert.False(h.Controller.AddItem(1));
+        Assert.Contains("The Silver Scarab is locked.", h.Errors);
+    }
+
+    [Fact]
+    public void ALockedItemInsideAPack_IsSkippedAndReported()
+    {
+        using var h = new Harness();
+        h.Item(5).Name = "Gem";
+        h.Item(6);
+        h.Objects.AddOrUpdate(new ClientObject { ObjectId = 9, Name = "Bag", Type = ItemType.Container });
+        h.Objects.MoveItem(9, Player, 0);
+        h.Objects.MoveItem(5, 9, 0);
+        h.Objects.MoveItem(6, 9, 1);
+        h.Locks.Set(5, true);
+
+        Assert.True(h.Controller.AddItem(9));
+
+        Assert.Equal(1, h.Controller.ItemCount);
+        Assert.Contains("The Silver Gem is locked.", h.Errors);
     }
 
     [Fact]

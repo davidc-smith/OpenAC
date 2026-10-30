@@ -6,7 +6,7 @@ namespace AcDream.App.UI.Hud;
 internal sealed partial class UiGearDeck
 {
     /// <summary>What the open menu lists; later plans fill in Sort, SavedFilter, SavedMore and Item.</summary>
-    private enum MenuKind { None, HiddenChips, Sort, SavedFilter, SavedMore, Item, TextSize }
+    private enum MenuKind { None, HiddenChips, Sort, SavedFilter, SavedMore, Item, TextSize, Pack }
 
     private readonly UiMarkupContextMenu _menu = new() { ThemePalette = ChatDeckPalette.Menu };
     private MenuKind _menuKind;
@@ -27,6 +27,16 @@ internal sealed partial class UiGearDeck
     private List<GearItemView> _menuSalvage = [];
     private string? _menuSalvageLabel;
     private string[] _menuItems = [];
+    /// <summary>For <see cref="MenuKind.Item"/>: the lock entry's label, the stack the Split entry would act on
+    /// (single selected loose stack) and the merges Combine like stacks would run, as of the open.</summary>
+    private string _menuLockLabel = LockLabel;
+    private GearItemView? _menuSplit;
+    private IReadOnlyList<GearMove> _menuCombine = [];
+    /// <summary>For <see cref="MenuKind.Pack"/>: the pack clicked and the plans its entries would run, as of the open.</summary>
+    private uint _menuPack;
+    private IReadOnlyList<GearMove> _menuTidy = [];
+    private GearRulePlan _menuRules = NoRules;
+    private static readonly GearRulePlan NoRules = new([], new Dictionary<uint, int>());
 
     /// <summary>The sort menu's fields, in the order it lists them: Pack order (the default) first.</summary>
     private static readonly GearSortField[] SortFields =
@@ -59,6 +69,7 @@ internal sealed partial class UiGearDeck
             GearZone.SavedFilter when hit.Index >= 0 && hit.Index < _b.Session.Settings.SavedFilters.Count => MenuKind.SavedFilter,
             GearZone.SavedMore when _g.HiddenSaved > 0 => MenuKind.SavedMore,
             GearZone.Item when hit.Index >= 0 && hit.Index < Shown.Count => MenuKind.Item,
+            GearZone.SidePack when hit.Index >= 0 && hit.Index < _model.Packs.Count => MenuKind.Pack,
             // The title and the empty frame; items, chips and studs keep their own zones and menus.
             GearZone.Frame when _b.Text is not null => MenuKind.TextSize,
             _ => MenuKind.None,
@@ -70,6 +81,17 @@ internal sealed partial class UiGearDeck
         _menuSalvage = [];
         _menuSalvageLabel = null;
         _menuItems = ItemMenuItems;
+        _menuSplit = null;
+        _menuCombine = [];
+        _menuTidy = [];
+        _menuRules = NoRules;
+        if (_menuKind == MenuKind.Pack)
+        {
+            _menuPack = _model.Packs[hit.Index].Id;
+            _menuTidy = PackTidyPlanner.Plan(_menuPack, _projection.ForPack(_menuPack));
+            _menuRules = RulePlan(null);
+            _menuItems = PackMenuItems;
+        }
         if (_menuKind == MenuKind.SavedFilter)
             _menuSaved = [_b.Session.Settings.SavedFilters[hit.Index]];
         else if (_menuKind == MenuKind.SavedMore)
@@ -99,14 +121,22 @@ internal sealed partial class UiGearDeck
     /// recomputed over the menu's own selection snapshot.</summary>
     private void BuildItemMenu()
     {
-        _menuItems = ItemMenuItems;
-        if (_b.Salvage is not { IsOpen: true } salvage) return;
         var rows = new List<GearItemView>(_menuSelection.Length);
         foreach (GearItemView row in Shown)
             if (Array.IndexOf(_menuSelection, row.Id) >= 0) rows.Add(row);
+        bool anyUnlocked = _menuSelection.Any(id => _b.Locks?.IsLocked(id) != true);
+        _menuLockLabel = anyUnlocked ? LockLabel : UnlockLabel;
+        _menuCombine = StackCombinePlanner.Plan(_projection.All, only: _menuSelection);
+        _menuSplit = rows.Count == 1 && rows[0] is { Worn: false, IsPack: false, Stack: > 1 } one ? one : null;
+        string[] organise = [SplitLabel, _menuLockLabel, CombineLikeLabel, UiMarkupContextMenu.Separator];
+        if (_b.Salvage is not { IsOpen: true } salvage)
+        {
+            _menuItems = [.. organise, .. ItemMenuItems];
+            return;
+        }
         _menuSalvage = GearSalvageHandOff.Candidates(rows, salvage);
         _menuSalvageLabel = SalvageText(_menuSalvage.Count);
-        _menuItems = [_menuSalvageLabel, UiMarkupContextMenu.Separator, .. ItemMenuItems];
+        _menuItems = [_menuSalvageLabel, UiMarkupContextMenu.Separator, .. organise, .. ItemMenuItems];
     }
 
     private IReadOnlyList<string> MenuItems()
@@ -125,6 +155,7 @@ internal sealed partial class UiGearDeck
             case MenuKind.SavedMore:
                 return _menuSaved.Select(f => f.Name).ToArray();
             case MenuKind.Item:
+            case MenuKind.Pack:
                 return _menuItems;
             case MenuKind.TextSize:
                 return HudTextMenu.Labels(_b.Text!.Settings, HudDeck.Gear);
@@ -133,6 +164,9 @@ internal sealed partial class UiGearDeck
         }
     }
 
+    private const string SplitLabel = "Split...", LockLabel = "Lock", UnlockLabel = "Unlock", CombineLikeLabel = "Combine like stacks";
+    private const string TidyLabel = "Tidy this pack", CombineStacksLabel = "Combine stacks", ApplyRulesLabel = "Apply pack rules", RulesLabel = "Pack rules...";
+    private static readonly string[] PackMenuItems = [TidyLabel, CombineStacksLabel, ApplyRulesLabel, UiMarkupContextMenu.Separator, RulesLabel];
     private const string ShowInPackLabel = "Show in pack", SelectAllLabel = "Select all", ClearSelectionLabel = "Clear selection";
     private static readonly string[] ItemMenuItems = [ShowInPackLabel, UiMarkupContextMenu.Separator, SelectAllLabel, ClearSelectionLabel];
 
@@ -148,10 +182,21 @@ internal sealed partial class UiGearDeck
                 flags[i] = _menuItems[i] switch
                 {
                     ShowInPackLabel => _menuCanShow,
+                    SplitLabel => _menuSplit is not null,
+                    LockLabel or UnlockLabel => _b.Locks is not null,
+                    CombineLikeLabel => _menuCombine.Count > 0,
                     ClearSelectionLabel => _menuSelection.Length > 0,
                     string label when label == _menuSalvageLabel => _menuSalvage.Count > 0,
                     _ => true,
                 };
+        }
+        else if (_menuKind == MenuKind.Pack)
+        {
+            flags[0] = _menuTidy.Count > 0;
+            flags[1] = CombineMoves.Count > 0;
+            flags[2] = _menuRules.Moves.Count > 0 || _menuRules.Full.Count > 0;   // a full pack still reports
+            flags[3] = true;
+            flags[4] = _b.OpenRules is not null;
         }
         return flags;
     }
@@ -182,9 +227,22 @@ internal sealed partial class UiGearDeck
                         if (_menuSalvage.Count > 0 && _b.Salvage is { IsOpen: true } salvage)
                             GearSalvageHandOff.AddAll(_menuSalvage, salvage);
                         break;
+                    case SplitLabel when _menuSplit is not null: RequestSplit(_menuSplit); break;
+                    case LockLabel when _b.Locks is not null: SetLocks(_menuSelection, true); break;
+                    case UnlockLabel when _b.Locks is not null: SetLocks(_menuSelection, false); break;
+                    case CombineLikeLabel when _menuCombine.Count > 0: Run("Combining", _menuCombine); break;
                     case ShowInPackLabel when _menuCanShow && _menuRow is not null: ShowInPack(_menuRow); break;
                     case SelectAllLabel: SelectAll(); break;
                     case ClearSelectionLabel: ClearSelection(); break;
+                }
+                break;
+            case MenuKind.Pack when index >= 0 && index < _menuItems.Length:
+                switch (_menuItems[index])
+                {
+                    case TidyLabel when _menuTidy.Count > 0: Run("Tidying", _menuTidy); break;
+                    case CombineStacksLabel: CombineAll(); break;
+                    case ApplyRulesLabel when _menuRules.Moves.Count > 0 || _menuRules.Full.Count > 0: ApplyRules(_menuRules); break;
+                    case RulesLabel: _b.OpenRules?.Invoke(); break;
                 }
                 break;
             case MenuKind.TextSize when _b.Text is { } text:

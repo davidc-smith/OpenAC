@@ -522,6 +522,15 @@ internal sealed class DeferredSelectionUiAuthority
         return target?.PickAt(mouseX, mouseY, includeSelf);
     }
 
+    /// <summary>Whether a world object may be picked up, without the refusal toast.</summary>
+    public bool CanPickUp(uint guid)
+    {
+        SelectionInteractionController? target;
+        lock (_gate)
+            target = !_deactivated ? _interactions : null;
+        return target?.CanPickUp(guid) == true;
+    }
+
     public void SendUse(uint guid)
     {
         SelectionInteractionController? target;

@@ -231,4 +231,11 @@ public sealed class ChatDeckSettingsBindingTests
         var (_, t) = ChatDeckSettingsPlacement.DockedPlace(new DeckRect(500, 100, 400, 750), 300, 200, 1600, 900);
         Assert.Equal(700f, t);
     }
+
+    [Fact]
+    public void CentredPlace_PutsThePopupInTheMiddle_AndKeepsAnOversizedOneOnScreen()
+    {
+        Assert.Equal((650f, 350f), ChatDeckSettingsPlacement.CentredPlace(300, 200, 1600, 900));
+        Assert.Equal((0f, 0f), ChatDeckSettingsPlacement.CentredPlace(1800, 1000, 1600, 900));
+    }
 }

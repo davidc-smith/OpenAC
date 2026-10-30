@@ -166,8 +166,14 @@ public sealed class UiField : UiElement
                 return;
             _textValue = value;
             _textVersion++;
-            if (!_followingBoundText)
-                OnTextChanged?.Invoke(value);
+            if (!_followingBoundText && OnTextChanged is not null)
+            {
+                // The owner keeps what is typed: once the typing stops, show its
+                // value again even if it is the one last shown (an owner that
+                // cleared the text while the field had focus).
+                _lastBoundText = null;
+                OnTextChanged(value);
+            }
         }
     }
 

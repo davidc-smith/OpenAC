@@ -276,10 +276,13 @@ public sealed record WorldTooltipRuntimeBindings(
     Func<bool> Enabled);
 
 /// <summary>What a drag started on the world needs: the object at a screen
-/// point (the player included) and whether the player is out of combat.</summary>
+/// point (the player included) and whether the player is out of combat.
+/// <paramref name="LiftsGroundItem"/> says whether a world object may be lifted
+/// as a ground item (the Modern HUD binds it); null lifts no world item.</summary>
 public sealed record WorldDragRuntimeBindings(
     Func<float, float, uint?> ObjectAt,
-    Func<bool> OutOfCombat);
+    Func<bool> OutOfCombat,
+    Func<uint, bool>? LiftsGroundItem = null);
 
 public sealed record ConfirmationRuntimeBindings(
     Action<uint, uint, bool> SendResponse);
@@ -427,6 +430,8 @@ public sealed class RetailUiRuntime : IDisposable
             ? _chatDeck
             : _chatWindowController;
 
+    /// <summary>The one lock set: the Gear Deck session fills it per character; inventory, vendor, salvage and trade read it.</summary>
+    private readonly ItemLocks _itemLocks = new();
     private readonly FloatingChatWindowController?[] _floatingChatControllers = new FloatingChatWindowController?[4];
     private GameplayConfirmationController? _gameplayConfirmationController;
     private RetailItemConfirmationController? _itemConfirmationController;
@@ -548,6 +553,57 @@ public sealed class RetailUiRuntime : IDisposable
         if (_chatDeckEditor is { IsOpen: true } open) open.Toggle();
     }
 
+    private PluginAppearanceWindow? _gearSplit;
+    private Hud.GearSplitBinding? _gearSplitBinding;
+
+    /// <summary>The Gear Deck's Split stack popup, in the middle of the screen.</summary>
+    private PluginAppearanceWindow GearSplitWindow()
+    {
+        _gearSplitBinding ??= new Hud.GearSplitBinding();
+        Hud.GearSplitBinding binding = _gearSplitBinding;
+        return _gearSplit ??= new PluginAppearanceWindow(Host.Root, close =>
+        {
+            binding.Close = close;
+            return Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.GearSplitBinding.Markup, binding,
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close);
+        }, onOpen: window => Hud.ChatDeckSettingsPlacement.Centre(Host.Root, window));
+    }
+
+    private void OpenGearSplit(Hud.GearSplitRequest request)
+    {
+        RuntimeItemInteraction items = ItemInteraction;
+        PluginAppearanceWindow window = GearSplitWindow();
+        _gearSplitBinding!.Open(request, (stack, container, slot, amount) =>
+            items.TrySplitToContainer(stack, container, (uint)Math.Max(0, slot), (uint)Math.Max(0, amount)));
+        window.Show();
+    }
+
+    private void CloseGearSplit()
+    {
+        if (_gearSplit is { IsOpen: true } open) open.Toggle();
+    }
+
+    private PluginAppearanceWindow? _gearRules;
+
+    /// <summary>The Gear Deck's Pack rules popup (rules and saved filters), docked by the deck; it edits the deck's session.</summary>
+    private void ToggleGearRules()
+    {
+        CloseGearSplit();
+        _gearRules ??= new PluginAppearanceWindow(Host.Root, close =>
+            Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.GearRulesBinding.Markup,
+                new Hud.GearRulesBinding(() => _gearDeckSession, () => _gearDeck?.Model.Packs ?? []) { Close = close },
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close),
+            onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _gearDeck, window));
+        _gearRules.Toggle();
+    }
+
+    private void CloseGearRules()
+    {
+        if (_gearRules is { IsOpen: true } open) open.Toggle();
+    }
+
     private void CloseChatDeckSettings()
     {
         if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
@@ -558,6 +614,11 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.UiGearDeck? _gearDeck;
     private PaperdollClickMap? _paperdollClickMap;
     private Hud.GearDeckSession? _gearDeckSession;
+    /// <summary>The Gear Deck's move queue (Combine, group drags) and the inventory channel it listens on.</summary>
+    private Hud.GearMoveQueue? _gearQueue;
+    private Hud.RuntimeGearMoveChannel? _gearChannel;
+    /// <summary>Combines and sorts what arrives in the packs, and drops the lock of a locked item that leaves the inventory.</summary>
+    private Hud.GearInventoryWatcher? _gearWatcher;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
     private TargetAutoAppraisal? _targetAuto;
@@ -983,10 +1044,15 @@ public sealed class RetailUiRuntime : IDisposable
         _bindings.SynchronizeDisplayPhase?.Invoke();
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
+        SyncItemLocks();
         _hudSwitch?.Tick();
-        // Every frame, shown or not: a change made just before the deck closed is still saved.
-        // The deck's own tick loads the character's settings; this only writes.
-        _gearDeckSession?.TickSave();
+        // Every frame, shown or not: this tick loads the character's settings at login and saves a change
+        // made just before the deck closed. So locks load at login even with the deck closed or Modern HUD off.
+        _gearDeckSession?.Tick();
+        // Every frame, shown or not: a Combine or group move keeps going with the deck closed.
+        _gearQueue?.Tick();
+        // After the queue, so an arrival's sort starts the frame the last queue ended.
+        _gearWatcher?.Tick();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
@@ -1470,6 +1536,9 @@ public sealed class RetailUiRuntime : IDisposable
         // The next character starts with the Gear Deck closed (hidden on the next tick) and its own settings.
         _hudSwitch?.CloseAllOnDemand();
         _gearDeckSession?.EndSession();
+        CloseGearSplit();
+        CloseGearRules();
+        _gearQueue?.Cancel();   // the next character's inventory is not this queue's
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
         _bindings.Plugins?.TargetPlateStore.InvalidateAll();
@@ -3978,6 +4047,16 @@ public sealed class RetailUiRuntime : IDisposable
     /// The Gear Deck (Modern HUD's inventory and paper doll) and its per-character
     /// settings. Without it the retail inventory stays while Modern HUD is on.
     /// </summary>
+    /// <summary>The retail paths see the locks only while Modern HUD is on (user decision 2026-10-30);
+    /// the set itself is kept and saved either way, so turning it back on re-applies them.</summary>
+    internal static ItemLocks? LocksFor(bool modernHud, ItemLocks locks) => modernHud ? locks : null;
+
+    private void SyncItemLocks()
+    {
+        if (_bindings.CommandDeck is not { } hud || _bindings.Inventory.ItemInteraction is not { } items) return;
+        items.Locks = LocksFor(hud.Enabled(), _itemLocks);
+    }
+
     private void MountGearDeck()
     {
         if (_bindings.CommandDeck is null || _bindings.Inventory.ItemInteraction is not { } items) return;
@@ -3985,15 +4064,26 @@ public sealed class RetailUiRuntime : IDisposable
         InventoryRuntimeBindings b = _bindings.Inventory;
         Hud.UiGearDeck? deck = null;
         Hud.GearDeckSession? session = null;
+        SyncItemLocks();
         try
         {
             session = new Hud.GearDeckSession(
                 _bindings.Persistence?.Store is { } store ? new Hud.SettingsStoreGearDeckStore(store) : null,
                 _bindings.Persistence?.CharacterKey ?? (() => "default"),
                 () => _bindings.IsGameplayDisplay?.Invoke() ?? true,
-                report: Console.WriteLine);
+                report: Console.WriteLine,
+                locks: _itemLocks);
             _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
             _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+            var gearActions = new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge);
+            _gearChannel = new Hud.RuntimeGearMoveChannel(items);
+            _gearQueue = new Hud.GearMoveQueue(_gearChannel, new Hud.GearMoveSender(b.Objects, b.PlayerGuid, gearActions),
+                () => Environment.TickCount64 / 1000.0, _bindings.Options.DisplaySystemMessage);
+            _gearWatcher = new Hud.GearInventoryWatcher(() => b.Objects, b.PlayerGuid, session, _gearQueue, ResolveAppropriateItemName,
+                _itemLocks, () => Environment.TickCount64 / 1000.0,
+                report: _bindings.Options.DisplaySystemMessage, log: Console.WriteLine,
+                requests: new Hud.RuntimeGearRequestWatch(items.RuntimeTransactions.Inventory),
+                dragging: () => Host.Root.DragPayload is ItemDragPayload);
 
             deck = new Hud.UiGearDeck(
                 new Hud.GearDeckBindings(
@@ -4005,7 +4095,7 @@ public sealed class RetailUiRuntime : IDisposable
                     // The retail inventory's tooltip captions use the same composed name.
                     DisplayName: ResolveAppropriateItemName,
                     Session: session,
-                    Actions: new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge),
+                    Actions: gearActions,
                     IsPending: items.IsPendingInventorySource,
                     Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
                     // One line per drag and drop, beside the mount line, for live checks.
@@ -4015,7 +4105,11 @@ public sealed class RetailUiRuntime : IDisposable
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
                         () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
                     Text: HudTextSize,
-                    ClickMap: _paperdollClickMap),
+                    ClickMap: _paperdollClickMap,
+                    Queue: _gearQueue,
+                    Locks: _itemLocks,
+                    OpenSplit: OpenGearSplit,
+                    OpenRules: ToggleGearRules),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
@@ -4030,14 +4124,25 @@ public sealed class RetailUiRuntime : IDisposable
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
             }
+            _gearWatcher?.Dispose();
+            _gearWatcher = null;
+            _gearQueue?.Dispose();
+            _gearQueue = null;
+            _gearChannel?.Dispose();
+            _gearChannel = null;
             Console.WriteLine($"[UI] Gear Deck unavailable; keeping the retail inventory. ({ex.GetType().Name}: {ex.Message})");
             return;
         }
 
         _gearDeck = deck;
         _gearDeckSession = session;
+        // A manual drag from any window or the world takes over from the queue (the deck's own drags too).
+        Host.Root.DragStarted += OnGearItemDragStarted;
         Console.WriteLine("[UI] Gear Deck mounted (Modern HUD).");
     }
+
+    private void OnGearItemDragStarted(object payload) =>
+        Hud.GearDragHook.OnDragStarted(payload, _gearQueue, _gearWatcher, Console.WriteLine);
 
     /// <summary>The deck is mounted and Modern HUD shows it: plugins may describe targets, and auto-ID may ask.</summary>
     private bool TargetDeckShown =>
@@ -5572,13 +5677,19 @@ public sealed class RetailUiRuntime : IDisposable
                 b.PlayerGuid(),
                 worldDrag.OutOfCombat(),
                 b.ResolveIcon,
-                b.ResolveDragIcon);
+                b.ResolveDragIcon,
+                worldDrag.LiftsGroundItem is { } lifts ? guid => LooseGroundItem(b.Objects, guid, lifts) : null);
         }
 
         PaperdollViewportWidget = layout.FindElement(0x100001D5u) as UiViewport;
         InventoryFrame = (UiNineSlicePanel)handle.OuterFrame;
         Console.WriteLine("[UI] retail inventory window from LayoutDesc importer (0x21000023).");
     }
+
+    /// <summary>The item a world lift carries: one the client knows that lies loose
+    /// in the world (in no container, wielded by no one) and may be picked up.</summary>
+    private static ClientObject? LooseGroundItem(ClientObjectTable objects, uint guid, Func<uint, bool> lifts) =>
+        objects.Get(guid) is { ContainerId: 0u, WielderId: 0u } item && lifts(guid) ? item : null;
 
     private void MountExternalContainer()
     {
@@ -5772,7 +5883,8 @@ public sealed class RetailUiRuntime : IDisposable
                 {
                     inventory.Selection.Select(id, SelectionChangeSource.Inventory);
                     inventory.ItemInteraction.ExamineSelectedOrEnterMode(id);
-                }));
+                },
+                IsLocked: id => inventory.ItemInteraction.Locks?.IsLocked(id) == true));
         if (controller is null)
         {
             Console.WriteLine("[UI] salvage window controls are unavailable.");
@@ -5850,8 +5962,11 @@ public sealed class RetailUiRuntime : IDisposable
                         new OpenTradeNegotiationsRuntimeCmd(partner)),
                     CloseTrade: () => _bindings.Options.CommandBus().Publish(
                         new CloseTradeNegotiationsRuntimeCmd()),
-                    AddToTrade: item => _bindings.Options.CommandBus().Publish(
-                        new AddToTradeRuntimeCmd(item)),
+                    AddToTrade: item =>
+                    {
+                        if (_bindings.Inventory.ItemInteraction?.RefuseIfLocked(item) == true) return;
+                        _bindings.Options.CommandBus().Publish(new AddToTradeRuntimeCmd(item));
+                    },
                     AcceptTrade: (selfAccepted, partnerAccepted, partner) =>
                         _bindings.Options.CommandBus().Publish(new AcceptTradeRuntimeCmd(
                             partner, selfAccepted, partnerAccepted)),
@@ -6528,7 +6643,18 @@ public sealed class RetailUiRuntime : IDisposable
                 _gearDeck?.OnHidden();
                 _gearDeckSession?.EndSession();   // writes a pending settings change
                 _gearDeck?.Detach();
+                // The deck's popups read the session and the deck; close them with it.
+                CloseGearSplit();
+                CloseGearRules();
+                Host.Root.DragStarted -= OnGearItemDragStarted;
+                _gearWatcher?.Dispose();
+                _gearWatcher = null;
                 _gearDeckSession = null;
+                _gearQueue?.Cancel();
+                _gearQueue?.Dispose();
+                _gearQueue = null;
+                _gearChannel?.Dispose();
+                _gearChannel = null;
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

@@ -15,6 +15,7 @@ public sealed class GearChipTextTests
         Assert.Equal("Steel", L(GearChip.OfMaterial(64)));
         Assert.Equal("Pack 2", L(GearChip.InPack(7)));
         Assert.Equal("Worn", L(GearChip.WornOnly));
+        Assert.Equal("Locked", L(GearChip.LockedOnly));
         Assert.Equal("Work >= 7", L(GearChip.Range(GearField.Workmanship, 7, null)));
         Assert.Equal("Value <= 500", L(GearChip.Range(GearField.Value, null, 500)));
         Assert.Equal("Burden 50-100", L(GearChip.Range(GearField.Burden, 50, 100)));
@@ -29,6 +30,7 @@ public sealed class GearChipTextTests
         Assert.Equal("Material: Steel", GearChipText.Suggestion(GearChip.OfMaterial(64)));
         Assert.Equal("Name contains \"kit\"", GearChipText.Suggestion(GearChip.NameContains("kit")));
         Assert.Equal("Worn items", GearChipText.Suggestion(GearChip.WornOnly));
+        Assert.Equal("Locked items", GearChipText.Suggestion(GearChip.LockedOnly));
         Assert.Equal("Work >= 7.5", GearChipText.Suggestion(GearChip.Range(GearField.Workmanship, 7.5, null)));
         Assert.Equal("Stack = 20", GearChipText.Suggestion(GearChip.Range(GearField.Stack, 20, 20)));
         Assert.Equal("Pack", GearChipText.Suggestion(GearChip.InPack(7)));

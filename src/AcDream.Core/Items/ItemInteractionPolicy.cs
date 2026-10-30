@@ -140,7 +140,8 @@ public readonly record struct ItemPlacementPolicyInput(
     bool MergeAccepted,
     bool DragOnPlayerOpensSecureTrade,
     bool PlayerOnGround,
-    int SplitSize);
+    int SplitSize,
+    bool Locked = false);
 
 public readonly record struct ItemPlacementPolicyDecision(
     bool ReturnValue,
@@ -337,7 +338,22 @@ public static class ItemInteractionPolicy
             : $"Cannot use the {NameOf(source)} with the {NameOf(target)}";
     }
 
-    public static ItemPlacementPolicyDecision DecidePlacement(
+    private static readonly ItemPolicyActionKind[] LossKinds =
+    [
+        ItemPolicyActionKind.DropToWorld, ItemPolicyActionKind.SplitToWorld, ItemPolicyActionKind.GiveToTarget,
+        ItemPolicyActionKind.SellToVendor, ItemPolicyActionKind.StartSecureTrade,
+    ];
+
+    /// <summary>Retail's placement rules; a locked item (<see cref="ItemPlacementPolicyInput.Locked"/>) is refused
+    /// any placement that would lose it: the ground, a give, a sale or a trade.</summary>
+    public static ItemPlacementPolicyDecision DecidePlacement(in ItemPlacementPolicyInput input)
+    {
+        ItemPlacementPolicyDecision decision = DecidePlacementCore(input);
+        if (!input.Locked || !decision.Actions.Any(a => Array.IndexOf(LossKinds, a.Kind) >= 0)) return decision;
+        return Placement(false, RejectAction(ItemLocks.Message(NameOf(input.Item))));
+    }
+
+    private static ItemPlacementPolicyDecision DecidePlacementCore(
         in ItemPlacementPolicyInput input)
     {
         if (!input.ReadyForInventoryRequest)

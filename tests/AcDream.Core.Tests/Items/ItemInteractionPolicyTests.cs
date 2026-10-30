@@ -254,6 +254,36 @@ public sealed class ItemInteractionPolicyTests
     }
 
     [Fact]
+    public void ALockedItem_IsRefused_ForEveryWayOfLosingIt()
+    {
+        var item = OwnedDirect() with { StackSize = 10, MaxSplitSize = 10 };
+        var vendor = Obj(0x7001) with { Flags = PublicWeenieFlags.Vendor };
+        var player = Obj(0x7002) with { Flags = PublicWeenieFlags.Player };
+        foreach (ItemPlacementPolicyInput input in new[]
+                 {
+                     PlaceOnGround(item) with { Locked = true },
+                     Place(item, vendor) with { Locked = true },
+                     Place(item, player) with { Locked = true },
+                 })
+        {
+            ItemPlacementPolicyDecision d = ItemInteractionPolicy.DecidePlacement(input);
+            Assert.False(d.ReturnValue);
+            ItemPolicyAction only = Assert.Single(d.Actions);
+            Assert.Equal(ItemPolicyActionKind.Reject, only.Kind);
+            Assert.EndsWith("is locked.", only.Message);
+        }
+    }
+
+    [Fact]
+    public void ALockedItem_StillGoesIntoTheBackpack()
+    {
+        var item = OwnedDirect() with { StackSize = 10, MaxSplitSize = 10 };
+        ItemPlacementPolicyDecision d = ItemInteractionPolicy.DecidePlacement(
+            PlaceOnGround(item) with { TargetId = Player, Locked = true });
+        Assert.Contains(d.Actions, a => a.Kind == ItemPolicyActionKind.PlaceInBackpack);
+    }
+
+    [Fact]
     public void Placement_groundStackAndAirborneMatrix_matchesRetail()
     {
         var item = OwnedDirect() with { StackSize = 10, MaxSplitSize = 10 };

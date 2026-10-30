@@ -14,6 +14,9 @@ internal interface IGearItemActions
     bool WieldSecondary(uint item);
     bool Activate(uint item);
     bool OpenPack(uint pack);
+
+    /// <summary>Splits <paramref name="amount"/> off a stack into a container slot. Not every caller can; false by default.</summary>
+    bool Split(uint stack, uint container, int placement, int amount) => false;
 }
 
 internal sealed class RuntimeGearItemActions(
@@ -65,6 +68,8 @@ internal sealed class RuntimeGearItemActions(
     public bool WieldSecondary(uint item) => items.TryWieldItemSecondary(item);
     public bool Activate(uint item) => items.ActivateItem(item);
     public bool OpenPack(uint pack) => items.ActivateItem(pack);
+    public bool Split(uint stack, uint container, int placement, int amount) =>
+        items.TrySplitToContainer(stack, container, (uint)Math.Max(0, placement), (uint)Math.Max(0, amount));
 }
 
 /// <summary>Forwards to the real actions and keeps a short note of the last one, for the Gear Deck's drop log line.</summary>
@@ -100,4 +105,6 @@ internal sealed class LoggedGearItemActions(IGearItemActions inner) : IGearItemA
     public bool WieldSecondary(uint item) => Note(inner.WieldSecondary(item), $"secondary 0x{item:X8}");
     public bool Activate(uint item) => inner.Activate(item);
     public bool OpenPack(uint pack) => inner.OpenPack(pack);
+    public bool Split(uint stack, uint container, int placement, int amount) =>
+        Note(inner.Split(stack, container, placement, amount), $"split 0x{stack:X8} 0x{container:X8} {placement} {amount}");
 }
