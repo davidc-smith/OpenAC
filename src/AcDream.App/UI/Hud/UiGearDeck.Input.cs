@@ -461,6 +461,20 @@ internal sealed partial class UiGearDeck
         return (_b.ResolveDragIcon(o.Type, o.IconId, o.IconUnderlayId, o.IconOverlayId, o.Effects), 32, 32);
     }
 
+    /// <summary>A group drag fans up to two more selected icons behind the lifted one, in shown order.</summary>
+    public override IReadOnlyList<uint>? GetDragGhostStack()
+    {
+        if (GetDragPayload() is not ItemDragPayload p || _selection.Count < 2 || !DraggedIsGroupMovable(p.ObjId)) return null;
+        var icons = new List<uint>(2);
+        foreach (GearItemView row in Shown)
+        {
+            if (icons.Count == 2) break;
+            if (row.Id == p.ObjId || !IsGroupMovable(row) || _b.Objects().Get(row.Id) is not { } o) continue;
+            icons.Add(_b.ResolveDragIcon(o.Type, o.IconId, o.IconUnderlayId, o.IconOverlayId, o.Effects));
+        }
+        return icons.Count > 0 ? icons : null;
+    }
+
     // ---- drop target ----
 
     /// <summary>An item payload the deck takes; a shortcut leaving the bar is not an item move.</summary>

@@ -174,6 +174,28 @@ public sealed class UiGearDeckOrganiseTests
         Send(rig.Deck, UiEventType.DropReleased, target, payload);
     }
 
+    [Theory]
+    [InlineData(3, 2)]
+    [InlineData(2, 1)]
+    public void GroupDrag_FansUpToTwoMoreIcons(int selected, int extra)
+    {
+        Rig rig = Make();
+        SelectRows(rig, new[] { Misc0, Misc1, Misc2 }.Take(selected).ToArray());
+        Send(rig.Deck, UiEventType.MouseDown, CellOf(rig, Misc0));
+        Assert.Equal(extra, rig.Deck.GetDragGhostStack()!.Count);
+    }
+
+    [Fact]
+    public void SingleDrag_HasNoGhostStack()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc0);
+        Send(rig.Deck, UiEventType.MouseDown, CellOf(rig, Misc0));
+        Assert.Null(rig.Deck.GetDragGhostStack());
+        Send(rig.Deck, UiEventType.MouseDown, CellOf(rig, Misc3));   // an unselected item drags alone
+        Assert.Null(rig.Deck.GetDragGhostStack());
+    }
+
     [Fact]
     public void CombineButton_ShowsWhenStacksCanMerge_AndStartsCombining()
     {

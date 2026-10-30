@@ -44,4 +44,36 @@ public sealed class UiRootDragStartedTests
 
         Assert.Same(payload, Assert.Single(started));
     }
+
+    private sealed class StackSource(object payload) : UiPanel
+    {
+        public override bool IsDragSource => true;
+        public override object? GetDragPayload() => payload;
+        public override IReadOnlyList<uint>? GetDragGhostStack() => [0x11u, 0x22u];
+    }
+
+    [Fact]
+    public void TheGhostStack_IsCapturedAtDragBegin_AndClearedOnRelease()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        var payload = new ItemDragPayload(Item, ItemDragSource.Inventory, 0, SourceCell: null);
+        root.AddChild(new StackSource(payload) { Left = 10, Top = 10, Width = 40, Height = 40 });
+
+        root.OnMouseDown(UiMouseButton.Left, 20, 20);
+        root.OnMouseMove(60, 60);
+        Assert.Equal([0x11u, 0x22u], root.DragGhostStackForTest);
+
+        root.OnMouseUp(UiMouseButton.Left, 60, 60);
+        Assert.Null(root.DragGhostStackForTest);
+    }
+
+    [Fact]
+    public void ADragWithoutAStack_HasNone()
+    {
+        var root = new UiRoot { Width = 800, Height = 600 };
+        root.AddChild(new Source(new ItemDragPayload(Item, ItemDragSource.Inventory, 0, SourceCell: null)) { Left = 10, Top = 10, Width = 40, Height = 40 });
+        root.OnMouseDown(UiMouseButton.Left, 20, 20);
+        root.OnMouseMove(60, 60);
+        Assert.Null(root.DragGhostStackForTest);
+    }
 }

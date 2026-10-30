@@ -206,8 +206,10 @@ public sealed class UiRoot : UiElement
 
     private const int MoveBorderBand = 8;
     private (uint tex, int w, int h)? _dragGhost;
+    private IReadOnlyList<uint>? _dragGhostStack;
     /// <summary>Snapshotted drag-ghost (tex,w,h), exposed for tests. See BeginDrag.</summary>
     internal (uint tex, int w, int h)? DragGhostForTest => _dragGhost;
+    internal IReadOnlyList<uint>? DragGhostStackForTest => _dragGhostStack;
     private UiElement? _lastDragHoverTarget;
     private int _pressX, _pressY;
     private bool _dragCandidate;
@@ -374,6 +376,7 @@ public sealed class UiRoot : UiElement
                 DragSource = null;
                 DragPayload = null;
                 _dragGhost = null;
+                _dragGhostStack = null;
                 _dragCandidate = false;
             }
         }
@@ -479,6 +482,16 @@ public sealed class UiRoot : UiElement
     private void DrawDragGhost(UiRenderContext ctx)
     {
         if (_dragGhost is not { } g || g.tex == 0) return;
+        if (_dragGhostStack is { } stack)
+        {
+            // Behind the main icon, each one further up and to the right, a little dimmer.
+            for (int i = Math.Min(stack.Count, 2) - 1; i >= 0; i--)
+            {
+                float off = 4f * (i + 1);
+                ctx.DrawSprite(stack[i], MouseX - g.w / 2f + off, MouseY - g.h / 2f - off, g.w, g.h,
+                               0f, 0f, 1f, 1f, new Vector4(1f, 1f, 1f, GhostAlpha * 0.8f));
+            }
+        }
         ctx.DrawSprite(g.tex, MouseX - g.w / 2f, MouseY - g.h / 2f, g.w, g.h,
                        0f, 0f, 1f, 1f, new Vector4(1f, 1f, 1f, GhostAlpha));
     }
@@ -591,6 +604,7 @@ public sealed class UiRoot : UiElement
         DragSource = this;
         DragPayload = start.Payload;
         _dragGhost = start.Ghost;
+        _dragGhostStack = null;
         SetCapture(this);
         DragStarted?.Invoke(start.Payload);
     }
@@ -1331,6 +1345,7 @@ public sealed class UiRoot : UiElement
         DragSource  = source;
         DragPayload = payload;
         _dragGhost  = source.GetDragGhost();
+        _dragGhostStack = source.GetDragGhostStack();
         var e = new UiEvent(source.EventId, source, UiEventType.DragBegin, Payload: payload);
         source.OnEvent(in e);
         source.SetDragSourceActive(true, payload);
@@ -1378,6 +1393,7 @@ public sealed class UiRoot : UiElement
         DragSource = null;
         DragPayload = null;
         _dragGhost = null;
+        _dragGhostStack = null;
         _lastDragHoverTarget = null;
     }
 
@@ -1406,6 +1422,7 @@ public sealed class UiRoot : UiElement
         DragSource = null;
         DragPayload = null;
         _dragGhost = null;
+        _dragGhostStack = null;
         _lastDragHoverTarget = null;
     }
 
