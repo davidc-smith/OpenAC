@@ -4,10 +4,12 @@ using AcDream.Core.Items.Gear;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>
-/// Keeps the Gear Deck's organising going while the deck is closed: drops lock ids for objects that are
-/// gone (once per login, when the inventory is complete), and after items arrive from outside (pickup,
-/// loot, trade, purchase) queues combine-on-arrival and the on-arrival pack rules for them. A stack this
-/// client split off (the deck's Split, a shift-drag, a queued split) is not an arrival.
+/// Keeps the Gear Deck's organising going while the deck is closed: drops the lock of a locked item that
+/// leaves the table from the player's own inventory, and after items arrive from outside (pickup, loot,
+/// trade, purchase) queues combine-on-arrival and the on-arrival pack rules for them. A stack this client
+/// split off (the deck's Split, a shift-drag, a queued split) is not an arrival. Locks are never pruned at
+/// login: the client cannot tell an item that is gone from one that is not loaded (house storage), and an
+/// item silently unlocked could be sold.
 /// </summary>
 internal sealed class GearInventoryWatcher : IDisposable
 {
@@ -26,20 +28,23 @@ internal sealed class GearInventoryWatcher : IDisposable
     private readonly Action<string>? _report;
     private readonly Action<string>? _log;
     private readonly IGearRequestWatch? _requests;
+    private readonly Func<bool>? _dragging;
     private readonly HashSet<uint> _arrived = [];
     private uint _splitWeenie;
     private double _splitUntil = double.NegativeInfinity;
     private double _lastArrival;
-    private bool _pruned;
+    /// <summary>The character's settings loaded and the login listing is complete: adds from here on are arrivals.</summary>
+    private bool _listed;
     private bool _disposed;
     private ClientObjectTable? _table;
 
     public GearInventoryWatcher(Func<ClientObjectTable> objects, Func<uint> player, GearDeckSession session, GearMoveQueue queue,
         Func<ClientObject, string> displayName, ItemLocks? locks, Func<double> clock,
-        Action<string>? report = null, Action<string>? log = null, IGearRequestWatch? requests = null)
+        Action<string>? report = null, Action<string>? log = null, IGearRequestWatch? requests = null, Func<bool>? dragging = null)
     {
         _objects = objects; _player = player; _session = session; _queue = queue;
         _displayName = displayName; _locks = locks; _clock = clock; _report = report; _log = log; _requests = requests;
+        _dragging = dragging;
         _session.Ended += OnEnded;
         if (_requests is not null) _requests.Completed += OnRequestCompleted;
         Follow(_objects());
@@ -51,20 +56,9 @@ internal sealed class GearInventoryWatcher : IDisposable
         Follow(_objects());
         uint player = _player();
         if (player == 0u || _table is null) return;
-        // Only once the character's own settings loaded: a prune of the defaults would latch and skip this login.
-        if (!_pruned && _session.HasCharacter && _table.HasCompleteInventory(player))
-        {
-            _pruned = true;
-            ClientObjectTable t = _table;
-            uint[] kept = _session.Settings.LockedIds.Where(id => t.Get(id) is not null).ToArray();
-            int stale = _session.Settings.LockedIds.Count - kept.Length;
-            if (stale > 0)
-            {
-                _session.Update(s => s with { LockedIds = kept });
-                _log?.Invoke($"[gear-deck] dropped {stale} stale locks");
-            }
-        }
-        if (_arrived.Count == 0 || _queue.IsRunning || _clock() - _lastArrival < QuietSeconds) return;
+        if (!_listed && _session.HasCharacter && _table.HasCompleteInventory(player)) _listed = true;
+        // A sort started mid-drag would refuse the player's own drop; the arrivals wait for the drag to end.
+        if (_arrived.Count == 0 || _queue.IsRunning || _dragging?.Invoke() == true || _clock() - _lastArrival < QuietSeconds) return;
         uint[] only = _arrived.ToArray();
         _arrived.Clear();
         GearInventoryModel model = GearInventoryModel.Build(_table, player, null);
@@ -109,12 +103,13 @@ internal sealed class GearInventoryWatcher : IDisposable
     private void Follow(ClientObjectTable table)
     {
         if (ReferenceEquals(table, _table)) return;
-        if (_table is not null) { _table.ObjectMoved -= OnMoved; _table.ObjectAdded -= OnAdded; }
+        if (_table is not null) Unhook(_table);
         _table = table;
         _table.ObjectMoved += OnMoved;
         _table.ObjectAdded += OnAdded;
+        _table.ObjectRemovalClassified += OnRemoved;
         _arrived.Clear();
-        _pruned = false;
+        _listed = false;
     }
 
     /// <summary>The player or one of their side packs (not equipped).</summary>
@@ -139,9 +134,29 @@ internal sealed class GearInventoryWatcher : IDisposable
     private void OnAdded(ClientObject o)
     {
         // Before the inventory is complete, adds are the login listing.
-        if (!_pruned || !IsOwnPack(o.ContainerId) || IsOwnSplit(o)) return;
+        if (!_listed || !IsOwnPack(o.ContainerId) || IsOwnSplit(o)) return;
         Arrive(o.ObjectId);
     }
+
+    /// <summary>
+    /// A locked item that leaves the table from the player's own inventory (a pack of theirs, or worn) is gone,
+    /// so its lock goes too. One that leaves from anywhere else (an outside container, the world) keeps its lock,
+    /// and so does a new generation of the same id. A cleared table (logout, teleport) is not a removal.
+    /// </summary>
+    private void OnRemoved(ClientObjectRemoval removal)
+    {
+        if (removal.Reason == ClientObjectRemovalReason.GenerationReplacement) return;
+        ClientObject o = removal.Object;
+        uint id = o.ObjectId;
+        if (!_session.Settings.LockedIds.Contains(id)) return;
+        uint player = _player();
+        if (player == 0u || !(IsOwnPack(o.ContainerId) || o.WielderId == player)) return;
+        _session.Update(s => s.WithLock([id], false));
+        _log?.Invoke($"[gear-deck] 0x{id:X8} left the inventory; lock dropped");
+    }
+
+    /// <summary>A drag of this item began: the player placed it, so the rules leave it where it lands.</summary>
+    internal void ForgetArrival(uint id) => _arrived.Remove(id);
 
     /// <summary>The new stack of a split this client asked for: the server creates it in the pack, as an add.
     /// The add can come before or after the request completes, so both are covered.</summary>
@@ -160,6 +175,13 @@ internal sealed class GearInventoryWatcher : IDisposable
         _splitUntil = _clock() + SplitGraceSeconds;
     }
 
+    private void Unhook(ClientObjectTable table)
+    {
+        table.ObjectMoved -= OnMoved;
+        table.ObjectAdded -= OnAdded;
+        table.ObjectRemovalClassified -= OnRemoved;
+    }
+
     private void Arrive(uint id)
     {
         _arrived.Add(id);
@@ -168,7 +190,7 @@ internal sealed class GearInventoryWatcher : IDisposable
 
     private void OnEnded()
     {
-        _pruned = false;
+        _listed = false;
         _arrived.Clear();
     }
 
@@ -178,7 +200,7 @@ internal sealed class GearInventoryWatcher : IDisposable
         _disposed = true;
         _session.Ended -= OnEnded;
         if (_requests is not null) _requests.Completed -= OnRequestCompleted;
-        if (_table is not null) { _table.ObjectMoved -= OnMoved; _table.ObjectAdded -= OnAdded; }
+        if (_table is not null) Unhook(_table);
         _table = null;
         _arrived.Clear();
     }

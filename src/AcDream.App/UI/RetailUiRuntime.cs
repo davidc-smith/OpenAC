@@ -610,7 +610,7 @@ public sealed class RetailUiRuntime : IDisposable
     /// <summary>The Gear Deck's move queue (Combine, group drags) and the inventory channel it listens on.</summary>
     private Hud.GearMoveQueue? _gearQueue;
     private Hud.RuntimeGearMoveChannel? _gearChannel;
-    /// <summary>Combines and sorts what arrives in the packs, and drops stale lock ids once per login.</summary>
+    /// <summary>Combines and sorts what arrives in the packs, and drops the lock of a locked item that leaves the inventory.</summary>
     private Hud.GearInventoryWatcher? _gearWatcher;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
@@ -1034,8 +1034,8 @@ public sealed class RetailUiRuntime : IDisposable
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
         _hudSwitch?.Tick();
-        // Every frame, shown or not: a change made just before the deck closed is still saved.
-        // The deck's own tick loads the character's settings; this only writes.
+        // Every frame, shown or not: this tick loads the character's settings at login and saves a change
+        // made just before the deck closed. So locks load at login even with the deck closed or Modern HUD off.
         _gearDeckSession?.Tick();
         // Every frame, shown or not: a Combine or group move keeps going with the deck closed.
         _gearQueue?.Tick();
@@ -4052,7 +4052,8 @@ public sealed class RetailUiRuntime : IDisposable
             _gearWatcher = new Hud.GearInventoryWatcher(() => b.Objects, b.PlayerGuid, session, _gearQueue, ResolveAppropriateItemName,
                 _itemLocks, () => Environment.TickCount64 / 1000.0,
                 report: _bindings.Options.DisplaySystemMessage, log: Console.WriteLine,
-                requests: new Hud.RuntimeGearRequestWatch(items.RuntimeTransactions.Inventory));
+                requests: new Hud.RuntimeGearRequestWatch(items.RuntimeTransactions.Inventory),
+                dragging: () => Host.Root.DragPayload is ItemDragPayload);
 
             deck = new Hud.UiGearDeck(
                 new Hud.GearDeckBindings(
@@ -4105,8 +4106,13 @@ public sealed class RetailUiRuntime : IDisposable
 
         _gearDeck = deck;
         _gearDeckSession = session;
+        // A manual drag from any window or the world takes over from the queue (the deck's own drags too).
+        Host.Root.DragStarted += OnGearItemDragStarted;
         Console.WriteLine("[UI] Gear Deck mounted (Modern HUD).");
     }
+
+    private void OnGearItemDragStarted(object payload) =>
+        Hud.GearDragHook.OnDragStarted(payload, _gearQueue, _gearWatcher, Console.WriteLine);
 
     /// <summary>The deck is mounted and Modern HUD shows it: plugins may describe targets, and auto-ID may ask.</summary>
     private bool TargetDeckShown =>
@@ -6604,6 +6610,7 @@ public sealed class RetailUiRuntime : IDisposable
                 // The deck's popups read the session and the deck; close them with it.
                 CloseGearSplit();
                 CloseGearRules();
+                Host.Root.DragStarted -= OnGearItemDragStarted;
                 _gearWatcher?.Dispose();
                 _gearWatcher = null;
                 _gearDeckSession = null;

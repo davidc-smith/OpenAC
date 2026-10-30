@@ -271,6 +271,10 @@ public sealed class UiRoot : UiElement
     /// <summary>Raised when a drag is released over no UI element.</summary>
     public event Action<object /*payload*/, int /*x*/, int /*y*/>? DragReleasedOutsideUi;
 
+    /// <summary>Raised once a drag begins, from any window or the world, after the
+    /// source has seen its DragBegin. Listeners only observe.</summary>
+    internal event Action<object /*payload*/>? DragStarted;
+
     /// <summary>Asked when a left press on the world (over no UI element) moves
     /// past the drag distance: what the press point lifts, if anything. The
     /// point is the press, not where the pointer is now, so the lift is the
@@ -588,6 +592,7 @@ public sealed class UiRoot : UiElement
         DragPayload = start.Payload;
         _dragGhost = start.Ghost;
         SetCapture(this);
+        DragStarted?.Invoke(start.Payload);
     }
 
     private UiElement? _activePopup;
@@ -1329,6 +1334,7 @@ public sealed class UiRoot : UiElement
         var e = new UiEvent(source.EventId, source, UiEventType.DragBegin, Payload: payload);
         source.OnEvent(in e);
         source.SetDragSourceActive(true, payload);
+        DragStarted?.Invoke(payload);
     }
 
     private void UpdateDragHover(int x, int y)

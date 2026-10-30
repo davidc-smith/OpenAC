@@ -1,3 +1,4 @@
+using AcDream.App.UI;
 using AcDream.App.UI.Hud;
 using AcDream.Core.Items;
 using AcDream.Core.Items.Gear;
@@ -68,6 +69,7 @@ public sealed class GearInventoryWatcherTests
             Structure: null, MaxStructure: null, Workmanship: null));
         public GearInventoryWatcher Watcher = null!;
         public double Now;
+        public bool Dragging;
 
         /// <summary>The login listings, as the server sends them: the player's list, then the side pack's.</summary>
         public void MarkInventoryComplete()
@@ -103,7 +105,7 @@ public sealed class GearInventoryWatcherTests
             .WithRules([new GearPackRule("Coins", Bag, OnArrival: true)]) with { CombineOnArrival = true });
         rig.Queue = new GearMoveQueue(rig.Channel, rig.Sender, () => rig.Now);
         rig.Watcher = new GearInventoryWatcher(() => t, () => Player, session, rig.Queue, o => o.Name, null, () => rig.Now,
-            report: rig.Reports.Add, requests: rig.Requests);
+            report: rig.Reports.Add, requests: rig.Requests, dragging: () => rig.Dragging);
         if (complete) rig.MarkInventoryComplete();
         return rig;
     }
@@ -245,46 +247,90 @@ public sealed class GearInventoryWatcherTests
     }
 
     [Fact]
-    public void StaleLocks_AreDroppedOnce_WhenTheInventoryIsComplete()
-    {
-        Rig rig = Make(complete: false);
-        rig.Session.Update(s => s.WithLock([Coins, 0xDEADu], true));
-        rig.Watcher.Tick();
-        Assert.Contains(0xDEADu, rig.Session.Settings.LockedIds);
-        rig.MarkInventoryComplete();
-        rig.Watcher.Tick();
-        Assert.Equal(new[] { Coins }, rig.Session.Settings.LockedIds);
-        rig.Session.Update(s => s.WithLock([0xBEEFu], true));
-        rig.Watcher.Tick();
-        Assert.Contains(0xBEEFu, rig.Session.Settings.LockedIds);   // once per login
-    }
-
-    [Fact]
-    public void SessionEnded_PrunesAgain_OnTheNextLogin()
+    public void ALockedItemRemovedFromTheInventory_LosesItsLock()
     {
         Rig rig = Make();
-        rig.Watcher.Tick();
-        rig.Session.EndSession();
-        rig.Session.Tick();                                    // the next login loads
-        rig.Session.Update(s => s.WithLock([0xBEEFu], true));
-        rig.Watcher.Tick();
-        Assert.Empty(rig.Session.Settings.LockedIds);
+        rig.Add(0x1003, 5);
+        rig.Table.ApplyConfirmedServerMove(0x1003, Bag, 0u, 0);
+        rig.Session.Update(s => s.WithLock([Coins, 0x1003u, 0xBEEFu], true));
+        Assert.True(rig.Table.Remove(Coins));                  // on the player
+        Assert.True(rig.Table.Remove(0x1003));                 // in the side pack
+        Assert.Equal(new[] { 0xBEEFu }, rig.Session.Settings.LockedIds);
     }
 
     [Fact]
-    public void NoPrune_BeforeTheCharactersSettingsLoad()
+    public void ALockedIdNotLoadedAtLogin_KeepsItsLock()
     {
-        Rig rig = Make(character: false);
-        rig.Key = "";
-        rig.Store.Json = GearDeckSettings.Default.WithLock([Coins, 0xDEADu], true).ToJson();
-        rig.Session.Update(s => s.WithLock([0xBEEFu], true));  // the defaults, before the load
+        Rig rig = Make(complete: false);
+        rig.Session.Update(s => s.WithLock([Coins, 0xDEADu], true));   // 0xDEAD: in house storage, say
         rig.Watcher.Tick();
-        Assert.Contains(0xBEEFu, rig.Session.Settings.LockedIds);
-        rig.Key = "Toon";
-        rig.Session.Tick();
-        Assert.Contains(0xDEADu, rig.Session.Settings.LockedIds);
+        rig.MarkInventoryComplete();
+        rig.Now = 5; rig.Watcher.Tick();
+        Assert.Equal(new[] { Coins, 0xDEADu }, rig.Session.Settings.LockedIds);
+    }
+
+    [Fact]
+    public void AClearedTable_KeepsTheLocks()
+    {
+        Rig rig = Make();
+        rig.Session.Update(s => s.WithLock([Coins], true));
+        rig.Table.Clear();                                     // logout or teleport
         rig.Watcher.Tick();
         Assert.Equal(new[] { Coins }, rig.Session.Settings.LockedIds);
+    }
+
+    [Fact]
+    public void ALockedItemRemovedFromAnOutsideContainer_KeepsItsLock()
+    {
+        Rig rig = Make();
+        rig.Session.Update(s => s.WithLock([Loot], true));
+        Assert.True(rig.Table.Remove(Loot));                   // the corpse decays
+        Assert.Equal(new[] { Loot }, rig.Session.Settings.LockedIds);
+    }
+
+    [Fact]
+    public void ADraggedArrival_IsNotSorted()
+    {
+        Rig rig = Make();
+        rig.Table.ApplyConfirmedServerMove(Loot, Player, 0u, 0);
+        rig.Now = 0.2;
+        GearDragHook.OnDragStarted(new ItemDragPayload(Loot, ItemDragSource.Inventory, 0, null), rig.Queue, rig.Watcher);
+        rig.Now = 5; rig.Watcher.Tick();
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Empty(rig.Sender.Sent);
+    }
+
+    [Fact]
+    public void ArrivalsWait_WhileADragIsInProgress()
+    {
+        Rig rig = Make();
+        rig.Table.ApplyConfirmedServerMove(Loot, Player, 0u, 0);
+        rig.Dragging = true;
+        rig.Now = 5; rig.Watcher.Tick();
+        Assert.False(rig.Queue.IsRunning);
+        rig.Dragging = false;
+        rig.Watcher.Tick();
+        Assert.Equal("Sorting new items", rig.Queue.Label);
+    }
+
+    [Fact]
+    public void AnItemDragFromAnyWindow_CancelsTheRunningQueue()
+    {
+        Rig rig = Make();
+        Assert.True(rig.Queue.Start("Tidying", [GearMove.Put(0x9999, Player, 0), GearMove.Put(0x9998, Player, 1)]));
+        var log = new List<string>();
+        Assert.True(GearDragHook.OnDragStarted(new ItemDragPayload(Coins, ItemDragSource.Ground, 0, null), rig.Queue, rig.Watcher, log.Add));
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Single(log);
+    }
+
+    [Fact]
+    public void AShortcutDrag_LeavesTheQueueRunning()
+    {
+        Rig rig = Make();
+        Assert.True(rig.Queue.Start("Tidying", [GearMove.Put(0x9999, Player, 0)]));
+        Assert.False(GearDragHook.OnDragStarted(new ItemDragPayload(Coins, ItemDragSource.ShortcutBar, 0, null), rig.Queue, rig.Watcher));
+        Assert.True(rig.Queue.IsRunning);
     }
 
     [Fact]
