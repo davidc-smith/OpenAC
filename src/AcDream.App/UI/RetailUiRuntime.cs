@@ -557,6 +557,9 @@ public sealed class RetailUiRuntime : IDisposable
     private Hud.UiGearDeck? _gearDeck;
     private PaperdollClickMap? _paperdollClickMap;
     private Hud.GearDeckSession? _gearDeckSession;
+    /// <summary>The Gear Deck's move queue (Combine, group drags) and the inventory channel it listens on.</summary>
+    private Hud.GearMoveQueue? _gearQueue;
+    private Hud.RuntimeGearMoveChannel? _gearChannel;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
     private TargetAutoAppraisal? _targetAuto;
@@ -982,6 +985,8 @@ public sealed class RetailUiRuntime : IDisposable
         // Every frame, shown or not: a change made just before the deck closed is still saved.
         // The deck's own tick loads the character's settings; this only writes.
         _gearDeckSession?.Tick();
+        // Every frame, shown or not: a Combine or group move keeps going with the deck closed.
+        _gearQueue?.Tick();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
@@ -1458,6 +1463,7 @@ public sealed class RetailUiRuntime : IDisposable
         // The next character starts with the Gear Deck closed (hidden on the next tick) and its own settings.
         _hudSwitch?.CloseAllOnDemand();
         _gearDeckSession?.EndSession();
+        _gearQueue?.Cancel();   // the next character's inventory is not this queue's
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
         _bindings.Plugins?.TargetPlateStore.InvalidateAll();
@@ -3983,6 +3989,10 @@ public sealed class RetailUiRuntime : IDisposable
                 locks: _itemLocks);
             _hudIcons ??= new Hud.EmbeddedSvgSpriteCache(new RetailPluginFontBackend(_bindings.Assets.TextureCache));
             _deckFonts ??= Hud.DeckFonts.Load(_bindings.Assets.TextureCache);
+            var gearActions = new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge);
+            _gearChannel = new Hud.RuntimeGearMoveChannel(items);
+            _gearQueue = new Hud.GearMoveQueue(_gearChannel, new Hud.GearMoveSender(b.Objects, b.PlayerGuid, gearActions),
+                () => Environment.TickCount64 / 1000.0, _bindings.Options.DisplaySystemMessage);
 
             deck = new Hud.UiGearDeck(
                 new Hud.GearDeckBindings(
@@ -3994,7 +4004,7 @@ public sealed class RetailUiRuntime : IDisposable
                     // The retail inventory's tooltip captions use the same composed name.
                     DisplayName: ResolveAppropriateItemName,
                     Session: session,
-                    Actions: new Hud.RuntimeGearItemActions(items, b.Objects, b.SendPutItemInContainer, b.SendStackableMerge),
+                    Actions: gearActions,
                     IsPending: items.IsPendingInventorySource,
                     Close: () => _hudSwitch?.SetOpen(WindowNames.GearDeck, false),
                     // One line per drag and drop, beside the mount line, for live checks.
@@ -4004,7 +4014,9 @@ public sealed class RetailUiRuntime : IDisposable
                     Salvage: new Hud.RuntimeGearSalvage(() => SalvageController,
                         () => Host.IsWindowVisible(WindowNames.Salvage), _bindings.Options.DisplaySystemMessage),
                     Text: HudTextSize,
-                    ClickMap: _paperdollClickMap),
+                    ClickMap: _paperdollClickMap,
+                    Queue: _gearQueue,
+                    Locks: _itemLocks),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
@@ -4019,6 +4031,10 @@ public sealed class RetailUiRuntime : IDisposable
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
             }
+            _gearQueue?.Dispose();
+            _gearQueue = null;
+            _gearChannel?.Dispose();
+            _gearChannel = null;
             Console.WriteLine($"[UI] Gear Deck unavailable; keeping the retail inventory. ({ex.GetType().Name}: {ex.Message})");
             return;
         }
@@ -6522,6 +6538,11 @@ public sealed class RetailUiRuntime : IDisposable
                 _gearDeckSession?.EndSession();   // writes a pending settings change
                 _gearDeck?.Detach();
                 _gearDeckSession = null;
+                _gearQueue?.Cancel();
+                _gearQueue?.Dispose();
+                _gearQueue = null;
+                _gearChannel?.Dispose();
+                _gearChannel = null;
                 _hudIcons?.Dispose();
                 _hudIcons = null;
                 Host.WindowManager.WindowVisibilityChanged -= OnWindowVisibilityChanged;

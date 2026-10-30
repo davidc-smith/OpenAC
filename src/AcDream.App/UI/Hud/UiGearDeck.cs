@@ -22,7 +22,9 @@ internal sealed record GearDeckBindings(
     Func<(bool Toggle, bool Range)>? Modifiers = null,
     IGearSalvage? Salvage = null,
     HudText? Text = null,
-    PaperdollClickMap? ClickMap = null);
+    PaperdollClickMap? ClickMap = null,
+    GearMoveQueue? Queue = null,
+    ItemLocks? Locks = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
@@ -55,6 +57,7 @@ internal sealed partial class UiGearDeck : UiElement
     private ClientObjectTable? _lastTable;
     private uint _lastPlayer;
     private int? _lastStrength;
+    private int _lastLocks;
     private bool _built;
     /// <summary>Counts model rebuilds, so <see cref="Shown"/> knows when its rows are stale.</summary>
     private ulong _modelBuild;
@@ -280,17 +283,19 @@ internal sealed partial class UiGearDeck : UiElement
         ClientObjectTable table = _b.Objects();
         uint player = _b.PlayerGuid();
         int? strength = _b.Strength();
+        int locksRev = _b.Locks?.Revision ?? 0;
         if (!_built || !ReferenceEquals(table, _lastTable) || table.MutationRevision != _lastRevision
-            || player != _lastPlayer || strength != _lastStrength)
+            || player != _lastPlayer || strength != _lastStrength || locksRev != _lastLocks)
         {
             _model = GearInventoryModel.Build(table, player, strength);
-            _projection = GearProjection.Build(_model, table, _b.DisplayName);
+            _projection = GearProjection.Build(_model, table, _b.DisplayName, _b.Locks is { } locks ? locks.IsLocked : null);
             _modelBuild++;
             RebuildCaches(table, player);
             _lastTable = table;
             _lastRevision = table.MutationRevision;
             _lastPlayer = player;
             _lastStrength = strength;
+            _lastLocks = locksRev;
             _built = true;
         }
         SyncGeometry();
@@ -312,8 +317,11 @@ internal sealed partial class UiGearDeck : UiElement
         _scrollRow,
         SavedCount: _b.Session.Settings.SavedFilters.Count,
         Suggestions: VisibleSuggestions,
-        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0,
-        Figure: ShowsFigureView);
+        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0
+            && _b.Queue?.IsRunning != true,
+        Figure: ShowsFigureView,
+        CombineButton: _b.Queue is { IsRunning: false } && CombineMoves.Count > 0,
+        Queue: _b.Queue?.IsRunning == true);
 
     private void SyncGeometry()
     {
@@ -452,12 +460,14 @@ internal sealed partial class UiGearDeck : UiElement
         }
     }
 
-    /// <summary>The footer's left text: the match text and " · k selected" in results, "k selected" alone
-    /// in the pack view, and empty when nothing is selected there. Cached per model, query and selection.</summary>
+    /// <summary>The footer's left text: a running queue's progress; else the match text and " · k selected" in
+    /// results, "k selected" alone in the pack view, and empty when nothing is selected there. Cached per model,
+    /// query and selection, or per queue version.</summary>
     internal string FooterLeftText
     {
         get
         {
+            if (_b.Queue is { IsRunning: true } q) return QueueText(q);
             _ = Shown;   // prune the selection first, so the count is of shown items
             if (_footerLeftFor != (_modelBuild, _queryVersion, _selectionVersion, ShowsResults))
             {

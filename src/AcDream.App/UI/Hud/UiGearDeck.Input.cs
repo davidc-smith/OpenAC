@@ -82,6 +82,7 @@ internal sealed partial class UiGearDeck
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
             case UiEventType.CaptureChanged:
+                if (e.Type == UiEventType.CaptureChanged) _dragFromDeck = 0u;
                 bool wasTurning = _turning;
                 _turnFromX = null;
                 _turning = false;
@@ -115,7 +116,11 @@ internal sealed partial class UiGearDeck
                 return true;
             case UiEventType.DragBegin:
                 if (e.Payload is ItemDragPayload lifted)
+                {
+                    CancelQueueForDrag();   // UiGearDeck.Organise.cs: a manual drag takes over
+                    _dragFromDeck = lifted.ObjId;
                     _b.Log?.Invoke($"[gear-deck] drag 0x{lifted.ObjId:X8} from {_press.Zone} {_press.Index}");
+                }
                 return false;
             case UiEventType.DragEnter:
                 _dropPayload = e.Payload;
@@ -302,6 +307,12 @@ internal sealed partial class UiGearDeck
             case GearZone.FooterButton:
                 AddTargetsToSalvage();
                 return true;
+            case GearZone.CombineButton:
+                CombineAll();   // UiGearDeck.Organise.cs
+                return true;
+            case GearZone.QueueStop:
+                StopQueue();
+                return true;
             case GearZone.Chip when hit.Index < _query.Chips.Count:
                 SetQuery(_query.Without(hit.Index));
                 return true;
@@ -485,7 +496,17 @@ internal sealed partial class UiGearDeck
 
     private bool DropReleased(object? payload, float x, float y)
     {
+        uint fromDeck = _dragFromDeck;
+        _dragFromDeck = 0u;
         if (ItemPayload(payload) is not { } p || DropTargetAt(x, y) is not { } hit) return false;
+        // A selection of two or more dragged from the deck onto a pack, a pack row, a cell or empty pack space
+        // moves as a group through the queue; equipment and figure drops take the one item as before.
+        if (fromDeck == p.ObjId && _selection.Count > 1 && _selection.Contains(p.ObjId) && GroupTarget(hit) is { } target)
+        {
+            _b.Log?.Invoke($"[gear-deck] drop selection ({_selection.Count}) on {hit.Zone} {hit.Index}");
+            MoveSelection(target.Pack, target.Slot);
+            return true;
+        }
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
         _actions.Last = null;
         string action;

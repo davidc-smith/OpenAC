@@ -77,17 +77,45 @@ internal sealed partial class UiGearDeck
         finally { ctx.PopClip(); }
 
         DrawSideColumn(ctx, objects);
-        DeckFace footerFace = SmallIn(g.Footer);
-        DrawText(ctx, footerFace, g.Input.SalvageButton ? FittedFooterLeft(ctx, g.FooterButton.X - g.Footer.X - P(4f)) : FooterLeftText, g.Footer.X, g.Footer, LabelInk);
-        if (g.Input.SalvageButton) DrawSalvageButton(ctx);
-        else if (!ShowsResults)
-        {
-            string footer = FooterText;
-            DrawText(ctx, footerFace, footer, g.Footer.X + g.Footer.W - footerFace.Measure(ctx, footer), g.Footer, LabelInk);
-        }
+        DrawFooter(ctx);
 
         if (DropHighlight is { } drop && RectFor(drop.Hit) is { } target)
             StrokeAround(ctx, target, drop.Accept ? DropAccept : DropReject);
+    }
+
+    /// <summary>The footer: a running queue's progress and Stop; else the left text, then the pack count (plain
+    /// pack view without the salvage button), Combine and the salvage button when shown.</summary>
+    private void DrawFooter(UiRenderContext ctx)
+    {
+        GearDeckGeometry g = _g;
+        DeckFace footerFace = SmallIn(g.Footer);
+        if (g.Input.Queue)
+        {
+            DrawText(ctx, footerFace, FittedFooterLeft(ctx, g.StopButton.X - g.Footer.X - P(4f)), g.Footer.X, g.Footer, LabelInk);
+            DrawFooterStud(ctx, g.StopButton, "Stop", on: true);
+            return;
+        }
+        // The leftmost thing drawn right of the left text: a button, or the pack count (left of Combine when shown).
+        float leftmost = g.Input.CombineButton ? g.CombineButton.X : g.Input.SalvageButton ? g.FooterButton.X : -1f;
+        if (!g.Input.SalvageButton && !ShowsResults)
+        {
+            string footer = FooterText;
+            float right = g.Input.CombineButton ? g.CombineButton.X - P(4f) : g.Footer.X + g.Footer.W;
+            float x = right - footerFace.Measure(ctx, footer);
+            DrawText(ctx, footerFace, footer, x, g.Footer, LabelInk);
+            if (g.Input.CombineButton) leftmost = x;
+        }
+        DrawText(ctx, footerFace, leftmost >= 0f ? FittedFooterLeft(ctx, leftmost - g.Footer.X - P(4f)) : FooterLeftText,
+            g.Footer.X, g.Footer, LabelInk);
+        if (g.Input.CombineButton) DrawFooterStud(ctx, g.CombineButton, "Combine", on: false);
+        if (g.Input.SalvageButton) DrawSalvageButton(ctx);
+    }
+
+    /// <summary>A footer stud with a fixed label that fits it.</summary>
+    private void DrawFooterStud(UiRenderContext ctx, DeckRect r, string label, bool on)
+    {
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on);
+        DrawCentred(ctx, SmallIn(r), label, r, ink);
     }
 
     private string? _fittedFooterSrc, _fittedFooter;
@@ -657,6 +685,8 @@ internal sealed partial class UiGearDeck
         GearZone.ChipMore => _g.ChipMore,
         GearZone.Figure => _g.Figure,
         GearZone.FigureLock => _g.FigureLock,
+        GearZone.CombineButton => _g.CombineButton,
+        GearZone.QueueStop => _g.StopButton,
         GearZone.Item => _g.Input.List ? _g.ListRow(hit.Index, _scrollRow) : _g.GridCell(hit.Index, _scrollRow),
         _ => null,
     };
