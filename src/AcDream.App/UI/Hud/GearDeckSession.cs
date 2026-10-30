@@ -22,6 +22,8 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
     private double _lastChange;
 
     public GearDeckSettings Settings { get; private set; } = GearDeckSettings.Default;
+    /// <summary>A character's settings are loaded (not the defaults before a login, or after a logout).</summary>
+    internal bool HasCharacter => _key is not null;
     public event Action? Changed;
     public event Action? Ended;
 

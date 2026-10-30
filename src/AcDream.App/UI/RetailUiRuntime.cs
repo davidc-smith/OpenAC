@@ -4050,7 +4050,9 @@ public sealed class RetailUiRuntime : IDisposable
             _gearQueue = new Hud.GearMoveQueue(_gearChannel, new Hud.GearMoveSender(b.Objects, b.PlayerGuid, gearActions),
                 () => Environment.TickCount64 / 1000.0, _bindings.Options.DisplaySystemMessage);
             _gearWatcher = new Hud.GearInventoryWatcher(() => b.Objects, b.PlayerGuid, session, _gearQueue, ResolveAppropriateItemName,
-                _itemLocks, () => Environment.TickCount64 / 1000.0, Console.WriteLine);
+                _itemLocks, () => Environment.TickCount64 / 1000.0,
+                report: _bindings.Options.DisplaySystemMessage, log: Console.WriteLine,
+                requests: new Hud.RuntimeGearRequestWatch(items.RuntimeTransactions.Inventory));
 
             deck = new Hud.UiGearDeck(
                 new Hud.GearDeckBindings(
@@ -6599,6 +6601,9 @@ public sealed class RetailUiRuntime : IDisposable
                 _gearDeck?.OnHidden();
                 _gearDeckSession?.EndSession();   // writes a pending settings change
                 _gearDeck?.Detach();
+                // The deck's popups read the session and the deck; close them with it.
+                CloseGearSplit();
+                CloseGearRules();
                 _gearWatcher?.Dispose();
                 _gearWatcher = null;
                 _gearDeckSession = null;
