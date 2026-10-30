@@ -18,6 +18,7 @@
 - **One inventory request at a time.** `InventoryTransactionState` holds a single pending request and has **no timeout**. The queue sends only when `RuntimeItemInteraction.CanMakeInventoryRequest` is true. It must never call `EnsureInventoryRequestReady` to probe, because that prints "You can only move or use one item at a time". It treats a move as done only on `RequestCompleted` for that move's item id.
 - **Timeout 2 s, then stop.** A pending request that never completes blocks every later request, so a timed-out queue stops. It does not go on to the next move.
 - **Lock message:** `"The {name} is locked."`. In Core it comes from `ItemLocks.Message(name)`. Every refusal prints exactly this one line through that path's existing chat output.
+- **Locks apply only while Modern HUD is on** (user decision 2026-10-30). `RetailUiRuntime` sets `RuntimeItemInteraction.Locks` to the shared set while it is on and to null while it is off, so every retail path ignores them with it off. The set is kept and saved either way.
 - **Locks block only loss.** They block dropping to the ground, giving (to an NPC or a player, the trade window, automation), selling (vendor drag, staging, the Sell button, automation) and salvaging (panel add, automation). A container holding a locked item is blocked the same way (`ItemLocks.BlockerOf`). Moving between your own packs, wearing, using, tidy, and being a merge *target* are all allowed.
 - The look is `DeckChrome` palette + `DeckFonts` only, never the plugin theme. Text drawn in the deck stays ASCII apart from `·`. The queue text is `"Tidying 12 / 40"`, with no ellipsis character.
 - Every new size is a constant at scale 1, multiplied by `S(...)` in `GearDeckGeometry` and by `P(...)` in the deck's drawing.
@@ -30,7 +31,7 @@
 - Organising = combine stacks (button + optional on arrival), split by amount, tidy a pack on the server, pack rules, item locks (all four).
 - Moves are sent one at a time with a 2 s confirmation timeout, and a manual drag cancels the queue. Only one queue runs at a time.
 - Tidy sorts by type group, then name, then workmanship (descending). Combine merges into the fullest stack first.
-- Locks are also enforced in retail sell, give, drop and salvage. A locked item shows a small padlock.
+- Locks are also enforced in retail sell, give, drop and salvage, but only while Modern HUD is on (user decision 2026-10-30: with it off, retail windows ignore locks; they stay saved and apply again when it is turned back on). A locked item shows a small padlock.
 - Salvage and tinkering stay in the retail windows.
 - Data is public only (create/update messages); no ID requests.
 - Modern HUD windows look like the decks, never the plugin theme. Each deck scales on its own.

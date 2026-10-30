@@ -89,6 +89,16 @@ public sealed class GearDeckWiringTests
     }
 
     [Fact]
+    public void RetailPathsSeeTheLocksOnlyWhileModernHudIsOn()
+    {
+        var locks = new AcDream.Core.Items.ItemLocks();
+        locks.Set(0xA1, true);
+        Assert.Null(RetailUiRuntime.LocksFor(false, locks));
+        Assert.Same(locks, RetailUiRuntime.LocksFor(true, locks));
+        Assert.True(RetailUiRuntime.LocksFor(true, locks)!.IsLocked(0xA1));
+    }
+
+    [Fact]
     public void TheClickMap_ReachesTheDeckBindings()
     {
         var map = new PaperdollClickMap([0, 0, 0, 0xFF], 1, 1);

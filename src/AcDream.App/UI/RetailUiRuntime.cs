@@ -1033,6 +1033,7 @@ public sealed class RetailUiRuntime : IDisposable
         _bindings.SynchronizeDisplayPhase?.Invoke();
         _persistence?.SetGameplayActive(_bindings.IsGameplayDisplay?.Invoke() ?? true);
         _hudSwitch?.Apply(_bindings.CommandDeck?.Enabled() ?? false);
+        SyncItemLocks();
         _hudSwitch?.Tick();
         // Every frame, shown or not: this tick loads the character's settings at login and saves a change
         // made just before the deck closed. So locks load at login even with the deck closed or Modern HUD off.
@@ -4027,6 +4028,16 @@ public sealed class RetailUiRuntime : IDisposable
     /// The Gear Deck (Modern HUD's inventory and paper doll) and its per-character
     /// settings. Without it the retail inventory stays while Modern HUD is on.
     /// </summary>
+    /// <summary>The retail paths see the locks only while Modern HUD is on (user decision 2026-10-30);
+    /// the set itself is kept and saved either way, so turning it back on re-applies them.</summary>
+    internal static ItemLocks? LocksFor(bool modernHud, ItemLocks locks) => modernHud ? locks : null;
+
+    private void SyncItemLocks()
+    {
+        if (_bindings.CommandDeck is not { } hud || _bindings.Inventory.ItemInteraction is not { } items) return;
+        items.Locks = LocksFor(hud.Enabled(), _itemLocks);
+    }
+
     private void MountGearDeck()
     {
         if (_bindings.CommandDeck is null || _bindings.Inventory.ItemInteraction is not { } items) return;
@@ -4034,7 +4045,7 @@ public sealed class RetailUiRuntime : IDisposable
         InventoryRuntimeBindings b = _bindings.Inventory;
         Hud.UiGearDeck? deck = null;
         Hud.GearDeckSession? session = null;
-        items.Locks = _itemLocks;
+        SyncItemLocks();
         try
         {
             session = new Hud.GearDeckSession(
