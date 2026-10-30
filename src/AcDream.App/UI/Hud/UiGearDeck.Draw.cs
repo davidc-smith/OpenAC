@@ -311,6 +311,34 @@ internal sealed partial class UiGearDeck
         ctx.DrawLine(cx + legX, barY, cx + legX, locked ? bodyTop : bodyTop - P(2.5f), ink, w);
     }
 
+    /// <summary>The locked-item badge's sides at scale 1: over a grid cell's bottom-left corner, and over a list icon's.</summary>
+    internal const float GridPadlock = 14f, ListPadlock = 12f;
+
+    /// <summary>The badge's fill: the Target Deck's amber, so it reads as gold against any icon.</summary>
+    internal static readonly Vector4 PadlockFill = ChipAmber;
+
+    /// <summary>
+    /// The locked-item badge filling the square <paramref name="r"/>: an amber padlock (a rounded body under
+    /// a round shackle) with a dark outline round both, so it reads on any icon, and a dark keyhole.
+    /// Drawn in 14ths of the side: the shackle is an ellipse whose lower half the body covers.
+    /// </summary>
+    private void DrawPadlockBadge(UiRenderContext ctx, DeckRect r)
+    {
+        float u = r.W / 14f, outline = Line(1f, _scale);
+        // Shackle: centred, 7 wide, from 1.2 down to 10.2 (inside the body from 6 down).
+        float sx = r.X + 3.5f * u, sy = r.Y + 1.2f * u, sw = 7f * u, sh = 9f * u;
+        ctx.StrokeEllipse(sx, sy, sw, sh, FrameEdge, 1.8f * u + 2f * outline);
+        ctx.StrokeEllipse(sx, sy, sw, sh, PadlockFill, 1.8f * u);
+        // Body: 11 wide, from 6 down to 13.
+        float bx = r.X + 1.5f * u, by = r.Y + 6f * u, bw = 11f * u, bh = 7f * u;
+        ctx.FillRoundedRect(bx - outline, by - outline, bw + 2f * outline, bh + 2f * outline, 2f * u + outline, FrameEdge);
+        ctx.FillRoundedRect(bx, by, bw, bh, 2f * u, PadlockFill);
+        // Keyhole: a dot and a short slot under it.
+        float kx = r.X + 7f * u, ky = by + 2.6f * u, kd = 2f * u;
+        ctx.FillEllipse(kx - kd / 2f, ky - kd / 2f, kd, kd, FrameEdge);
+        ctx.FillRoundedRect(kx - 0.5f * u, ky, 1f * u, 2.2f * u, 0.4f * u, FrameEdge);
+    }
+
     /// <summary>The Slots view: every slot as a dark cell with its worn icon, or its label when
     /// empty. Aetheria slots the character has not unlocked are dimmed, as the paper doll hides them.</summary>
     private void DrawSlots(UiRenderContext ctx, ClientObjectTable objects)
@@ -419,7 +447,7 @@ internal sealed partial class UiGearDeck
                     float lh = face.LineHeight(ctx);
                     face.Draw(ctx, stack, r.X + r.W - P(2f) - face.Measure(ctx, stack), r.Y + r.H - lh, TextInk);
                 }
-                if (row.Locked) DrawPadlockGlyph(ctx, new DeckRect(r.X + P(1f), r.Y + r.H - P(12f), P(11f), P(11f)), true, TextInk);
+                if (row.Locked) DrawPadlockBadge(ctx, new DeckRect(r.X + P(1f), r.Y + r.H - P(GridPadlock + 1f), P(GridPadlock), P(GridPadlock)));
                 if (results) face.Draw(ctx, PackBadge(row), r.X + P(2f), r.Y + P(1f), LabelInk);
                 if (picked) StrokeInside(ctx, r, 5f, Handle);
                 else if (Hover.Zone == GearZone.Item && Hover.Index == i) StrokeInside(ctx, r, 5f, Handle with { W = 0.6f });
@@ -462,7 +490,7 @@ internal sealed partial class UiGearDeck
                 float iconSize = P(ListIcon);
                 var icon = new DeckRect(r.X + P(2f), r.Y + (r.H - iconSize) / 2f, iconSize, iconSize);
                 DrawIcon(ctx, IconFor(o), icon);
-                if (row.Locked) DrawPadlockGlyph(ctx, new DeckRect(icon.X, icon.Y + icon.H - P(10f), P(10f), P(10f)), true, TextInk);
+                if (row.Locked) DrawPadlockBadge(ctx, new DeckRect(icon.X, icon.Y + icon.H - P(ListPadlock), P(ListPadlock), P(ListPadlock)));
                 if (results)
                 {
                     DrawResultColumns(ctx, face, row, r, icon.X + icon.W + P(6f));

@@ -431,7 +431,7 @@ public sealed class UiGearDeckDrawTests
     }
 
     [Fact]
-    public void ALockedItemInTheGrid_DrawsAPadlockInItsBottomLeft()
+    public void ALockedItemInTheGrid_DrawsAnAmberPadlockInItsBottomLeft()
     {
         static int Ink(TextRenderer r, DeckRect cell)
         {
@@ -442,8 +442,8 @@ public sealed class UiGearDeckDrawTests
                 for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
                     if (s.Verts[i] >= cell.X && s.Verts[i] <= cell.X + cell.W / 2f
                         && s.Verts[i + 1] >= cell.Y + cell.H / 2f && s.Verts[i + 1] <= cell.Y + cell.H
-                        && MathF.Abs(s.Verts[i + 4] - DeckChrome.TextInk.X) < Tol && MathF.Abs(s.Verts[i + 5] - DeckChrome.TextInk.Y) < Tol
-                        && MathF.Abs(s.Verts[i + 6] - DeckChrome.TextInk.Z) < Tol)
+                        && MathF.Abs(s.Verts[i + 4] - UiGearDeck.PadlockFill.X) < Tol && MathF.Abs(s.Verts[i + 5] - UiGearDeck.PadlockFill.Y) < Tol
+                        && MathF.Abs(s.Verts[i + 6] - UiGearDeck.PadlockFill.Z) < Tol)
                         n++;
             }
             return n;
@@ -455,5 +455,16 @@ public sealed class UiGearDeckDrawTests
         locks.Set(deck.Shown[2].Id, true);
         deck.Refresh();
         Assert.True(Ink(DrawInside(deck), cell) > 0);
+    }
+
+    [Fact]
+    public void ALockedItemInTheList_DrawsAnAmberPadlockOverItsIcon()
+    {
+        var locks = new ItemLocks();
+        UiGearDeck deck = Deck(World(), settings: s => s with { View = GearPackView.List }, locks: locks);
+        Assert.False(HasColour(DrawInside(deck), UiGearDeck.PadlockFill));
+        locks.Set(deck.Shown[0].Id, true);
+        deck.Refresh();
+        Assert.True(HasColour(DrawInside(deck), UiGearDeck.PadlockFill));
     }
 }
