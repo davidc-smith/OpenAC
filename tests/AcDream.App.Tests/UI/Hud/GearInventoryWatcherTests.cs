@@ -247,15 +247,18 @@ public sealed class GearInventoryWatcherTests
     }
 
     [Fact]
-    public void ALockedItemRemovedFromTheInventory_LosesItsLock()
+    public void ALockedItemRemovedFromThePack_KeepsItsLock_AndSoDoesAClearedTable()
     {
         Rig rig = Make();
         rig.Add(0x1003, 5);
         rig.Table.ApplyConfirmedServerMove(0x1003, Bag, 0u, 0);
-        rig.Session.Update(s => s.WithLock([Coins, 0x1003u, 0xBEEFu], true));
+        rig.Session.Update(s => s.WithLock([Coins, 0x1003u], true));
         Assert.True(rig.Table.Remove(Coins));                  // on the player
         Assert.True(rig.Table.Remove(0x1003));                 // in the side pack
-        Assert.Equal(new[] { 0xBEEFu }, rig.Session.Settings.LockedIds);
+        Assert.Equal(new[] { Coins, 0x1003u }, rig.Session.Settings.LockedIds);
+        rig.Table.Clear();
+        rig.Watcher.Tick();
+        Assert.Equal(new[] { Coins, 0x1003u }, rig.Session.Settings.LockedIds);
     }
 
     [Fact]

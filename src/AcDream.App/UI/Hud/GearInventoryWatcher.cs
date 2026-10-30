@@ -4,12 +4,10 @@ using AcDream.Core.Items.Gear;
 namespace AcDream.App.UI.Hud;
 
 /// <summary>
-/// Keeps the Gear Deck's organising going while the deck is closed: drops the lock of a locked item that
-/// leaves the table from the player's own inventory, and after items arrive from outside (pickup, loot,
+/// Keeps the Gear Deck's organising going while the deck is closed: after items arrive from outside (pickup, loot,
 /// trade, purchase) queues combine-on-arrival and the on-arrival pack rules for them. A stack this client
-/// split off (the deck's Split, a shift-drag, a queued split) is not an arrival. Locks are never pruned at
-/// login: the client cannot tell an item that is gone from one that is not loaded (house storage), and an
-/// item silently unlocked could be sold.
+/// split off (the deck's Split, a shift-drag, a queued split) is not an arrival. Locks are never removed here or at
+/// login: only the player unlocks, and the ids of items that are gone stay in the saved list.
 /// </summary>
 internal sealed class GearInventoryWatcher : IDisposable
 {
@@ -107,7 +105,6 @@ internal sealed class GearInventoryWatcher : IDisposable
         _table = table;
         _table.ObjectMoved += OnMoved;
         _table.ObjectAdded += OnAdded;
-        _table.ObjectRemovalClassified += OnRemoved;
         _arrived.Clear();
         _listed = false;
     }
@@ -138,23 +135,6 @@ internal sealed class GearInventoryWatcher : IDisposable
         Arrive(o.ObjectId);
     }
 
-    /// <summary>
-    /// A locked item that leaves the table from the player's own inventory (a pack of theirs, or worn) is gone,
-    /// so its lock goes too. One that leaves from anywhere else (an outside container, the world) keeps its lock,
-    /// and so does a new generation of the same id. A cleared table (logout, teleport) is not a removal.
-    /// </summary>
-    private void OnRemoved(ClientObjectRemoval removal)
-    {
-        if (removal.Reason == ClientObjectRemovalReason.GenerationReplacement) return;
-        ClientObject o = removal.Object;
-        uint id = o.ObjectId;
-        if (!_session.Settings.LockedIds.Contains(id)) return;
-        uint player = _player();
-        if (player == 0u || !(IsOwnPack(o.ContainerId) || o.WielderId == player)) return;
-        _session.Update(s => s.WithLock([id], false));
-        _log?.Invoke($"[gear-deck] 0x{id:X8} left the inventory; lock dropped");
-    }
-
     /// <summary>A drag of this item began: the player placed it, so the rules leave it where it lands.</summary>
     internal void ForgetArrival(uint id) => _arrived.Remove(id);
 
@@ -179,7 +159,6 @@ internal sealed class GearInventoryWatcher : IDisposable
     {
         table.ObjectMoved -= OnMoved;
         table.ObjectAdded -= OnAdded;
-        table.ObjectRemovalClassified -= OnRemoved;
     }
 
     private void Arrive(uint id)
