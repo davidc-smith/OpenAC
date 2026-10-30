@@ -9,7 +9,7 @@ public static class GearQueryJson
     [
         (GearField.Name, "name"), (GearField.Type, "type"), (GearField.Material, "material"),
         (GearField.Workmanship, "work"), (GearField.Value, "value"), (GearField.Burden, "burden"),
-        (GearField.Stack, "stack"), (GearField.Pack, "pack"), (GearField.Worn, "worn"),
+        (GearField.Stack, "stack"), (GearField.Pack, "pack"), (GearField.Worn, "worn"), (GearField.Locked, "locked"),
     ];
 
     private static readonly (GearSortField Field, string Key)[] SortKeys =
@@ -41,7 +41,7 @@ public static class GearQueryJson
             case GearField.Name: o["text"] = c.Text; break;
             case GearField.Type: o["group"] = c.Group.ToString(); break;
             case GearField.Material or GearField.Pack: o["id"] = c.Id; break;
-            case GearField.Worn: break;
+            case GearField.Worn or GearField.Locked: break;
             default:
                 if (c.Min is double min) o["min"] = min;
                 if (c.Max is double max) o["max"] = max;
@@ -109,6 +109,7 @@ public static class GearQueryJson
             case GearField.Material: return o["id"] is { } m ? GearChip.OfMaterial(m.GetValue<uint>()) : null;
             case GearField.Pack: return o["id"] is { } p ? GearChip.InPack(p.GetValue<uint>()) : null;
             case GearField.Worn: return GearChip.WornOnly;
+            case GearField.Locked: return GearChip.LockedOnly;
             default: return GearChip.Range(field, o["min"]?.GetValue<double>(), o["max"]?.GetValue<double>());
         }
     }

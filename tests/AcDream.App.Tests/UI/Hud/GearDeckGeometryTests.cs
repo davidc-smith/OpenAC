@@ -9,6 +9,31 @@ public sealed class GearDeckGeometryTests
     private static GearDeckLayoutInput Input(bool folded = false, bool list = false, int worn = 12, int itemCount = 96, int sideSlots = 7) =>
         new(folded, list, worn, itemCount, sideSlots, ScrollRow: 0);
 
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void FooterButtons_SitRightToLeft_AndOnlyStopHitsWhileAQueueRuns(float scale)
+    {
+        var input = Input() with { SalvageButton = true, CombineButton = true };
+        GearDeckGeometry g = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale), input, null, scale);
+        Assert.Equal(g.FooterButton.X - GearDeckGeometry.Gap * scale, g.CombineButton.X + g.CombineButton.W, 3);
+        Assert.Equal(GearDeckGeometry.CombineW * scale, g.CombineButton.W, 3);
+        Assert.Equal(GearZone.CombineButton, g.HitAt(g.CombineButton.X + 2, g.CombineButton.Y + 2).Zone);
+
+        GearDeckGeometry alone = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale), Input() with { CombineButton = true }, null, scale);
+        Assert.Equal(alone.Footer.X + alone.Footer.W, alone.CombineButton.X + alone.CombineButton.W, 3);
+
+        GearDeckGeometry busy = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale), input with { Queue = true }, null, scale);
+        Assert.Equal(GearDeckGeometry.StopW * scale, busy.StopButton.W, 3);
+        Assert.Equal(busy.Footer.X + busy.Footer.W, busy.StopButton.X + busy.StopButton.W, 3);
+        Assert.Equal(GearZone.QueueStop, busy.HitAt(busy.StopButton.X + 2, busy.StopButton.Y + 2).Zone);
+        Assert.NotEqual(GearZone.FooterButton, busy.HitAt(busy.FooterButton.X + 2, busy.FooterButton.Y + 2).Zone);
+        Assert.NotEqual(GearZone.CombineButton, busy.HitAt(busy.CombineButton.X + 2, busy.CombineButton.Y + 2).Zone);
+
+        GearDeckGeometry hidden = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale), Input(), null, scale);
+        Assert.NotEqual(GearZone.CombineButton, hidden.HitAt(hidden.CombineButton.X + 2, hidden.CombineButton.Y + 2).Zone);
+    }
+
     [Fact]
     public void SectionsStackTopToBottom()
     {

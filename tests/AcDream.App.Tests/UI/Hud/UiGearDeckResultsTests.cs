@@ -512,8 +512,8 @@ public sealed class UiGearDeckResultsTests
         r.Deck.SetQuery(GearQuery.Empty.With(GearChip.NameContains("Item 0")) with { Sort = new GearSort(GearSortField.Name, true) });
         Send(r.Deck, UiEventType.MouseDown, Cell(r.Deck, 0));
         r.Deck.Menu.Opening!(Centre(Cell(r.Deck, 0)).X, Centre(Cell(r.Deck, 0)).Y);
-        Assert.Equal("Show in pack", r.Deck.Menu.ItemsSource()[0]);
-        r.Deck.Menu.Selected!(0);
+        Assert.Equal("Show in pack", r.Deck.Menu.ItemsSource()[4]);
+        r.Deck.Menu.Selected!(4);
         Assert.False(r.Deck.ShowsResults);
         Assert.Equal(new GearSort(GearSortField.Name, true), r.Deck.Query.Sort);
         Assert.Equal(MainZtoA, r.Deck.Shown.Select(v => v.Id));

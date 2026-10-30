@@ -44,6 +44,19 @@ public sealed class GearProjectionTests
     }
 
     [Fact]
+    public void Build_FillsLockedAndWeenie_OnEveryRow()
+    {
+        ClientObjectTable t = World();
+        uint weenie = 100;
+        foreach (uint id in new[] { 0xA0u, 0xA1u, 0xA2u, Bag, Helm }) t.Get(id)!.WeenieClassId = weenie++;
+        var locked = new HashSet<uint> { 0xA1, Bag };
+        GearProjection p = GearProjection.Build(GearInventoryModel.Build(t, Player, 100), t, o => o.Name, locked.Contains);
+        Assert.Equal(5, p.All.Count);
+        Assert.All(p.All, row => Assert.Equal(locked.Contains(row.Id), row.Locked));
+        Assert.All(p.All, row => Assert.Equal(t.Get(row.Id)!.WeenieClassId, row.Weenie));
+    }
+
+    [Fact]
     public void All_IsPackItemsThenSidePacksThenWorn()
     {
         GearProjection p = Build(World());

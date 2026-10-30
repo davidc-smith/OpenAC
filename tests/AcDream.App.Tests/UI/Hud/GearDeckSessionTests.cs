@@ -1,4 +1,5 @@
 using AcDream.App.UI.Hud;
+using AcDream.Core.Items;
 using AcDream.Core.Items.Gear;
 
 namespace AcDream.App.Tests.UI.Hud;
@@ -10,6 +11,21 @@ public sealed class GearDeckSessionTests
         public readonly Dictionary<string, string> Saved = [];
         public string? Load(string key) => Saved.GetValueOrDefault(key);
         public void Save(string key, string json) => Saved[key] = json;
+    }
+
+    [Fact]
+    public void TheLocksFollowTheSettings_ThroughLoadUpdateAndEnd()
+    {
+        var store = new FakeStore();
+        store.Saved["Toon"] = """{"lockedIds":[5]}""";
+        var locks = new ItemLocks();
+        var session = new GearDeckSession(store, () => "Toon", () => true, locks: locks);
+        session.Tick();
+        Assert.True(locks.IsLocked(5));
+        session.Update(s => s.WithLock([6u], true));
+        Assert.True(locks.IsLocked(6));
+        session.EndSession();
+        Assert.Empty(locks.Ids);
     }
 
     [Fact]

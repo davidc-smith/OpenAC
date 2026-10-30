@@ -268,9 +268,11 @@ public sealed class UiMenu : UiElement
         ? RowWidth + EffectiveScrollbarWidth
         : ColumnCount * RowWidth;
 
-    private int EffectiveVisibleRows => Scrollable && PopupSizeToContent
+    private int NaturalVisibleRows => Scrollable && PopupSizeToContent
         ? System.Math.Max(1, DisplayItems.Count)
         : RowsPerColumn;
+
+    private int EffectiveVisibleRows => PopupLayout.Rows;
 
     private bool PopupContentOverflows => DisplayItems.Count > EffectiveVisibleRows;
 
@@ -278,6 +280,7 @@ public sealed class UiMenu : UiElement
         => IsPopupScrollbarPresentationVisible ? ScrollbarWidth : 0f;
 
     private float InteriorH => EffectiveVisibleRows * RowHeight;
+    private float ChromeH => SearchHeight + 2 * Border;
     private float OuterW => InteriorW + 2 * Border;
     private float OuterH => InteriorH + SearchHeight + 2 * Border;
 
@@ -294,9 +297,43 @@ public sealed class UiMenu : UiElement
         ColumnWidth = System.MathF.Max(
             1f, width - (2 * Border) - EffectiveScrollbarWidth);
 
+    /// <summary>The preferred direction; the popup flips when it would run off the screen.</summary>
     public bool OpenUpward { get; set; } = true;
 
-    private float PopupTop => OpenUpward ? -OuterH : Height;
+    /// <summary>
+    /// The one place that decides which way the popup opens and how many rows it shows: the
+    /// preferred side when the whole list fits there, else the other side if it fits, else
+    /// whichever side has more room, with a scrolling list shortened to that room.
+    /// </summary>
+    private (bool Up, int Rows) PopupLayout
+    {
+        get
+        {
+            int rows = NaturalVisibleRows;
+            if (FindRoot() is not { } root) return (OpenUpward, rows);
+            float outer = rows * RowHeight + ChromeH;
+            float sy = ScreenPosition.Y;
+            float below = root.EffectiveCanvasSize.Y - (sy + Height), above = sy;
+            bool up = OpenUpward;
+            float room = up ? above : below;
+            if (outer > room)
+            {
+                float other = up ? below : above;
+                if (other >= outer) { up = !up; room = other; }
+                else
+                {
+                    if (other > room) { up = !up; room = other; }
+                    if (Scrollable)
+                        rows = System.Math.Max(1, System.Math.Min(rows, (int)((room - ChromeH) / RowHeight)));
+                }
+            }
+            return (up, rows);
+        }
+    }
+
+    internal bool OpensUpward => PopupLayout.Up;
+
+    private float PopupTop { get { var l = PopupLayout; return l.Up ? -(l.Rows * RowHeight + ChromeH) : Height; } }
 
     public UiMenu()
     {
@@ -916,7 +953,7 @@ public sealed class UiMenu : UiElement
         if (e.Type != UiEventType.MouseDown) return false;
 
         float lx = e.Data1, ly = e.Data2;
-        bool clickedInPopup = OpenUpward ? ly < 0 : ly >= Height;
+        bool clickedInPopup = PopupLayout.Up ? ly < 0 : ly >= Height;
         if (_open && clickedInPopup)
         {
             float ix = lx - PopupLeft - Border, iy = ly - (PopupTop + Border + SearchHeight);

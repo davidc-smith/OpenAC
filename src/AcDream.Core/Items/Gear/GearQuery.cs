@@ -1,13 +1,13 @@
 namespace AcDream.Core.Items.Gear;
 
-public enum GearField { Name, Type, Material, Workmanship, Value, Burden, Stack, Pack, Worn }
+public enum GearField { Name, Type, Material, Workmanship, Value, Burden, Stack, Pack, Worn, Locked }
 
 /// <summary>What the deck sorts by. <see cref="Pack"/> is slot order (results: pack order, then slot) and has no
 /// direction. Added last so the earlier members keep their numbers.</summary>
 public enum GearSortField { Name, Type, Material, Workmanship, Value, Burden, Stack, Pack }
 
 /// <summary>One filter chip. Which members matter depends on <see cref="Field"/>: Text (Name),
-/// Group (Type), Id (Material, Pack), Min/Max (Workmanship, Value, Burden, Stack); Worn has none.</summary>
+/// Group (Type), Id (Material, Pack), Min/Max (Workmanship, Value, Burden, Stack); Worn and Locked have none.</summary>
 public sealed record GearChip(GearField Field)
 {
     public string Text { get; init; } = "";
@@ -24,6 +24,7 @@ public sealed record GearChip(GearField Field)
     public static GearChip InPack(uint packId) => new(GearField.Pack) { Id = packId };
     public static GearChip Range(GearField field, double? min, double? max) => new(field) { Min = min, Max = max };
     public static GearChip WornOnly { get; } = new(GearField.Worn);
+    public static GearChip LockedOnly { get; } = new(GearField.Locked);
 }
 
 public readonly record struct GearSort(GearSortField Field, bool Descending)

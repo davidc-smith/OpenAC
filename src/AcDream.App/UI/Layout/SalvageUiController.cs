@@ -28,7 +28,9 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
         /// <summary>Selects and examines an item, the shared right-click
         /// path of every physical item cell. Null leaves right-click
         /// inert.</summary>
-        Action<uint>? ExamineItem = null);
+        Action<uint>? ExamineItem = null,
+        /// <summary>True for an item the player locked against loss; null locks nothing.</summary>
+        Func<uint, bool>? IsLocked = null);
 
     private readonly Bindings _bindings;
     private readonly UiItemList _list;
@@ -123,6 +125,7 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
     {
         if (_disposed || _sending || !IsToolAvailable(_toolId)
             || itemId == _toolId || !_bindings.IsOwned(itemId)
+            || _bindings.IsLocked?.Invoke(itemId) == true
             || _items.Any(item => item.ObjectId == itemId)
             || _bindings.Objects.Get(itemId) is not { } item)
             return false;
@@ -132,10 +135,19 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
 
     public bool AddItem(uint itemId)
     {
+        if (ReportIfLocked(itemId)) return false;
         if (!CanAdd(itemId)) return false;
         var visited = new HashSet<uint>();
         AddRecursive(itemId, visited);
         Refresh();
+        return true;
+    }
+
+    private bool ReportIfLocked(uint itemId)
+    {
+        if (_bindings.IsLocked?.Invoke(itemId) != true) return false;
+        _bindings.Report(ItemLocks.Message(
+            _bindings.Objects.Get(itemId) is { } o ? _bindings.ResolveAppropriateName(o) : "item"));
         return true;
     }
 
@@ -150,7 +162,10 @@ public sealed class SalvageUiController : IRetainedPanelController, IItemListDra
         {
             _bindings.Report($"Adding contents of {_bindings.Objects.Get(itemId)!.GetAppropriateName()}");
             foreach (uint child in contents)
+            {
+                if (ReportIfLocked(child)) continue;
                 AddRecursive(child, visited);
+            }
             return;
         }
         ClientObject item = _bindings.Objects.Get(itemId)!;

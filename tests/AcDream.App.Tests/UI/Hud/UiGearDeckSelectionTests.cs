@@ -179,13 +179,13 @@ public sealed class UiGearDeckSelectionTests
         DeckRect cell = rig.Deck.Geometry.GridCell(3, 0)!.Value;
         RightClick(root, rig.Deck, cell);
         Assert.True(rig.Deck.Menu.IsOpen);
-        Assert.Equal(new[] { "Show in pack", "-", "Select all", "Clear selection" }, rig.Deck.Menu.ItemsSource());
+        Assert.Equal(new[] { "Split...", "Lock", "Combine like stacks", "-", "Show in pack", "-", "Select all", "Clear selection" }, rig.Deck.Menu.ItemsSource());
         Assert.Equal(new[] { Id(rig, 3) }, rig.Deck.Selection);
-        Assert.False(rig.Deck.Menu.ItemsEnabledSource!()[0]);   // not in results
+        Assert.False(rig.Deck.Menu.ItemsEnabledSource!()[4]);   // not in results
 
-        rig.Deck.Menu.Selected!(2);
+        rig.Deck.Menu.Selected!(6);
         Assert.Equal(rig.Deck.Shown.Count, rig.Deck.Selection.Count);
-        rig.Deck.Menu.Selected!(3);
+        rig.Deck.Menu.Selected!(7);
         Assert.Empty(rig.Deck.Selection);
     }
 
@@ -200,9 +200,9 @@ public sealed class UiGearDeckSelectionTests
         Assert.True(at >= 0);
         DeckRect cell = rig.Deck.Geometry.GridCell(at, rig.Deck.ScrollRow)!.Value;
         RightClick(root, rig.Deck, cell);
-        Assert.True(rig.Deck.Menu.ItemsEnabledSource!()[0]);
+        Assert.True(rig.Deck.Menu.ItemsEnabledSource!()[4]);
 
-        rig.Deck.Menu.Selected!(0);
+        rig.Deck.Menu.Selected!(4);
         Assert.True(rig.Deck.Query.IsEmpty);
         Assert.Equal("", rig.Deck.QueryInput.Text);
         Assert.Equal(Bag, rig.Deck.SelectedPackId);
@@ -257,7 +257,7 @@ public sealed class UiGearDeckSelectionTests
         DeckRect cell = list ? rig.Deck.Geometry.ListRow(at, rig.Deck.ScrollRow)!.Value
                              : rig.Deck.Geometry.GridCell(at, rig.Deck.ScrollRow)!.Value;
         RightClick(root, rig.Deck, cell);
-        rig.Deck.Menu.Selected!(0);
+        rig.Deck.Menu.Selected!(4);
 
         int index = rig.Deck.Shown.ToList().FindIndex(r => r.Id == Last);
         int line = list ? index : index / GearDeckGeometry.Columns;

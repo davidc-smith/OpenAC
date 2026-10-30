@@ -155,6 +155,43 @@ public class WorldDragTests
         Assert.Null(WorldDrag.Build(0u, Player, outOfCombat: true, Icons, DragIcons));
     }
 
+    [Fact]
+    public void A_loose_ground_item_lifts_as_a_ground_payload_with_its_own_picture()
+    {
+        const uint Loot = 0x7000_0D01u, LootIcon = 0x0600_1234u, LootDrag = 0x0600_5678u;
+        var loot = new ClientObject { ObjectId = Loot, Type = ItemType.Misc, IconId = LootIcon };
+
+        WorldDragStart? start = WorldDrag.Build(
+            Loot, Player, outOfCombat: false,
+            Icons, (type, icon, _, _, _) => icon == LootIcon ? LootDrag : 0u,
+            groundItem: id => id == Loot ? loot : null);
+
+        var payload = Assert.IsType<ItemDragPayload>(start!.Value.Payload);
+        Assert.Equal(Loot, payload.ObjId);
+        Assert.Equal(ItemDragSource.Ground, payload.SourceKind);
+        Assert.Null(payload.SourceCell);
+        Assert.Equal((LootDrag, 32, 32), start.Value.Ghost);
+    }
+
+    [Fact]
+    public void Without_a_ground_lift_a_world_item_lifts_nothing_as_before()
+    {
+        Assert.Null(WorldDrag.Build(0x7000_0D01u, Player, true, Icons, DragIcons, groundItem: null));
+        Assert.Null(WorldDrag.Build(0x7000_0D01u, Player, true, Icons, DragIcons, groundItem: _ => null));
+    }
+
+    [Fact]
+    public void The_player_still_lifts_the_main_pack_with_a_ground_lift_bound()
+    {
+        WorldDragStart? start = WorldDrag.Build(
+            Player, Player, outOfCombat: true, Icons, DragIcons,
+            groundItem: id => new ClientObject { ObjectId = id });
+
+        Assert.Equal(ItemDragSource.Inventory, Assert.IsType<ItemDragPayload>(start!.Value.Payload).SourceKind);
+        Assert.Null(WorldDrag.Build(Player, Player, outOfCombat: false, Icons, DragIcons,
+            groundItem: id => new ClientObject { ObjectId = id }));
+    }
+
     private static uint Icons(ItemType type, uint icon, uint underlay, uint overlay, uint effects)
         => type == ItemType.Container && icon == InventoryController.PlayerPackBaseIcon
             ? MainPackIcon

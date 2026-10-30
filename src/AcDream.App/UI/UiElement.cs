@@ -533,6 +533,9 @@ public abstract class UiElement
             ? ghost(region.PressX, region.PressY)
             : null;
 
+    /// <summary>Up to two more icons drawn fanned behind the ghost, for a drag that carries several items.</summary>
+    public virtual IReadOnlyList<uint>? GetDragGhostStack() => null;
+
     internal virtual void SetDragSourceActive(bool active, object? payload) { }
 
     public Func<string?>? RuntimeTooltipTextSource { get; set; }

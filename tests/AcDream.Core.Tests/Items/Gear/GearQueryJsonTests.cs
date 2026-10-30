@@ -57,6 +57,16 @@ public sealed class GearQueryJsonTests
     }
 
     [Fact]
+    public void LockedChip_RoundTrips_AsTheLockedKey()
+    {
+        var filter = new SavedFilter("a", GearQuery.Empty.With(GearChip.LockedOnly));
+        JsonObject o = GearQueryJson.Write(filter);
+        Assert.Contains("\"f\":\"locked\"", o.ToJsonString());
+        Assert.True(GearQueryJson.TryRead(JsonNode.Parse(o.ToJsonString()), out SavedFilter? back));
+        Assert.Equal(filter, back);
+    }
+
+    [Fact]
     public void PackOrder_RoundTrips_AsThePackKey()
     {
         var filter = new SavedFilter("a", GearQuery.Empty.With(GearChip.WornOnly));

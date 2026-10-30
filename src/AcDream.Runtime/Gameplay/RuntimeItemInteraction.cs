@@ -336,6 +336,8 @@ public sealed class RuntimeItemInteraction : IDisposable
     {
         if (vendorGuid == 0u || items is null || items.Count == 0 || _sendSell is null)
             return false;
+        foreach ((int _, uint guid) in items)
+            if (RefuseIfLocked(guid)) return false;
         if (!EnsureInventoryRequestReady())
             return false;
 
@@ -543,6 +545,7 @@ public sealed class RuntimeItemInteraction : IDisposable
     {
         if (!IsOwnedByPlayer(itemId) || _objects.Get(itemId) is not { } item)
             return false;
+        if (RefuseIfLocked(itemId)) return false;
 
         uint fullStack = (uint)Math.Max(1, item.StackSize);
         uint requested = amount == 0u ? fullStack : amount;
@@ -586,6 +589,7 @@ public sealed class RuntimeItemInteraction : IDisposable
         {
             return false;
         }
+        if (RefuseIfLocked(itemId)) return false;
 
         uint fullStack = (uint)Math.Max(1, item.StackSize);
         uint requested = amount == 0u ? fullStack : amount;
@@ -619,6 +623,9 @@ public sealed class RuntimeItemInteraction : IDisposable
         {
             return false;
         }
+
+        foreach (uint id in itemIds)
+            if (RefuseIfLocked(id)) return false;
 
         var distinct = new HashSet<uint>();
         foreach (uint itemId in itemIds)
@@ -662,6 +669,17 @@ public sealed class RuntimeItemInteraction : IDisposable
         => itemGuid != 0
             && _transactions.TryGetPending(out PendingInventoryRequest pending)
             && pending.ItemId == itemGuid;
+
+    /// <summary>The player's locked items; null (the default) locks nothing.</summary>
+    public ItemLocks? Locks { get; set; }
+
+    /// <summary>True (and one chat line) when <paramref name="itemId"/>, or a locked item inside it, is locked.</summary>
+    public bool RefuseIfLocked(uint itemId)
+    {
+        if (Locks is not { } locks || locks.BlockerOf(_objects, itemId) is not (var blocker and not 0u)) return false;
+        ReportClientLocal(ItemLocks.Message(_objects.Get(blocker)?.GetAppropriateName() ?? "item"));
+        return true;
+    }
 
     public void ReportClientLocal(string message)
     {
@@ -1609,7 +1627,8 @@ public sealed class RuntimeItemInteraction : IDisposable
             MergeAccepted: false,
             DragOnPlayerOpensSecureTrade: _dragOnPlayerOpensSecureTrade(),
             PlayerOnGround: _playerOnGround(),
-            SplitSize: splitSize));
+            SplitSize: splitSize,
+            Locked: Locks?.BlockerOf(_objects, item.ObjectId) is > 0u));
         ExecutePlacementActions(decision.Actions);
         return decision.ReturnValue;
     }

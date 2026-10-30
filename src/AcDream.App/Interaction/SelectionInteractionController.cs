@@ -347,6 +347,11 @@ internal sealed class SelectionInteractionController
     public uint? PickAt(float mouseX, float mouseY, bool includeSelf)
         => _query.PickAt(mouseX, mouseY, includeSelf);
 
+    /// <summary>Whether a world object may be picked up, by the pickup rules a
+    /// use or the R key applies, without the refusal toast.</summary>
+    public bool CanPickUp(uint serverGuid) =>
+        ValidatePickupTarget(serverGuid, showToast: false);
+
     public void PlaceDraggedItem(ItemDragPayload payload, float mouseX, float mouseY)
     {
         ArgumentNullException.ThrowIfNull(payload);

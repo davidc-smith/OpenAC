@@ -1,13 +1,14 @@
 namespace AcDream.App.UI.Hud;
 
 internal readonly record struct GearDeckLayoutInput(bool Folded, bool List, int WornCount, int ItemCount, int SidePackSlots, int ScrollRow,
-    int SavedCount = 0, int Suggestions = 0, bool SalvageButton = false, bool Figure = false);
+    int SavedCount = 0, int Suggestions = 0, bool SalvageButton = false, bool Figure = false,
+    bool CombineButton = false, bool Queue = false);
 
 internal enum GearZone
 {
     None, Frame, Close, FoldStud, FigureStud, SlotsStud, GridStud, ListStud, EquipSlot, WornCell, Item, SidePack,
     QueryField, Chip, ChipMore, SaveStud, SortStud, DirStud, SavedFilter, SavedMore, Suggestion, FooterButton, Figure,
-    FigureLock,
+    FigureLock, CombineButton, QueueStop,
 }
 
 /// <summary>The labels the query bar's pills show and how wide a label draws.</summary>
@@ -30,6 +31,8 @@ internal sealed class GearDeckGeometry
     public const float ItemCell = 36f, ItemGap = 2f, ListRowH = 22f, SideW = 36f, SideCell = 34f, SideGap = 4f;
     public const float QueryH = 22f, SavedH = 18f, PillH = 18f, PillGap = 4f, PillPadX = 5f, ChipCloseW = 8f, MaxPillW = 110f;
     public const float MoreW = 26f, SortW = 58f, DirW = 18f, SaveW = 18f, FieldMinW = 44f, SuggestH = 18f, FooterButtonW = 120f;
+    /// <summary>The footer's Combine button, and the Stop button that replaces the footer's buttons while a queue runs.</summary>
+    public const float CombineW = 64f, StopW = 48f;
     public const int Columns = 6, WornPerRow = 10, SlotRows = 4, MaxWornRows = 3;
     public const float FigureW = 140f, FigureH = 214f, RingCell = 30f, RingGap = 4f, RingSideGap = 6f;
     /// <summary>The retail click map (the doll mask 0x100001D6): 100 x 214, its left edge 61 points left of
@@ -81,6 +84,10 @@ internal sealed class GearDeckGeometry
     public required DeckRect DirStud { get; init; }
     public required DeckRect SavedRow { get; init; }
     public required DeckRect FooterButton { get; init; }
+    /// <summary>Combine: left of the salvage button when that shows, else at the footer's right edge.</summary>
+    public required DeckRect CombineButton { get; init; }
+    /// <summary>Stop, at the footer's right edge; the only footer button that hits while a queue runs.</summary>
+    public required DeckRect StopButton { get; init; }
     public required IReadOnlyList<DeckRect> Chips { get; init; }
     public required IReadOnlyList<DeckRect> SavedStuds { get; init; }
     public required DeckRect? ChipMore { get; init; }
@@ -224,6 +231,9 @@ internal sealed class GearDeckGeometry
 
         var footer = new DeckRect(pad, h - pad - S(FooterH), inner, S(FooterH));
         var footerButton = new DeckRect(footer.X + footer.W - S(FooterButtonW), footer.Y, S(FooterButtonW), S(FooterH));
+        float combineRight = input.SalvageButton ? footerButton.X - gap : footer.X + footer.W;
+        var combineButton = new DeckRect(combineRight - S(CombineW), footer.Y, S(CombineW), S(FooterH));
+        var stopButton = new DeckRect(footer.X + footer.W - S(StopW), footer.Y, S(StopW), S(FooterH));
         float areaH = MathF.Max(0f, footer.Y - gap - y);
         var packArea = new DeckRect(pad, y, inner, areaH);
         float contentsW = inner - S(SideW) - gap;
@@ -240,7 +250,7 @@ internal sealed class GearDeckGeometry
             BurdenBar = burden, PackArea = packArea, Contents = contents, SideColumn = side, Footer = footer,
             QueryBar = queryBar, QueryText = queryText, QueryField = queryField,
             SaveStud = save, SortStud = sort, DirStud = dir,
-            SavedRow = savedRow, FooterButton = footerButton,
+            SavedRow = savedRow, FooterButton = footerButton, CombineButton = combineButton, StopButton = stopButton,
             Chips = chips, SavedStuds = savedStuds, ChipMore = chipMore, SavedMore = savedMore,
             HiddenChips = hiddenChips, HiddenSaved = hiddenSaved,
             Input = input, Scale = scale, TextGrow = MathF.Max(0f, textGrow),
@@ -347,7 +357,15 @@ internal sealed class GearDeckGeometry
         for (int i = 0; i < SavedStuds.Count; i++)
             if (SavedStuds[i].Contains(x, y)) return new GearDeckHit(GearZone.SavedFilter, i);
         if (SavedMore is { } sm && sm.Contains(x, y)) return new GearDeckHit(GearZone.SavedMore);
-        if (Input.SalvageButton && FooterButton.Contains(x, y)) return new GearDeckHit(GearZone.FooterButton);
+        if (Input.Queue)
+        {
+            if (StopButton.Contains(x, y)) return new GearDeckHit(GearZone.QueueStop);
+        }
+        else
+        {
+            if (Input.SalvageButton && FooterButton.Contains(x, y)) return new GearDeckHit(GearZone.FooterButton);
+            if (Input.CombineButton && CombineButton.Contains(x, y)) return new GearDeckHit(GearZone.CombineButton);
+        }
 
         if (Equipment.Contains(x, y))
         {

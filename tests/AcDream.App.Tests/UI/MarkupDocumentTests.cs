@@ -333,6 +333,40 @@ public class MarkupDocumentTests
         Assert.Empty(binding.Blurred);
     }
 
+    /// <summary>
+    /// The owner clears its value while the field has focus (a picked suggestion
+    /// taking the typed word): once the focus goes, the field shows the cleared
+    /// value, though it is the same one the field showed before the typing.
+    /// </summary>
+    [Fact]
+    public void AFieldShowsAValueItsOwnerResetWhileTyping_OnceTheFocusGoes()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" text="{Range}"
+                     onchange="{ChangeRange}" />
+            </panel>
+            """;
+        var binding = new LateValueBinding { Range = "" };
+        UiNineSlicePanel panel = MarkupDocument.Build(xml, binding, _ => (1u, 32, 32));
+        UiField field = Assert.IsType<UiField>(panel.Children[0]);
+        var root = new UiRoot { Width = 400, Height = 300 };
+        root.AddChild(panel);
+        panel.TickSelfAndChildren(0.016);
+        root.SetKeyboardFocus(field);
+        field.InsertChar('s');
+        field.InsertChar('a');
+        Assert.Equal("sa", binding.Range);
+
+        binding.Range = "";
+        panel.TickSelfAndChildren(0.016);
+        Assert.Equal("sa", field.Text);   // not while it has focus
+        root.SetKeyboardFocus(null);
+        panel.TickSelfAndChildren(0.016);
+        Assert.Equal("", field.Text);
+        Assert.Equal(["s", "sa"], binding.Heard);   // the owner is not told about its own value
+    }
+
     private sealed class LateValueBinding
     {
         public string Range { get; set; } = "5";

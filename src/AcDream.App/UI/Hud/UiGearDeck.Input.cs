@@ -82,6 +82,7 @@ internal sealed partial class UiGearDeck
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
             case UiEventType.CaptureChanged:
+                _dragFromDeck = 0u;   // a drag that ended elsewhere is over
                 bool wasTurning = _turning;
                 _turnFromX = null;
                 _turning = false;
@@ -115,7 +116,11 @@ internal sealed partial class UiGearDeck
                 return true;
             case UiEventType.DragBegin:
                 if (e.Payload is ItemDragPayload lifted)
+                {
+                    CancelQueueForDrag();   // UiGearDeck.Organise.cs: a manual drag takes over
+                    _dragFromDeck = lifted.ObjId;
                     _b.Log?.Invoke($"[gear-deck] drag 0x{lifted.ObjId:X8} from {_press.Zone} {_press.Index}");
+                }
                 return false;
             case UiEventType.DragEnter:
                 _dropPayload = e.Payload;
@@ -302,6 +307,12 @@ internal sealed partial class UiGearDeck
             case GearZone.FooterButton:
                 AddTargetsToSalvage();
                 return true;
+            case GearZone.CombineButton:
+                CombineAll();   // UiGearDeck.Organise.cs
+                return true;
+            case GearZone.QueueStop:
+                StopQueue();
+                return true;
             case GearZone.Chip when hit.Index < _query.Chips.Count:
                 SetQuery(_query.Without(hit.Index));
                 return true;
@@ -450,6 +461,20 @@ internal sealed partial class UiGearDeck
         return (_b.ResolveDragIcon(o.Type, o.IconId, o.IconUnderlayId, o.IconOverlayId, o.Effects), 32, 32);
     }
 
+    /// <summary>A group drag fans up to two more selected icons behind the lifted one, in shown order.</summary>
+    public override IReadOnlyList<uint>? GetDragGhostStack()
+    {
+        if (GetDragPayload() is not ItemDragPayload p || _selection.Count < 2 || !DraggedIsGroupMovable(p.ObjId)) return null;
+        var icons = new List<uint>(2);
+        foreach (GearItemView row in Shown)
+        {
+            if (icons.Count == 2) break;
+            if (row.Id == p.ObjId || !IsGroupMovable(row) || _b.Objects().Get(row.Id) is not { } o) continue;
+            icons.Add(_b.ResolveDragIcon(o.Type, o.IconId, o.IconUnderlayId, o.IconOverlayId, o.Effects));
+        }
+        return icons.Count > 0 ? icons : null;
+    }
+
     // ---- drop target ----
 
     /// <summary>An item payload the deck takes; a shortcut leaving the bar is not an item move.</summary>
@@ -485,7 +510,35 @@ internal sealed partial class UiGearDeck
 
     private bool DropReleased(object? payload, float x, float y)
     {
+        uint fromDeck = _dragFromDeck;
+        _dragFromDeck = 0u;
         if (ItemPayload(payload) is not { } p || DropTargetAt(x, y) is not { } hit) return false;
+        // Ctrl/Cmd or Shift on a loose stack dragged from the deck onto a pack place asks how many to split off,
+        // whatever the selection size; anything else falls through to the group or one-item drop.
+        (bool toggle, bool range) = ReadModifiers();
+        if ((toggle || range) && fromDeck == p.ObjId && _b.OpenSplit is { } openSplit && GroupTarget(hit) is { } where)
+        {
+            foreach (GearItemView row in Shown)
+            {
+                if (row.Id != p.ObjId) continue;
+                if (row.Stack > 1 && !row.Worn && !row.IsPack)
+                {
+                    openSplit(new GearSplitRequest(row.Id, row.Name, row.Stack, where.Pack, where.Slot));
+                    return true;
+                }
+                break;
+            }
+        }
+        // A selection of two or more dragged from the deck onto a pack, a pack row, a cell or empty pack space
+        // moves as a group through the queue; equipment and figure drops take the one item as before.
+        // Only a dragged loose pack item carries the selection; a worn or pack row, or a selection with nothing
+        // movable, falls through to the one-item drop.
+        if (fromDeck == p.ObjId && _selection.Count > 1 && DraggedIsGroupMovable(p.ObjId) && GroupTarget(hit) is { } target
+            && MoveSelection(target.Pack, target.Slot))
+        {
+            _b.Log?.Invoke($"[gear-deck] drop selection ({_selection.Count}) on {hit.Zone} {hit.Index}");
+            return true;
+        }
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
         _actions.Last = null;
         string action;

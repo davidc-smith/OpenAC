@@ -52,6 +52,7 @@ public static class GearQueryEngine
         GearField.Value => InRange(chip, item.Value),
         GearField.Burden => InRange(chip, item.Burden),
         GearField.Stack => InRange(chip, item.Stack),
+        GearField.Locked => item.Locked,
         _ => true,
     };
 
