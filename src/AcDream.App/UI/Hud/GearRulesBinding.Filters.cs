@@ -250,7 +250,7 @@ public sealed partial class GearRulesBinding
             <group layout="row" gap="8" grow="1">
               <group layout="column" gap="2" grow="1">
                 <label text="Suggestions (click to add)" h="16" />
-                <list items="{SuggestionTexts}" selected="{NoSuggestionSelected}" onchange="{PickSuggestion}" rowheight="18" grow="1" />
+                <list items="{SuggestionTexts}" selected="{NoSuggestionSelected}" onchange="{PickSuggestion}" keepfocus="true" rowheight="18" grow="1" />
               </group>
               <group layout="column" gap="2" grow="1">
                 <label text="Chips" h="16" />

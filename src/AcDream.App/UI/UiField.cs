@@ -127,7 +127,11 @@ public sealed class UiField : UiElement
     /// nobody is typing in the field it follows this: a value that changes
     /// behind the field -- a profile loading after the panel was built -- is
     /// shown, instead of the text the field happened to be built with. The
-    /// owner is not told about a change it made itself.
+    /// owner is not told about a change it made itself. A focused field whose
+    /// owner keeps the typed text follows it too, between keystrokes: the first tick after typing only
+    /// notes the owner's value (so an owner that trims or clamps does not
+    /// fight the caret), and a later change -- the owner clearing the text
+    /// while the field keeps focus -- is shown.
     /// </summary>
     public Func<string>? BoundText { get; set; }
 
@@ -136,11 +140,18 @@ public sealed class UiField : UiElement
 
     private void FollowBoundText()
     {
-        if (BoundText is null || _focused)
+        // Only an owner that keeps what is typed (onchange) is followed while
+        // focused; any other owner's value would overwrite the typing.
+        if (BoundText is null || (_focused && OnTextChanged is null))
             return;
         string bound = BoundText() ?? string.Empty;
         if (string.Equals(bound, _lastBoundText, StringComparison.Ordinal))
             return;
+        if (_focused && _lastBoundText is null)
+        {
+            _lastBoundText = bound;
+            return;
+        }
         _lastBoundText = bound;
         if (string.Equals(bound, _text, StringComparison.Ordinal))
             return;
@@ -855,6 +866,9 @@ public sealed class UiField : UiElement
                 _focused = false; ResetRecall();
                 _selAnchor = null; _selecting = false; _repeatKey = null;
                 _preserveFocusSelectionOnMouseDown = false;
+                // Show the owner's value once focus is gone, even one noted
+                // while focused (an owner that trimmed what was typed).
+                _lastBoundText = null;
                 // A callback that hides or removes this field's panel must not
                 // report the same focus loss again while it is still running.
                 if (_dispatchingFocusLost) return true;

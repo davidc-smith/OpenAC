@@ -182,6 +182,13 @@ public abstract class UiElement
     /// </summary>
     public virtual bool AcceptsFocus { get; set; }
     public bool FocusOnMouseClick { get; set; } = true;
+
+    /// <summary>
+    /// A left press on this element or anything inside it leaves keyboard
+    /// focus where it is, so a field keeps the caret while a list beside it
+    /// (its suggestions) is clicked.
+    /// </summary>
+    public bool KeepsKeyboardFocusOnClick { get; set; }
     public bool TabStop         { get; set; }
 
     /// <summary>
