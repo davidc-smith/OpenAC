@@ -367,6 +367,7 @@ public sealed class UiGearDeckOrganiseTests
         Assert.True(i >= 0, $"no '{label}' in [{string.Join(", ", items)}]");
         Assert.True(rig.Deck.Menu.ItemsEnabledSource!()[i], $"'{label}' is disabled");
         rig.Deck.Menu.Selected!(i);
+        rig.Deck.Menu.Close();
     }
 
     [Fact]
