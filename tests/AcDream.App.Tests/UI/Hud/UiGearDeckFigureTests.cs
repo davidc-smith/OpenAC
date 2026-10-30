@@ -79,10 +79,10 @@ public sealed class UiGearDeckFigureTests
     }
 
     private static Rig Make(bool attach = true, Func<GearDeckSettings, GearDeckSettings>? settings = null,
-        float scale = 1f, List<string>? log = null)
+        float scale = 1f, List<string>? log = null, GearDeckSession? session = null)
     {
         ClientObjectTable table = World();
-        var session = new GearDeckSession(null, () => "", () => false);
+        session ??= new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
         var actions = new Fake();
         Rig rig = null!;
@@ -280,7 +280,7 @@ public sealed class UiGearDeckFigureTests
     [Theory]
     [InlineData(1f)]
     [InlineData(1.5f)]
-    public void DragWhereNothingIsWorn_Turns_AndTheMapGoesQuiet(float scale)
+    public void Locked_ADrag_Turns_AndTheMapGoesQuiet(float scale)
     {
         Rig r = Make(settings: Locked, scale: scale);
         var chest = MapPoint(r.Deck, 50, 80);
@@ -366,6 +366,30 @@ public sealed class UiGearDeckFigureTests
         Assert.True(r.Deck.FigurePose.IsDefault);
         SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
         Click(r.Deck, r.Deck.Geometry.FoldStud);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void ASessionEnd_StandsTheFigureUp()
+    {
+        Rig r = Make(settings: Locked);
+        SendAt(r.Deck, UiEventType.Scroll, MapPoint(r.Deck, 50, 80), data0: 1);
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        r.Session.EndSession();
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void SwitchingCharacter_StandsTheFigureUp()
+    {
+        string key = "Davian";
+        var session = new GearDeckSession(null, () => key, () => true, () => 0);
+        session.Tick();
+        Rig r = Make(settings: Locked, session: session);
+        SendAt(r.Deck, UiEventType.Scroll, MapPoint(r.Deck, 50, 80), data0: 1);
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        key = "Bob";
+        session.Tick();
         Assert.True(r.Deck.FigurePose.IsDefault);
     }
 

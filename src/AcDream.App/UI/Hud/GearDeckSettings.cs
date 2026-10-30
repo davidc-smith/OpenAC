@@ -28,11 +28,12 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
         try
         {
             if (JsonNode.Parse(json) is not JsonObject o) return Default;
-            bool folded = o["folded"]?.GetValue<bool>() ?? false;
-            GearPackView view = (string?)o["view"] == "list" ? GearPackView.List : GearPackView.Grid;
-            uint pack = o["selectedPack"]?.GetValue<uint>() ?? 0u;
-            GearEquipView equip = (string?)o["equip"] == "slots" ? GearEquipView.Slots : GearEquipView.Figure;
-            bool figureLocked = o["figureLocked"] is JsonValue v && v.TryGetValue(out bool locked) && locked;
+            // A value of the wrong type reads as that setting's default; the others still load.
+            bool folded = Read<bool>(o, "folded");
+            GearPackView view = Read<string>(o, "view") == "list" ? GearPackView.List : GearPackView.Grid;
+            uint pack = Read<uint>(o, "selectedPack");
+            GearEquipView equip = Read<string>(o, "equip") == "slots" ? GearEquipView.Slots : GearEquipView.Figure;
+            bool figureLocked = Read<bool>(o, "figureLocked");
             var saved = new List<SavedFilter>();
             JsonArray? unread = null;
             bool hasFilters = o["savedFilters"] is JsonArray;
@@ -56,6 +57,9 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
         }
         catch (Exception) { return Default; }
     }
+
+    private static T? Read<T>(JsonObject o, string key) =>
+        o[key] is JsonValue v && v.TryGetValue(out T? value) ? value : default;
 
     public string ToJson()
     {

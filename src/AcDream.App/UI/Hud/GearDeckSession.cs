@@ -32,6 +32,8 @@ internal sealed class GearDeckSession(IGearDeckStore? store, Func<string> charac
         if (real && key != _key)
         {
             Flush();
+            // Another character without a logout: end the old one's session first, as a logout would.
+            if (_key is not null) EndSession();
             _key = key;
             Settings = GearDeckSettings.FromJson(SafeLoad(key));
             Changed?.Invoke();
