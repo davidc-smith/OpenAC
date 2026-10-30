@@ -18,7 +18,12 @@ public sealed class GearDeckRootDragTests
         public readonly List<string> Calls = [];
         public bool Ready() => true;
         public void Report(string text) => Calls.Add($"report {text}");
-        public bool PutInContainer(uint item, uint container, int placement, bool fromGround) { Calls.Add($"put {item:X} {container:X} {placement}"); return true; }
+        public bool PutInContainer(uint item, uint container, int placement, bool fromGround)
+        {
+            Calls.Add($"put {item:X} {container:X} {placement}");
+            if (fromGround) Calls.Add($"pickup {item:X}");
+            return true;
+        }
         public bool Merge(uint from, uint to) { Calls.Add($"merge {from:X} {to:X}"); return true; }
         public bool WieldFromPaperdoll(uint item, EquipMask mask) { Calls.Add($"wield {item:X} {mask}"); return true; }
         public bool WieldSecondary(uint item) { Calls.Add($"secondary {item:X}"); return true; }
@@ -33,10 +38,11 @@ public sealed class GearDeckRootDragTests
         public readonly UiGearDeck Deck;
         public readonly GearDeckSession Session;
         public readonly List<string> Log = [];
+        public readonly ClientObjectTable Objects;
 
         public World()
         {
-            var t = new ClientObjectTable();
+            var t = Objects = new ClientObjectTable();
             t.AddOrUpdate(new ClientObject { ObjectId = Player, ItemsCapacity = 102, ContainersCapacity = 7 });
             t.AddOrUpdate(new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24 });
             t.MoveItem(Bag, Player, 0);
@@ -133,6 +139,32 @@ public sealed class GearDeckRootDragTests
         Assert.Equal(GearPackView.List, w.Session.Settings.View);
         Assert.Null(w.Root.DragSource);
         Assert.Equal(left, w.Deck.ScreenPosition.X);
+    }
+
+    /// <summary>Live bug: with the Modern HUD on, dragging an item lying on the ground into the
+    /// deck did nothing (the world lifted only the player). The world lift of a loose item
+    /// carries a ground payload, and the deck's drop sends the pickup.</summary>
+    [Fact]
+    public void GroundItemDraggedFromTheWorldOntoASidePack_PicksItUp()
+    {
+        const uint Loot = 0x7000_0D01u;
+        var w = new World();
+        w.Objects.AddOrUpdate(new ClientObject { ObjectId = Loot, Name = "Loot", Type = ItemType.Misc, IconId = 0x0600_1234u });
+        w.Root.WorldDragRequested = (_, _) => WorldDrag.Build(
+            Loot, Player, outOfCombat: true, (_, _, _, _, _) => 0u, null,
+            groundItem: id => w.Objects.Get(id));
+        int wx = (int)w.Root.Width - 20, wy = (int)w.Root.Height - 20;
+
+        w.Root.OnMouseMove(wx, wy);
+        w.Root.OnMouseDown(UiMouseButton.Left, wx, wy);
+        w.Root.OnMouseMove(wx - 30, wy - 30);
+        Assert.Same(w.Root, w.Root.DragSource);   // a world lift, not a drag off the deck
+        var to = w.Screen(w.Deck.Geometry.SidePack(1));
+        w.Root.OnMouseMove(to.X, to.Y);
+        w.Root.OnMouseUp(UiMouseButton.Left, to.X, to.Y);
+
+        Assert.Contains($"put {Loot:X} {Bag:X} 0", w.Actions.Calls);
+        Assert.Contains($"pickup {Loot:X}", w.Actions.Calls);
     }
 
     [Fact]

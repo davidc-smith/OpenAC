@@ -1101,7 +1101,10 @@ internal sealed class RetailInteractionRetainedUiCompositionFactory
                 IsGameplayDisplay: () => d.Settings.IsGameplayDisplay,
                 WorldDrag: new WorldDragRuntimeBindings(
                     (x, y) => late.Selection.PickAt(x, y, includeSelf: true),
-                    () => d.Actions.Combat.CurrentMode == CombatMode.NonCombat),
+                    () => d.Actions.Combat.CurrentMode == CombatMode.NonCombat,
+                    // Modern HUD only: a loose ground item can be dragged into the Gear Deck.
+                    // The retail HUD keeps lifting nothing but the player.
+                    LiftsGroundItem: guid => modernHud && late.Selection.CanPickUp(guid)),
                 CommandDeck: new CommandDeckRuntimeBindings(
                     Enabled: () => modernHud,
                     ToggleCombat: d.CombatModeCommands.Toggle,

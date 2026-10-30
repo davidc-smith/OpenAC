@@ -276,10 +276,13 @@ public sealed record WorldTooltipRuntimeBindings(
     Func<bool> Enabled);
 
 /// <summary>What a drag started on the world needs: the object at a screen
-/// point (the player included) and whether the player is out of combat.</summary>
+/// point (the player included) and whether the player is out of combat.
+/// <paramref name="LiftsGroundItem"/> says whether a world object may be lifted
+/// as a ground item (the Modern HUD binds it); null lifts no world item.</summary>
 public sealed record WorldDragRuntimeBindings(
     Func<float, float, uint?> ObjectAt,
-    Func<bool> OutOfCombat);
+    Func<bool> OutOfCombat,
+    Func<uint, bool>? LiftsGroundItem = null);
 
 public sealed record ConfirmationRuntimeBindings(
     Action<uint, uint, bool> SendResponse);
@@ -5659,13 +5662,19 @@ public sealed class RetailUiRuntime : IDisposable
                 b.PlayerGuid(),
                 worldDrag.OutOfCombat(),
                 b.ResolveIcon,
-                b.ResolveDragIcon);
+                b.ResolveDragIcon,
+                worldDrag.LiftsGroundItem is { } lifts ? guid => LooseGroundItem(b.Objects, guid, lifts) : null);
         }
 
         PaperdollViewportWidget = layout.FindElement(0x100001D5u) as UiViewport;
         InventoryFrame = (UiNineSlicePanel)handle.OuterFrame;
         Console.WriteLine("[UI] retail inventory window from LayoutDesc importer (0x21000023).");
     }
+
+    /// <summary>The item a world lift carries: one the client knows that lies loose
+    /// in the world (in no container, wielded by no one) and may be picked up.</summary>
+    private static ClientObject? LooseGroundItem(ClientObjectTable objects, uint guid, Func<uint, bool> lifts) =>
+        objects.Get(guid) is { ContainerId: 0u, WielderId: 0u } item && lifts(guid) ? item : null;
 
     private void MountExternalContainer()
     {
