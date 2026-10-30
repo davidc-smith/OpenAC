@@ -69,11 +69,11 @@ public sealed class UiGearDeckOrganiseTests
         ObjectId = id, Name = "Pyreal", Type = ItemType.Money, WeenieClassId = CoinWeenie, StackSize = size, StackSizeMax = 100,
     };
 
-    private static Rig Make(bool worn = false)
+    private static Rig Make(bool worn = false, int bagCapacity = 24)
     {
         var t = new ClientObjectTable();
         t.AddOrUpdate(new ClientObject { ObjectId = Player, Type = ItemType.Creature, ItemsCapacity = 102, ContainersCapacity = 7 });
-        Place(t, new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24, Name = "Pack" }, Player, 0);
+        Place(t, new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = bagCapacity, Name = "Pack" }, Player, 0);
         Place(t, Coins(Coins30, 30), Player, 0);
         Place(t, Coins(Coins50, 50), Player, 1);
         uint[] misc = [Misc0, Misc1, Misc2, Misc3];
@@ -340,9 +340,9 @@ public sealed class UiGearDeckOrganiseTests
         Assert.Empty(rig.Sender.Sent);
     }
 
-    private static (UiRoot Root, Rig Rig) Rooted()
+    private static (UiRoot Root, Rig Rig) Rooted(int bagCapacity = 24)
     {
-        Rig rig = Make();
+        Rig rig = Make(bagCapacity: bagCapacity);
         var root = new UiRoot { Width = 1200, Height = 900 };
         root.AddChild(rig.Deck);
         rig.Deck.Refresh();
@@ -458,5 +458,21 @@ public sealed class UiGearDeckOrganiseTests
         RightClick(root, rig.Deck, CellOf(rig, Coins30));
         Choose(rig, "Combine like stacks");
         Assert.Equal(GearMove.Merge(Coins30, Coins50, 30), rig.Sender.Sent.Single());
+    }
+
+    [Fact]
+    public void ApplyPackRules_FromThePackMenu_QueuesSorting_AndReportsAFullPack()
+    {
+        var (root, rig) = Rooted(bagCapacity: 1);
+        rig.Session.Update(s => s.WithSaved(new SavedFilter("Pyreals", GearQuery.Empty.With(GearChip.NameContains("pyreal"))))
+            .WithRules([new GearPackRule("Pyreals", Bag, OnArrival: false)]));
+        RightClick(root, rig.Deck, rig.Deck.Geometry.SidePack(0));
+        Choose(rig, "Apply pack rules");
+        Assert.Equal("Sorting", rig.Queue.Label);
+        GearMove put = Assert.Single(rig.Sender.Sent);
+        Assert.Equal((GearMoveKind.Put, Bag), (put.Kind, put.Target));
+        string report = Assert.Single(rig.Actions.Calls, c => c.StartsWith("report ", StringComparison.Ordinal));
+        Assert.EndsWith("1 left where they were.", report);
+        Assert.Equal("report Pack 2 is full; 1 left where they were.", report);
     }
 }

@@ -34,7 +34,9 @@ internal sealed partial class UiGearDeck
     private IReadOnlyList<GearMove> _menuCombine = [];
     /// <summary>For <see cref="MenuKind.Pack"/>: the pack clicked and the plans its entries would run, as of the open.</summary>
     private uint _menuPack;
-    private IReadOnlyList<GearMove> _menuTidy = [], _menuRules = [];
+    private IReadOnlyList<GearMove> _menuTidy = [];
+    private GearRulePlan _menuRules = NoRules;
+    private static readonly GearRulePlan NoRules = new([], new Dictionary<uint, int>());
 
     /// <summary>The sort menu's fields, in the order it lists them: Pack order (the default) first.</summary>
     private static readonly GearSortField[] SortFields =
@@ -82,12 +84,12 @@ internal sealed partial class UiGearDeck
         _menuSplit = null;
         _menuCombine = [];
         _menuTidy = [];
-        _menuRules = [];
+        _menuRules = NoRules;
         if (_menuKind == MenuKind.Pack)
         {
             _menuPack = _model.Packs[hit.Index].Id;
             _menuTidy = PackTidyPlanner.Plan(_menuPack, _projection.ForPack(_menuPack));
-            _menuRules = RulePlan(null).Moves;
+            _menuRules = RulePlan(null);
             _menuItems = PackMenuItems;
         }
         if (_menuKind == MenuKind.SavedFilter)
@@ -192,7 +194,7 @@ internal sealed partial class UiGearDeck
         {
             flags[0] = _menuTidy.Count > 0;
             flags[1] = CombineMoves.Count > 0;
-            flags[2] = _menuRules.Count > 0;
+            flags[2] = _menuRules.Moves.Count > 0 || _menuRules.Full.Count > 0;   // a full pack still reports
             flags[3] = true;
             flags[4] = _b.OpenRules is not null;
         }
@@ -239,7 +241,7 @@ internal sealed partial class UiGearDeck
                 {
                     case TidyLabel when _menuTidy.Count > 0: Run("Tidying", _menuTidy); break;
                     case CombineStacksLabel: CombineAll(); break;
-                    case ApplyRulesLabel when _menuRules.Count > 0: ApplyRules(_menuRules); break;
+                    case ApplyRulesLabel when _menuRules.Moves.Count > 0 || _menuRules.Full.Count > 0: ApplyRules(_menuRules); break;
                     case RulesLabel: _b.OpenRules?.Invoke(); break;
                 }
                 break;

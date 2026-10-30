@@ -60,10 +60,17 @@ internal sealed partial class UiGearDeck
     private void RequestSplit(GearItemView row) =>
         _b.OpenSplit?.Invoke(new GearSplitRequest(row.Id, row.Name, row.Stack, row.PackId, row.Slot + 1));
 
-    /// <summary>The pack rules' moves; a later task fills this in. <paramref name="only"/> limits it to arrived items.</summary>
-    internal GearRulePlan RulePlan(IReadOnlyCollection<uint>? only) => new([], new Dictionary<uint, int>());
+    /// <summary>The pack rules' moves, each rule with its saved filter's query. <paramref name="only"/> limits it to those items.</summary>
+    internal GearRulePlan RulePlan(IReadOnlyCollection<uint>? only) =>
+        PackRulePlanner.Plan(_projection.All, _model.Packs, GearRules.Resolve(_b.Session.Settings), only);
 
-    private void ApplyRules(IReadOnlyList<GearMove> moves) => Run("Sorting", moves);
+    /// <summary>Runs a rule plan as "Sorting", with one line per full pack.</summary>
+    private void ApplyRules(GearRulePlan plan)
+    {
+        foreach ((uint pack, int left) in plan.Full)
+            _b.Actions.Report($"{GearRules.PackName(_model.Packs, pack)} is full; {left.ToString(CultureInfo.InvariantCulture)} left where they were.");
+        Run("Sorting", plan.Moves);
+    }
 
     internal void StopQueue()
     {

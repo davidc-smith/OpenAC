@@ -577,6 +577,26 @@ public sealed class RetailUiRuntime : IDisposable
         if (_gearSplit is { IsOpen: true } open) open.Toggle();
     }
 
+    private PluginAppearanceWindow? _gearRules;
+
+    /// <summary>The Gear Deck's Pack rules popup, docked by the deck; it edits the deck's session.</summary>
+    private void ToggleGearRules()
+    {
+        CloseGearSplit();
+        _gearRules ??= new PluginAppearanceWindow(Host.Root, close =>
+            Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.GearRulesBinding.Markup,
+                new Hud.GearRulesBinding(() => _gearDeckSession, () => _gearDeck?.Model.Packs ?? []) { Close = close },
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close),
+            onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _gearDeck, window));
+        _gearRules.Toggle();
+    }
+
+    private void CloseGearRules()
+    {
+        if (_gearRules is { IsOpen: true } open) open.Toggle();
+    }
+
     private void CloseChatDeckSettings()
     {
         if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
@@ -590,6 +610,8 @@ public sealed class RetailUiRuntime : IDisposable
     /// <summary>The Gear Deck's move queue (Combine, group drags) and the inventory channel it listens on.</summary>
     private Hud.GearMoveQueue? _gearQueue;
     private Hud.RuntimeGearMoveChannel? _gearChannel;
+    /// <summary>Combines and sorts what arrives in the packs, and drops stale lock ids once per login.</summary>
+    private Hud.GearInventoryWatcher? _gearWatcher;
     /// <summary>What identify replies said about each object; the Target Deck's vitals read it.</summary>
     private TargetAppraisalLog? _targetAppraisalLog;
     private TargetAutoAppraisal? _targetAuto;
@@ -1017,6 +1039,8 @@ public sealed class RetailUiRuntime : IDisposable
         _gearDeckSession?.Tick();
         // Every frame, shown or not: a Combine or group move keeps going with the deck closed.
         _gearQueue?.Tick();
+        // After the queue, so an arrival's sort starts the frame the last queue ended.
+        _gearWatcher?.Tick();
         _spellDeckSync?.Tick();
         // Every frame, shown or not: the model queues every line until it is ticked.
         _chatDeckSession?.Tick();
@@ -1494,6 +1518,7 @@ public sealed class RetailUiRuntime : IDisposable
         _hudSwitch?.CloseAllOnDemand();
         _gearDeckSession?.EndSession();
         CloseGearSplit();
+        CloseGearRules();
         _gearQueue?.Cancel();   // the next character's inventory is not this queue's
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
@@ -4024,6 +4049,8 @@ public sealed class RetailUiRuntime : IDisposable
             _gearChannel = new Hud.RuntimeGearMoveChannel(items);
             _gearQueue = new Hud.GearMoveQueue(_gearChannel, new Hud.GearMoveSender(b.Objects, b.PlayerGuid, gearActions),
                 () => Environment.TickCount64 / 1000.0, _bindings.Options.DisplaySystemMessage);
+            _gearWatcher = new Hud.GearInventoryWatcher(() => b.Objects, b.PlayerGuid, session, _gearQueue, ResolveAppropriateItemName,
+                _itemLocks, () => Environment.TickCount64 / 1000.0, Console.WriteLine);
 
             deck = new Hud.UiGearDeck(
                 new Hud.GearDeckBindings(
@@ -4048,7 +4075,8 @@ public sealed class RetailUiRuntime : IDisposable
                     ClickMap: _paperdollClickMap,
                     Queue: _gearQueue,
                     Locks: _itemLocks,
-                    OpenSplit: OpenGearSplit),
+                    OpenSplit: OpenGearSplit,
+                    OpenRules: ToggleGearRules),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,
@@ -4063,6 +4091,8 @@ public sealed class RetailUiRuntime : IDisposable
                 while (window.Parent is { } parent && !ReferenceEquals(parent, Host.Root)) window = parent;
                 if (window.Parent is not null) Host.Root.RemoveChild(window);
             }
+            _gearWatcher?.Dispose();
+            _gearWatcher = null;
             _gearQueue?.Dispose();
             _gearQueue = null;
             _gearChannel?.Dispose();
@@ -6569,6 +6599,8 @@ public sealed class RetailUiRuntime : IDisposable
                 _gearDeck?.OnHidden();
                 _gearDeckSession?.EndSession();   // writes a pending settings change
                 _gearDeck?.Detach();
+                _gearWatcher?.Dispose();
+                _gearWatcher = null;
                 _gearDeckSession = null;
                 _gearQueue?.Cancel();
                 _gearQueue?.Dispose();
