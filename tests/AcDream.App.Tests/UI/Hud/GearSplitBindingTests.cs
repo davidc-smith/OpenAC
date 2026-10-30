@@ -13,7 +13,7 @@ public sealed class GearSplitBindingTests
         var b = new GearSplitBinding { Close = () => closed++ };
         b.Open(new GearSplitRequest(0xA1, "Pyreal Mote", 25, 0x50000001, 4), (s, c, slot, n) => { sent.Add((s, c, slot, n)); return true; });
         Assert.Equal(12, b.Amount);
-        Assert.Equal("Split Pyreal Mote (25)", b.Title);
+        Assert.Equal("Pyreal Mote (25)", b.Caption);
         b.SetAmount(99); Assert.Equal(24, b.Amount);
         b.SetAmount(0); Assert.Equal(1, b.Amount);
         b.Half(); Assert.Equal(12, b.Amount);

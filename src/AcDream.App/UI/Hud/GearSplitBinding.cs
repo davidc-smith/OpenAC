@@ -7,7 +7,8 @@ public sealed class GearSplitBinding
     private Func<uint, uint, int, int, bool>? _send;
 
     public const string Markup = """
-        <panel x="120" y="120" w="260" h="118" title="{Title}" theme="plugin" layout="column" padding="10" gap="8">
+        <panel x="120" y="120" w="260" h="146" title="Split stack" theme="plugin" layout="column" padding="10" gap="8">
+          <label text="{Caption}" h="20" />
           <group layout="row" gap="8" align="center" h="22">
             <label text="Amount" w="60" />
             <number value="{Amount}" min="1" max="999999" step="1" onchange="{SetAmount}" w="90" />
@@ -28,7 +29,7 @@ public sealed class GearSplitBinding
         Amount = Math.Max(1, request.Max / 2);
     }
 
-    public string Title => _request is { } r ? $"Split {r.Name} ({r.Max})" : "Split";
+    public string Caption => _request is { } r ? $"{r.Name} ({r.Max})" : "";
     public int Amount { get; private set; } = 1;
     public Action<int> SetAmount => v => Amount = _request is { } r ? Math.Clamp(v, 1, Math.Max(1, r.Max - 1)) : 1;
     public Action Half => () => SetAmount(_request is { } r ? r.Max / 2 : 1);
