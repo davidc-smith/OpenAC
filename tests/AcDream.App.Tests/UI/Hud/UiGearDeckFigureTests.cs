@@ -108,6 +108,9 @@ public sealed class UiGearDeckFigureTests
         return rig;
     }
 
+    /// <summary>The figure's padlock shut: a press turns it and the wheel zooms it.</summary>
+    private static GearDeckSettings Locked(GearDeckSettings s) => s with { FigureLocked = true };
+
     private static (float X, float Y) Centre(DeckRect r) => (r.X + r.W / 2f, r.Y + r.H / 2f);
 
     private static void Send(UiGearDeck deck, int type, DeckRect at, object? payload = null, int data0 = 0)
@@ -279,7 +282,7 @@ public sealed class UiGearDeckFigureTests
     [InlineData(1.5f)]
     public void DragWhereNothingIsWorn_Turns_AndTheMapGoesQuiet(float scale)
     {
-        Rig r = Make(scale: scale);
+        Rig r = Make(settings: Locked, scale: scale);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.MouseMove, chest);
         GearDeckHit hovered = r.Deck.Hover;
@@ -310,7 +313,7 @@ public sealed class UiGearDeckFigureTests
     [Fact]
     public void ReleasingAfterATurn_CatchesTheHoverUp()
     {
-        Rig r = Make();
+        Rig r = Make(settings: Locked);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.MouseMove, chest);
         SendAt(r.Deck, UiEventType.MouseDown, chest);
@@ -326,7 +329,7 @@ public sealed class UiGearDeckFigureTests
     [Fact]
     public void AClickWobble_DoesNotTurn()
     {
-        Rig r = Make();
+        Rig r = Make(settings: Locked);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.MouseDown, chest);
         SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 2f, chest.Y));
@@ -341,7 +344,7 @@ public sealed class UiGearDeckFigureTests
     [Fact]
     public void TheWheel_ZoomsTheFigure_AndDoubleClickResets()
     {
-        Rig r = Make();
+        Rig r = Make(settings: Locked);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.Scroll, chest, data0: 2);
         Assert.Equal(1.12f * 1.12f, r.Deck.FigurePose.Zoom, 3);
@@ -356,7 +359,7 @@ public sealed class UiGearDeckFigureTests
     [Fact]
     public void HidingOrFolding_StandsTheFigureUp()
     {
-        Rig r = Make();
+        Rig r = Make(settings: Locked);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
         r.Deck.OnHidden();
@@ -369,7 +372,7 @@ public sealed class UiGearDeckFigureTests
     [Fact]
     public void TheSlotsStud_StandsTheFigureUp()
     {
-        Rig r = Make();
+        Rig r = Make(settings: Locked);
         var chest = MapPoint(r.Deck, 50, 80);
         SendAt(r.Deck, UiEventType.Scroll, chest, data0: 1);
         Assert.False(r.Deck.FigurePose.IsDefault);
@@ -401,6 +404,143 @@ public sealed class UiGearDeckFigureTests
         Assert.False(r.Deck.DropHighlight?.Accept);
         SendAt(r.Deck, UiEventType.DropReleased, chest, payload: payload);
         Assert.DoesNotContain(r.Actions.Calls, c => c.StartsWith("wield"));
+    }
+
+    // ---- the padlock ----
+
+    [Fact]
+    public void Unlocked_ABareFigureDrag_DoesNotTurn()
+    {
+        Rig r = Make();
+        Assert.False(r.Deck.FigureLocked);
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
+        SendAt(r.Deck, UiEventType.MouseUp, (chest.X + 50f, chest.Y));
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void Unlocked_TheWheel_DoesNotZoom_AndFallsThrough()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        r.Deck.HitTestLocal(chest.X, chest.Y);
+        bool handled = r.Deck.OnEvent(new UiEvent(0, r.Deck, UiEventType.Scroll, Data0: 2, Data1: (int)chest.X, Data2: (int)chest.Y));
+        Assert.False(handled);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void Unlocked_TheHelmStillLifts_AndADoubleClickTakesItOff()
+    {
+        Rig r = Make();
+        var head = MapPoint(r.Deck, 50, 10);
+        Assert.True(r.Deck.HitTestLocal(head.X, head.Y));
+        Assert.True(r.Deck.IsDragSource);
+        DoubleClickAt(r.Deck, head);
+        Assert.Contains(r.Actions.Calls, c => c.StartsWith($"put {Helm:X} "));
+    }
+
+    [Fact]
+    public void Unlocked_ADoubleClickOnBareFigure_DoesNothing()
+    {
+        Rig r = Make();
+        var chest = MapPoint(r.Deck, 50, 80);
+        DoubleClickAt(r.Deck, chest);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+        Assert.Empty(r.Actions.Calls);
+    }
+
+    [Fact]
+    public void Locked_APressOnTheHelm_TurnsTheFigure_AndLiftsNothing()
+    {
+        Rig r = Make(settings: Locked);
+        var head = MapPoint(r.Deck, 50, 10);
+        Assert.True(r.Deck.HitTestLocal(head.X, head.Y));
+        Assert.False(r.Deck.IsDragSource);
+        Assert.True(r.Deck.CapturesPointerDrag);   // the window does not drag either
+        SendAt(r.Deck, UiEventType.MouseDown, head);
+        Assert.Null(r.Deck.GetDragPayload());
+        SendAt(r.Deck, UiEventType.MouseMove, (head.X + 50f, head.Y));
+        Assert.Equal(0.6f, r.Deck.FigurePose.Yaw, 3);
+    }
+
+    [Fact]
+    public void Locked_TheWheelZooms()
+    {
+        Rig r = Make(settings: Locked);
+        SendAt(r.Deck, UiEventType.Scroll, MapPoint(r.Deck, 50, 80), data0: 1);
+        Assert.Equal(1.12f, r.Deck.FigurePose.Zoom, 3);
+    }
+
+    [Fact]
+    public void Locked_ADoubleClickOnTheHelm_ResetsThePose_AndTakesNothingOff()
+    {
+        Rig r = Make(settings: Locked);
+        var head = MapPoint(r.Deck, 50, 10);
+        SendAt(r.Deck, UiEventType.Scroll, head, data0: 1);
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        DoubleClickAt(r.Deck, head);   // zoomed, the map names no region there
+        Assert.True(r.Deck.FigurePose.IsDefault);
+        DoubleClickAt(r.Deck, head);   // at rest the press names the helm itself
+        Assert.True(r.Deck.FigurePose.IsDefault);
+        Assert.DoesNotContain(r.Actions.Calls, c => c.StartsWith($"put {Helm:X} "));
+    }
+
+    [Fact]
+    public void Locked_DroppingTheCapOnTheHead_StillWearsIt()
+    {
+        Rig r = Make(settings: Locked);
+        var head = MapPoint(r.Deck, 50, 10);
+        var payload = new ItemDragPayload(Cap, ItemDragSource.Inventory, 0, null);
+        SendAt(r.Deck, UiEventType.DragEnter, head, payload: payload);
+        Assert.True(r.Deck.DropHighlight?.Accept);
+        SendAt(r.Deck, UiEventType.DropReleased, head, payload: payload);
+        Assert.Contains(r.Actions.Calls, c => c.StartsWith($"wield {Cap:X} "));
+    }
+
+    [Fact]
+    public void ClickingTheLock_FlipsTheSetting_AndUnlockingStandsTheFigureUp()
+    {
+        Rig r = Make();
+        Assert.Equal(GearZone.FigureLock, r.Deck.HitAt(Centre(r.Deck.Geometry.FigureLock).X, Centre(r.Deck.Geometry.FigureLock).Y).Zone);
+        Click(r.Deck, r.Deck.Geometry.FigureLock);
+        Assert.True(r.Session.Settings.FigureLocked);
+        var chest = MapPoint(r.Deck, 50, 80);
+        SendAt(r.Deck, UiEventType.MouseDown, chest);
+        SendAt(r.Deck, UiEventType.MouseMove, (chest.X + 50f, chest.Y));
+        SendAt(r.Deck, UiEventType.MouseUp, (chest.X + 50f, chest.Y));
+        Assert.False(r.Deck.FigurePose.IsDefault);
+        Click(r.Deck, r.Deck.Geometry.FigureLock);
+        Assert.False(r.Session.Settings.FigureLocked);
+        Assert.True(r.Deck.FigurePose.IsDefault);
+    }
+
+    [Fact]
+    public void TheLockTooltip_NamesTheState()
+    {
+        Rig r = Make();
+        DeckRect lockStud = r.Deck.Geometry.FigureLock;
+        Send(r.Deck, UiEventType.MouseMove, lockStud);
+        r.Now = 10;
+        Assert.Equal("Unlocked: drag gear off", r.Deck.VisibleTooltip?.Title);
+        Click(r.Deck, lockStud);
+        Send(r.Deck, UiEventType.MouseMove, r.Deck.Geometry.SlotsStud);
+        Send(r.Deck, UiEventType.MouseMove, lockStud);
+        r.Now = 20;
+        Assert.Equal("Locked: drag to turn", r.Deck.VisibleTooltip?.Title);
+    }
+
+    private static void DoubleClickAt(UiGearDeck deck, (float X, float Y) at)
+    {
+        SendAt(deck, UiEventType.MouseDown, at);
+        SendAt(deck, UiEventType.MouseUp, at);
+        SendAt(deck, UiEventType.Click, at);
+        SendAt(deck, UiEventType.MouseDown, at);
+        SendAt(deck, UiEventType.MouseUp, at);
+        SendAt(deck, UiEventType.Click, at);
+        SendAt(deck, UiEventType.DoubleClick, at);
     }
 
     private static int SlotIndex(EquipMask mask)

@@ -455,4 +455,25 @@ public sealed class GearDeckGeometryTests
         Assert.Equal(0f, folded.ClickMap.W);
         Assert.Equal(GearDeckGeometry.WornCellSize, folded.Equipment.H, 3);
     }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void FigureLock_SitsInTheFiguresTopRightCorner(float scale)
+    {
+        var g = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale) + 100f * scale, FigureInput(), null, scale);
+        DeckRect l = g.FigureLock, f = g.Figure;
+        Assert.Equal(GearDeckGeometry.LockSize * scale, l.W, 3);
+        Assert.Equal(GearDeckGeometry.LockSize * scale, l.H, 3);
+        Assert.Equal(f.X + f.W - GearDeckGeometry.LockInset * scale, l.X + l.W, 3);
+        Assert.Equal(f.Y + GearDeckGeometry.LockInset * scale, l.Y, 3);
+        Assert.Equal(new GearDeckHit(GearZone.FigureLock), g.HitAt(l.X + l.W / 2f, l.Y + l.H / 2f));
+    }
+
+    [Fact]
+    public void FigureLock_IsZero_WhileTheFigureIsHidden()
+    {
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, new GearDeckLayoutInput(false, false, 2, 30, 7, 0)).FigureLock.W);
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, FigureInput(folded: true)).FigureLock.W);
+    }
 }

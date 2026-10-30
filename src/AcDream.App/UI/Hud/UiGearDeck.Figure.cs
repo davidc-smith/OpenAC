@@ -20,6 +20,18 @@ internal sealed partial class UiGearDeck
     /// <summary>How the figure is turned and zoomed; <see cref="PaperdollPose.Default"/> at rest.</summary>
     internal PaperdollPose FigurePose { get; private set; } = PaperdollPose.Default;
 
+    /// <summary>Whether the figure's padlock is shut: a press turns the figure, the wheel zooms it and
+    /// nothing lifts off the body. Unlocked, the figure stays at rest and gear comes off.</summary>
+    internal bool FigureLocked => _b.Session.Settings.FigureLocked;
+
+    /// <summary>The padlock stud's click: flips the lock; unlocking stands the figure back up.</summary>
+    private void ToggleFigureLock()
+    {
+        _b.Session.Update(s => s with { FigureLocked = !s.FigureLocked });
+        _tooltipCache = null;   // the stud's tooltip names the state
+        if (!FigureLocked) ResetFigurePose();
+    }
+
     /// <summary>The effective equipment view: Figure only while a figure is attached.</summary>
     private bool ShowsFigureView => _figureAttached && _b.Session.Settings.Equip == GearEquipView.Figure;
 
@@ -103,7 +115,7 @@ internal sealed partial class UiGearDeck
         return id == 0u || id == player ? null : id;
     }
 
-    /// <summary>Turns the figure as a held press moves; true while a press on bare figure is held.</summary>
+    /// <summary>Turns the figure as a held press moves; true while a press on the locked figure is held.</summary>
     private bool TurnTo(float x)
     {
         if (_turnFromX is not float from) return false;

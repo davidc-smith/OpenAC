@@ -76,8 +76,8 @@ internal sealed partial class UiGearDeck
                 // or the field gives it back, so the rows stay up until the click acts.
                 if (_press.Zone is GearZone.Suggestion or GearZone.QueryField)
                     FindRoot()?.SetKeyboardFocus(QueryInput);
-                // A press on the figure where nothing is worn turns it; a worn part lifts instead.
-                _turnFromX = _press.Zone == GearZone.Figure && WornAt(_press) is null ? e.Data1 : null;
+                // A press anywhere on the locked figure turns it; unlocked, a worn part lifts and bare figure stays put.
+                _turnFromX = _press.Zone == GearZone.Figure && FigureLocked ? e.Data1 : null;
                 _turning = false;
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
@@ -102,7 +102,8 @@ internal sealed partial class UiGearDeck
                 SetHover(NoHit);
                 return true;
             case UiEventType.Scroll:
-                if (_g.Input.Figure && _g.Figure.Contains(e.Data1, e.Data2))
+                // Only the locked figure zooms; unlocked, the wheel over it falls through.
+                if (FigureLocked && _g.Input.Figure && _g.Figure.Contains(e.Data1, e.Data2))
                 {
                     FigurePose = FigurePose.Zoomed(e.Data0);   // +1 per notch up: in
                     SetHover(HitAt(e.Data1, e.Data2));
@@ -277,6 +278,9 @@ internal sealed partial class UiGearDeck
                 ResetFigurePose();
                 ScrollTo(_scrollRow);
                 return true;
+            case GearZone.FigureLock:
+                ToggleFigureLock();   // UiGearDeck.Figure.cs
+                return true;
             case GearZone.FigureStud:
                 if (!_figureAttached) return true;   // dim without a figure
                 _b.Session.Update(s => s with { Folded = false, Equip = GearEquipView.Figure });
@@ -393,8 +397,8 @@ internal sealed partial class UiGearDeck
                 if (WornAt(hit) is uint worn) Dispatcher.TakeOff(worn);
                 return true;
             case GearZone.Figure:
-                if (WornAt(hit) is uint onBody) Dispatcher.TakeOff(onBody);
-                else ResetFigurePose();   // nothing worn here: stand the figure back up
+                if (FigureLocked) ResetFigurePose();   // locked: stand the figure back up, take nothing off
+                else if (WornAt(hit) is uint onBody) Dispatcher.TakeOff(onBody);
                 return true;
             default:
                 return IsControl(hit.Zone);   // each click already acted
@@ -417,9 +421,10 @@ internal sealed partial class UiGearDeck
 
     /// <summary>The item a press on <paramref name="hit"/> would lift, and where it leaves from.
     /// A side pack lifts like an item (to the ground, or onto the grid); the main pack is the player.
-    /// A worn result row lifts as equipment, as its slot does.</summary>
+    /// A worn result row lifts as equipment, as its slot does. The locked figure lifts nothing: a press there turns it.</summary>
     private (uint Id, ItemDragSource Kind)? DragItem(GearDeckHit hit)
     {
+        if (hit.Zone == GearZone.Figure && FigureLocked) return null;
         if (hit.Zone == GearZone.Item && hit.Index >= 0 && hit.Index < Shown.Count)
         {
             GearItemView row = Shown[hit.Index];
@@ -613,6 +618,7 @@ internal sealed partial class UiGearDeck
     /// <summary>An item's caption (the selection caption's name, with its stack), or an empty slot's label.</summary>
     private string? TooltipFor(GearDeckHit hit)
     {
+        if (hit.Zone == GearZone.FigureLock) return FigureLocked ? "Locked: drag to turn" : "Unlocked: drag gear off";
         if (hit.Index < 0) return null;
         switch (hit.Zone)
         {

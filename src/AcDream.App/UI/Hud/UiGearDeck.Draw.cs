@@ -56,7 +56,11 @@ internal sealed partial class UiGearDeck
         if (g.Input.Folded) DrawWornRow(ctx);
         else
         {
-            if (g.Input.Figure) DrawFigure(ctx);
+            if (g.Input.Figure)
+            {
+                DrawFigure(ctx);
+                DrawFigureLock(ctx);   // on top of the doll
+            }
             DrawSlots(ctx, objects);   // the ring in Figure view, the grid in Slots view
         }
         DrawPacksHeader(ctx);
@@ -249,6 +253,27 @@ internal sealed partial class UiGearDeck
         if (handle == 0u) return;
         // The private viewport renders top-down (PrivateEntityViewportRenderer.TextureIsBottomUp is false).
         ctx.DrawSprite(handle, f.X, f.Y, f.W, f.H, 0f, 0f, 1f, 1f, Vector4.One);
+    }
+
+    /// <summary>
+    /// The figure's padlock stud, lit while locked. The padlock is a filled body in the
+    /// lower part of the stud and a shackle of two legs and a top bar; open, the shackle
+    /// rises and its right leg stands clear of the body.
+    /// </summary>
+    private void DrawFigureLock(UiRenderContext ctx)
+    {
+        DeckRect r = _g.FigureLock;
+        if (r.W <= 0f) return;
+        bool locked = FigureLocked;
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: locked);
+        float cx = r.X + r.W / 2f, top = r.Y + P(3f), bottom = r.Y + r.H - P(3f);
+        float bodyH = (bottom - top) * 0.55f, bodyTop = bottom - bodyH;
+        ctx.FillRoundedRect(cx - P(4.5f), bodyTop, P(9f), bodyH, P(1.5f), ink);
+        float w = P(1.5f), legX = P(2.75f);
+        float barY = top + w / 2f + (locked ? P(1.5f) : 0f);
+        ctx.DrawLine(cx - legX - w / 2f, barY, cx + legX + w / 2f, barY, ink, w);
+        ctx.DrawLine(cx - legX, barY, cx - legX, bodyTop, ink, w);
+        ctx.DrawLine(cx + legX, barY, cx + legX, locked ? bodyTop : bodyTop - P(2.5f), ink, w);
     }
 
     /// <summary>The Slots view: every slot as a dark cell with its worn icon, or its label when
@@ -631,6 +656,7 @@ internal sealed partial class UiGearDeck
         GearZone.Chip when hit.Index >= 0 && hit.Index < _g.Chips.Count => _g.Chips[hit.Index],
         GearZone.ChipMore => _g.ChipMore,
         GearZone.Figure => _g.Figure,
+        GearZone.FigureLock => _g.FigureLock,
         GearZone.Item => _g.Input.List ? _g.ListRow(hit.Index, _scrollRow) : _g.GridCell(hit.Index, _scrollRow),
         _ => null,
     };

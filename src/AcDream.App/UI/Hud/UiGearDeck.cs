@@ -129,12 +129,13 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>A text size change does what a scale change does: drop fitted text, rebuild geometry.</summary>
     private void OnTextSizeChanged() => SyncGeometry();
 
-    /// <summary>The live query is not kept between sessions.</summary>
+    /// <summary>The live query is not kept between sessions, and the figure stands up (the default settings are unlocked).</summary>
     private void OnSessionEnded()
     {
         FinishSave(null, "session ended");
         SetQuery(GearQuery.Empty);
         QueryInput.SetText("");
+        ResetFigurePose();
     }
 
     /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>

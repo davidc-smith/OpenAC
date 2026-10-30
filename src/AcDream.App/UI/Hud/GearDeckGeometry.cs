@@ -7,6 +7,7 @@ internal enum GearZone
 {
     None, Frame, Close, FoldStud, FigureStud, SlotsStud, GridStud, ListStud, EquipSlot, WornCell, Item, SidePack,
     QueryField, Chip, ChipMore, SaveStud, SortStud, DirStud, SavedFilter, SavedMore, Suggestion, FooterButton, Figure,
+    FigureLock,
 }
 
 /// <summary>The labels the query bar's pills show and how wide a label draws.</summary>
@@ -35,6 +36,8 @@ internal sealed class GearDeckGeometry
     /// the doll viewport's centre (the 224-wide viewport 0x100001D5 holds it at x+51).</summary>
     public const float MapW = 100f, MapH = 214f, MapLeftOfCentre = 61f;
     public const int RingRows = 6;
+    /// <summary>The figure's padlock stud, inset from the figure's top-right corner.</summary>
+    public const float LockSize = 18f, LockInset = 4f;
 
     /// <summary>Each <see cref="AcDream.Core.Items.Gear.GearSlotCatalog.Slots"/> entry's ring cell in Figure view
     /// (column 0-3 left to right, row 0-5 top down): head, torso and arms outer left; cloak, clothes, legs and
@@ -60,6 +63,8 @@ internal sealed class GearDeckGeometry
     public required DeckRect Equipment { get; init; }
     public required DeckRect Figure { get; init; }
     public required DeckRect ClickMap { get; init; }
+    /// <summary>The padlock stud in the figure's top-right corner; zero-size while the figure is not shown.</summary>
+    public required DeckRect FigureLock { get; init; }
     public required DeckRect PacksHeader { get; init; }
     public required DeckRect GridStud { get; init; }
     public required DeckRect ListStud { get; init; }
@@ -177,6 +182,9 @@ internal sealed class GearDeckGeometry
         var clickMap = figureShown
             ? new DeckRect(figure.X + figure.W / 2f - S(MapLeftOfCentre), figure.Y, S(MapW), S(MapH))
             : new DeckRect(equipment.X, equipment.Y, 0f, 0f);
+        var figureLock = figureShown
+            ? new DeckRect(figure.X + figure.W - S(LockInset) - S(LockSize), figure.Y + S(LockInset), S(LockSize), S(LockSize))
+            : new DeckRect(equipment.X, equipment.Y, 0f, 0f);
 
         var packsHeader = new DeckRect(pad, y, inner, S(HeaderH));
         studY = y + (S(HeaderH) - S(StudH)) / 2f;
@@ -227,7 +235,7 @@ internal sealed class GearDeckGeometry
             Frame = new DeckRect(0f, 0f, width, h),
             Title = title, Close = close,
             EquipHeader = equipHeader, FoldStud = foldStud, FigureStud = figureStud, SlotsStud = slotsStud,
-            Equipment = equipment, Figure = figure, ClickMap = clickMap,
+            Equipment = equipment, Figure = figure, ClickMap = clickMap, FigureLock = figureLock,
             PacksHeader = packsHeader, GridStud = gridStud, ListStud = listStud,
             BurdenBar = burden, PackArea = packArea, Contents = contents, SideColumn = side, Footer = footer,
             QueryBar = queryBar, QueryText = queryText, QueryField = queryField,
@@ -353,6 +361,7 @@ internal sealed class GearDeckGeometry
             {
                 for (int i = 0; i < Columns * SlotRows; i++)
                     if (EquipSlot(i).Contains(x, y)) return new GearDeckHit(GearZone.EquipSlot, i);
+                if (Input.Figure && FigureLock.Contains(x, y)) return new GearDeckHit(GearZone.FigureLock);
                 if (Input.Figure && Figure.Contains(x, y)) return new GearDeckHit(GearZone.Figure);
             }
         }

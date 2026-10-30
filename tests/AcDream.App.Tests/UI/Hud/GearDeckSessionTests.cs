@@ -190,4 +190,36 @@ public sealed class GearDeckSessionTests
         Assert.DoesNotContain("\"equip\":\"slots\"", json);
         Assert.Contains("\"future\":3", json);
     }
+
+    [Fact]
+    public void FigureLocked_DefaultsToFalse_AndRoundTrips()
+    {
+        Assert.False(GearDeckSettings.Default.FigureLocked);
+        Assert.Contains("\"figureLocked\":false", GearDeckSettings.Default.ToJson());
+        GearDeckSettings locked = GearDeckSettings.Default with { FigureLocked = true };
+        string json = locked.ToJson();
+        Assert.Contains("\"figureLocked\":true", json);
+        Assert.True(GearDeckSettings.FromJson(json).FigureLocked);
+    }
+
+    [Theory]
+    [InlineData("""{"version":1,"folded":false}""")]
+    [InlineData("""{"figureLocked":"yes"}""")]
+    [InlineData("""{"figureLocked":1}""")]
+    [InlineData("""{"figureLocked":null}""")]
+    [InlineData("""{"figureLocked":{}}""")]
+    public void FigureLocked_MissingOrNotABool_ReadsFalse(string json)
+    {
+        GearDeckSettings s = GearDeckSettings.FromJson(json);
+        Assert.False(s.FigureLocked);
+        Assert.DoesNotContain("\"figureLocked\":\"yes\"", s.ToJson());   // not kept as an unknown key
+    }
+
+    [Fact]
+    public void FigureLocked_TakesPartInEquality()
+    {
+        GearDeckSettings locked = GearDeckSettings.Default with { FigureLocked = true };
+        Assert.NotEqual(GearDeckSettings.Default, locked);
+        Assert.Equal(locked, GearDeckSettings.FromJson(locked.ToJson()));
+    }
 }
