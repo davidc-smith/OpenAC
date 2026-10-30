@@ -9,7 +9,8 @@ namespace AcDream.App.Tests.UI.Hud;
 
 public sealed class UiGearDeckOrganiseTests
 {
-    private const uint Player = 0x50000001, Bag = 0xB1, Coins30 = 0xC30, Coins50 = 0xC50, Misc0 = 0xA00, Misc1 = 0xA01, Misc2 = 0xA02;
+    private const uint Player = 0x50000001, Bag = 0xB1, Coins30 = 0xC30, Coins50 = 0xC50, Misc0 = 0xA00, Misc1 = 0xA01, Misc2 = 0xA02, Misc3 = 0xA03;
+    private const uint Helm = 0xE01, Sword = 0xE02;
     private const uint CoinWeenie = 273;
 
     private sealed class Fake : IGearItemActions
@@ -66,16 +67,21 @@ public sealed class UiGearDeckOrganiseTests
         ObjectId = id, Name = "Pyreal", Type = ItemType.Money, WeenieClassId = CoinWeenie, StackSize = size, StackSizeMax = 100,
     };
 
-    private static Rig Make()
+    private static Rig Make(bool worn = false)
     {
         var t = new ClientObjectTable();
         t.AddOrUpdate(new ClientObject { ObjectId = Player, Type = ItemType.Creature, ItemsCapacity = 102, ContainersCapacity = 7 });
         Place(t, new ClientObject { ObjectId = Bag, Type = ItemType.Container, ItemsCapacity = 24, Name = "Pack" }, Player, 0);
         Place(t, Coins(Coins30, 30), Player, 0);
         Place(t, Coins(Coins50, 50), Player, 1);
-        uint[] misc = [Misc0, Misc1, Misc2];
+        uint[] misc = [Misc0, Misc1, Misc2, Misc3];
         for (int i = 0; i < misc.Length; i++)
             Place(t, new ClientObject { ObjectId = misc[i], Name = $"Item {i}", Type = ItemType.Misc, WeenieClassId = 0x2000u + (uint)i }, Player, 2 + i);
+        if (worn)
+        {
+            Wear(t, new ClientObject { ObjectId = Helm, WielderId = Player, Name = "Helm", ValidLocations = EquipMask.HeadWear }, EquipMask.HeadWear);
+            Wear(t, new ClientObject { ObjectId = Sword, WielderId = Player, Name = "Sword", ValidLocations = EquipMask.MeleeWeapon }, EquipMask.MeleeWeapon);
+        }
         var session = new GearDeckSession(null, () => "", () => false);
         var actions = new Fake();
         var channel = new Channel();
@@ -88,6 +94,36 @@ public sealed class UiGearDeckOrganiseTests
         rig.Deck = new UiGearDeck(b, null, null, () => 0.0);
         rig.Deck.Refresh();
         return rig;
+    }
+
+    private static void Wear(ClientObjectTable t, ClientObject o, EquipMask mask)
+    {
+        t.AddOrUpdate(o);
+        Assert.True(t.MoveItem(o.ObjectId, Player, -1, mask));
+    }
+
+    /// <summary>The main pack's order after the puts, each taking its item out and inserting it at its slot.</summary>
+    private static List<uint> After(Rig rig, IEnumerable<GearMove> moves)
+    {
+        var order = rig.Deck.Model.Contents(Player).Select(o => o.ObjectId).ToList();
+        foreach (GearMove m in moves)
+        {
+            Assert.Equal(Player, m.Target);
+            order.Remove(m.Item);
+            order.Insert(m.Slot, m.Item);
+        }
+        return order;
+    }
+
+    /// <summary>Confirms each put as it goes out, so the queue sends them all.</summary>
+    private static void RunQueue(Rig rig)
+    {
+        for (int guard = 0; rig.Queue.IsRunning && guard < 20; guard++)
+        {
+            rig.Channel.Complete(rig.Sender.Sent[^1].Item);
+            rig.Queue.Tick();
+        }
+        Assert.False(rig.Queue.IsRunning);
     }
 
     private static (float X, float Y) Centre(DeckRect r) => (r.X + r.W / 2f, r.Y + r.H / 2f);
@@ -210,6 +246,74 @@ public sealed class UiGearDeckOrganiseTests
         Assert.Equal(GearMove.Put(Misc1, Player, coins.Slot), rig.Sender.Sent[0]);
         rig.Channel.Complete(Misc1); rig.Queue.Tick();
         Assert.Equal(GearMove.Put(Misc2, Player, coins.Slot + 1), rig.Sender.Sent[1]);
+    }
+
+    [Fact]
+    public void ASelectionDroppedOnItself_IsAlreadyInPlace_AndSendsNothing()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc0, Misc1, Misc2);   // Misc3 follows, unselected
+        DropOn(rig, Misc2, CellOf(rig, Misc1));
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Empty(rig.Sender.Sent);
+        Assert.DoesNotContain(rig.Actions.Calls, c => c.StartsWith("put"));
+    }
+
+    [Fact]
+    public void ADropOnASelectedRow_WithAnUnselectedItemAfter_KeepsTheSelectionTogether()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc0, Misc2);
+        DropOn(rig, Misc2, CellOf(rig, Misc0));   // the anchor is Misc1, the first unselected item from Misc0's slot
+        RunQueue(rig);
+        Assert.Equal([Coins30, Coins50, Misc0, Misc2, Misc1, Misc3], After(rig, rig.Sender.Sent));
+    }
+
+    [Fact]
+    public void ADropOnAnUnselectedRowLaterInThePack_PlacesTheSelectionJustBeforeIt()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc0, Misc1);
+        DropOn(rig, Misc0, CellOf(rig, Misc3));   // Misc2 sits between the selection and the target
+        RunQueue(rig);
+        Assert.Equal(2, rig.Sender.Sent.Count);
+        Assert.Equal([Coins30, Coins50, Misc2, Misc0, Misc1, Misc3], After(rig, rig.Sender.Sent));
+    }
+
+    [Fact]
+    public void ADropOnAnEarlierRow_PlacesTheSelectionJustBeforeIt()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc1, Misc3);
+        DropOn(rig, Misc3, CellOf(rig, Coins30));
+        RunQueue(rig);
+        Assert.Equal([Misc1, Misc3, Coins30, Coins50, Misc0, Misc2], After(rig, rig.Sender.Sent));
+    }
+
+    [Fact]
+    public void DraggingAWornRow_OfAWornSelection_TakesTheOneItemPath()
+    {
+        Rig rig = Make(worn: true);
+        rig.Deck.SetQuery(GearQuery.Empty.With(GearChip.WornOnly));
+        rig.Deck.Refresh();
+        SelectRows(rig, Helm, Sword);
+        DropOn(rig, Helm, rig.Deck.Geometry.SidePack(1));
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Empty(rig.Sender.Sent);
+        Assert.Contains(rig.Actions.Calls, c => c.StartsWith($"put {Helm:X}"));
+    }
+
+    [Fact]
+    public void AMouseUpAfterADrag_EndsTheDecksDrag()
+    {
+        Rig rig = Make();
+        SelectRows(rig, Misc0, Misc1);
+        var payload = new ItemDragPayload(Misc1, ItemDragSource.Inventory, 0, null);
+        rig.Deck.OnEvent(new UiEvent(0, rig.Deck, UiEventType.DragBegin, Payload: payload));
+        Send(rig.Deck, UiEventType.MouseUp, rig.Deck.Geometry.SidePack(1));   // that drag ended elsewhere
+        Send(rig.Deck, UiEventType.DropReleased, rig.Deck.Geometry.SidePack(1), payload);
+        Assert.False(rig.Queue.IsRunning);
+        Assert.Empty(rig.Sender.Sent);
     }
 
     [Fact]

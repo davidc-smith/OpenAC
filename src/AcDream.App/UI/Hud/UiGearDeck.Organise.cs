@@ -1,4 +1,5 @@
 using System.Globalization;
+using AcDream.Core.Items;
 using AcDream.Core.Items.Gear;
 
 namespace AcDream.App.UI.Hud;
@@ -64,16 +65,56 @@ internal sealed partial class UiGearDeck
         SyncGeometry();
     }
 
-    /// <summary>A drag of the selection onto a pack: every selected pack item, in shown order, from
-    /// <paramref name="firstSlot"/> on. Worn items and packs stay where they are.</summary>
+    /// <summary>
+    /// A drag of the selection onto a pack: every selected pack item, in shown order, lands together just
+    /// before the anchor, the first unselected item at or after <paramref name="firstSlot"/> in that pack
+    /// (none: at the end). Worn items and packs stay where they are. Each put takes its item out of the pack
+    /// and inserts it (the table's and the server's order), so the slots come from replaying the puts on the
+    /// pack's current order: a same-pack move keeps the group together and in order, which plain consecutive
+    /// slots from the target do not. A selection already in place sends nothing. False when nothing selected
+    /// can move this way (the caller then moves the dragged item alone).
+    /// </summary>
     private bool MoveSelection(uint packId, int firstSlot)
     {
-        var moves = new List<GearMove>();
-        int slot = Math.Max(0, firstSlot);
+        var group = new List<uint>();
         foreach (GearItemView row in Shown)
-            if (_selection.Contains(row.Id) && !row.Worn && !row.IsPack)
-                moves.Add(GearMove.Put(row.Id, packId, slot++));
-        return Run("Moving", moves);
+            if (IsGroupMovable(row)) group.Add(row.Id);
+        if (group.Count == 0) return false;
+        var picked = new HashSet<uint>(group);
+
+        var order = new List<uint>();
+        foreach (ClientObject o in _model.Contents(packId)) order.Add(o.ObjectId);
+        uint anchor = 0u;
+        for (int i = Math.Max(0, firstSlot); i < order.Count; i++)
+            if (!picked.Contains(order[i])) { anchor = order[i]; break; }
+
+        var moves = new List<GearMove>(group.Count);
+        var replay = new List<uint>(order);
+        foreach (uint id in group)
+        {
+            replay.Remove(id);
+            int slot = anchor == 0u ? replay.Count : replay.IndexOf(anchor);
+            replay.Insert(slot, id);
+            moves.Add(GearMove.Put(id, packId, slot));
+        }
+        if (replay.SequenceEqual(order))
+        {
+            _b.Log?.Invoke($"[gear-deck] Moving: {group.Count} items already in place");
+            return true;
+        }
+        Run("Moving", moves);
+        return true;
+    }
+
+    /// <summary>A selected loose pack item: what a group drop moves.</summary>
+    private bool IsGroupMovable(GearItemView row) => _selection.Contains(row.Id) && !row.Worn && !row.IsPack;
+
+    /// <summary>Whether the dragged item is a shown loose pack item, so its drop can carry the selection.</summary>
+    private bool DraggedIsGroupMovable(uint id)
+    {
+        foreach (GearItemView row in Shown)
+            if (row.Id == id) return IsGroupMovable(row);
+        return false;
     }
 
     /// <summary>The pack and first slot a selection dropped on <paramref name="hit"/> goes to, or null for

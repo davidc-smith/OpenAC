@@ -82,7 +82,7 @@ internal sealed partial class UiGearDeck
                 return false;   // the window drag, the item drag or the click has the press
             case UiEventType.MouseUp:
             case UiEventType.CaptureChanged:
-                if (e.Type == UiEventType.CaptureChanged) _dragFromDeck = 0u;
+                _dragFromDeck = 0u;   // a drag that ended elsewhere is over
                 bool wasTurning = _turning;
                 _turnFromX = null;
                 _turning = false;
@@ -501,10 +501,12 @@ internal sealed partial class UiGearDeck
         if (ItemPayload(payload) is not { } p || DropTargetAt(x, y) is not { } hit) return false;
         // A selection of two or more dragged from the deck onto a pack, a pack row, a cell or empty pack space
         // moves as a group through the queue; equipment and figure drops take the one item as before.
-        if (fromDeck == p.ObjId && _selection.Count > 1 && _selection.Contains(p.ObjId) && GroupTarget(hit) is { } target)
+        // Only a dragged loose pack item carries the selection; a worn or pack row, or a selection with nothing
+        // movable, falls through to the one-item drop.
+        if (fromDeck == p.ObjId && _selection.Count > 1 && DraggedIsGroupMovable(p.ObjId) && GroupTarget(hit) is { } target
+            && MoveSelection(target.Pack, target.Slot))
         {
             _b.Log?.Invoke($"[gear-deck] drop selection ({_selection.Count}) on {hit.Zone} {hit.Index}");
-            MoveSelection(target.Pack, target.Slot);
             return true;
         }
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
