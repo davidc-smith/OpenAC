@@ -936,11 +936,20 @@ internal sealed class LivePresentationCompositionPhase
                     // released scene would flash into nothing until the next one.
                     interaction.RetainedUi.Runtime.PaperdollFigureLighting.Target = null;
                 });
+            IPaperdollFrameView paperdollView = new RetailPaperdollFrameView(
+                viewport,
+                new PaperdollInventoryVisibility(inventoryFrame));
+            // The Gear Deck shows the same doll in its Figure view; whichever of the two is on screen gets the frame.
+            AcDream.App.UI.Hud.UiGearDeck? gearDeck = interaction.RetainedUi.Runtime.GearDeck;
+            if (gearDeck is not null)
+            {
+                paperdollView = new PaperdollFrameViews(paperdollView, new GearDeckPaperdollFrameView(gearDeck));
+                gearDeck.AttachFigure();
+                bindings.AdoptRelease("gear deck figure", () => gearDeck.DetachFigure());
+            }
             paperdollPresenter = new PaperdollFramePresenter(
                 paperdollLease.Resource,
-                new RetailPaperdollFrameView(
-                    viewport,
-                    new PaperdollInventoryVisibility(inventoryFrame)),
+                paperdollView,
                 new RetailPaperdollDollFactory(
                     new LivePaperdollEntityLookup(liveEntities),
                     d.PlayerIdentity,

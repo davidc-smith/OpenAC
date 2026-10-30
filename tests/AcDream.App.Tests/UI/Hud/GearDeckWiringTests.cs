@@ -44,7 +44,7 @@ public sealed class GearDeckWiringTests
         public int Closed;
         public bool Gameplay = true;
 
-        public World()
+        public World(PaperdollClickMap? clickMap = null)
         {
             Root.AddChild(Inventory);
             Root.RegisterWindow(WindowNames.Inventory, Inventory, Inventory, null);
@@ -62,7 +62,8 @@ public sealed class GearDeckWiringTests
                     Session: session,
                     Actions: new NoActions(),
                     IsPending: _ => false,
-                    Close: () => Closed++),
+                    Close: () => Closed++,
+                    ClickMap: clickMap),
                 fonts: null, icons: null, clock: () => 0.0);
             RetailWindowFrame.Mount(Root, Deck, _ => (0u, 0, 0),
                 UiGearDeck.MountOptions(RetailUiRuntime.GearDeckDefaultLeft(Root.Width), RetailUiRuntime.GearDeckDefaultTop));
@@ -85,6 +86,14 @@ public sealed class GearDeckWiringTests
         public bool DeckVisible => Root.IsWindowVisible(WindowNames.GearDeck);
 
         public void Tick() => Root.Tick(0.016, 0);
+    }
+
+    [Fact]
+    public void TheClickMap_ReachesTheDeckBindings()
+    {
+        var map = new PaperdollClickMap([0, 0, 0, 0xFF], 1, 1);
+        Assert.Same(map, new World(map).Deck.Bindings.ClickMap);
+        Assert.Null(new World().Deck.Bindings.ClickMap);
     }
 
     [Fact]

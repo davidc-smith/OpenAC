@@ -127,7 +127,7 @@ public sealed class UiGearDeckInputTests
     }
 
     [Fact]
-    public void TheViewStuds_SetTheirSettings_AndFigureDoesNothing()
+    public void TheViewStuds_SetTheirSettings_AndFigureDoesNothingWithoutAFigure()
     {
         Rig r = Make(s => s with { Folded = true });
         Click(r.Deck, r.Deck.Geometry.ListStud);
@@ -135,6 +135,7 @@ public sealed class UiGearDeckInputTests
         Click(r.Deck, r.Deck.Geometry.GridStud);
         Assert.Equal(GearPackView.Grid, r.Session.Settings.View);
         GearDeckSettings before = r.Session.Settings;
+        Assert.Equal(GearEquipView.Figure, r.Session.Settings.Equip);
         Click(r.Deck, r.Deck.Geometry.FigureStud);
         Assert.Equal(before, r.Session.Settings);
         Click(r.Deck, r.Deck.Geometry.SlotsStud);

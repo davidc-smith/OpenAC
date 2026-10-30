@@ -1,4 +1,6 @@
 using AcDream.App.UI.Hud;
+using AcDream.Core.Items;
+using AcDream.Core.Items.Gear;
 
 namespace AcDream.App.Tests.UI.Hud;
 
@@ -362,5 +364,116 @@ public sealed class GearDeckGeometryTests
         Assert.Equal(normal.SortStud, grown.SortStud);
         Assert.Equal(normal.SidePack(0), grown.SidePack(0));
         Assert.Equal(normal.GridCell(0, 0), grown.GridCell(0, 0));
+    }
+
+    private static GearDeckLayoutInput FigureInput(bool folded = false) =>
+        new(folded, List: false, WornCount: 2, ItemCount: 30, SidePackSlots: 7, ScrollRow: 0, Figure: true);
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void Figure_IsCentred_AndTheRingSurroundsIt(float scale)
+    {
+        var g = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale) + 100f * scale, FigureInput(), null, scale);
+        Assert.Equal(GearDeckGeometry.FigureH * scale, g.Equipment.H, 3);
+        Assert.Equal(GearDeckGeometry.FigureW * scale, g.Figure.W, 3);
+        Assert.Equal(GearDeckGeometry.FigureH * scale, g.Figure.H, 3);
+        Assert.Equal(g.Equipment.X + (g.Equipment.W - g.Figure.W) / 2f, g.Figure.X, 3);
+        Assert.Equal(g.Equipment.Y, g.Figure.Y, 3);
+
+        Assert.Equal(g.Figure.X + g.Figure.W / 2f - GearDeckGeometry.MapLeftOfCentre * scale, g.ClickMap.X, 3);
+        Assert.Equal(g.Figure.Y, g.ClickMap.Y, 3);
+        Assert.Equal(GearDeckGeometry.MapW * scale, g.ClickMap.W, 3);
+        Assert.Equal(GearDeckGeometry.MapH * scale, g.ClickMap.H, 3);
+
+        var cells = Enumerable.Range(0, GearSlotCatalog.Slots.Count).Select(g.EquipSlot).ToList();
+        foreach (DeckRect c in cells)
+        {
+            Assert.Equal(GearDeckGeometry.RingCell * scale, c.W, 3);
+            Assert.True(c.X >= g.Equipment.X - 0.01f && c.X + c.W <= g.Equipment.X + g.Equipment.W + 0.01f);
+            Assert.True(c.Y >= g.Equipment.Y - 0.01f && c.Y + c.H <= g.Equipment.Y + g.Equipment.H + 0.01f);
+            Assert.False(Overlaps(c, g.Figure));
+        }
+        for (int i = 0; i < cells.Count; i++)
+            for (int j = i + 1; j < cells.Count; j++)
+                Assert.False(Overlaps(cells[i], cells[j]), $"ring cells {i} and {j} overlap");
+
+        float top = cells.Min(c => c.Y), bottom = cells.Max(c => c.Y + c.H);
+        Assert.Equal(g.Equipment.Y + g.Equipment.H - bottom, top - g.Equipment.Y, 3);
+    }
+
+    private static bool Overlaps(DeckRect a, DeckRect b) =>
+        a.X < b.X + b.W - 0.01f && b.X < a.X + a.W - 0.01f && a.Y < b.Y + b.H - 0.01f && b.Y < a.Y + a.H - 0.01f;
+
+    [Fact]
+    public void RingCells_CoverTheCatalogOnce()
+    {
+        Assert.Equal(GearSlotCatalog.Slots.Count, GearDeckGeometry.RingCells.Length);
+        Assert.Equal(GearDeckGeometry.RingCells.Length, GearDeckGeometry.RingCells.Distinct().Count());
+    }
+
+    [Fact]
+    public void Figure_HitsRingSlotsByCatalogIndex_AndTheFigure()
+    {
+        var g = GearDeckGeometry.Create(800f, FigureInput());
+        for (int i = 0; i < GearSlotCatalog.Slots.Count; i++)
+        {
+            DeckRect c = g.EquipSlot(i);
+            Assert.Equal(new GearDeckHit(GearZone.EquipSlot, i), g.HitAt(c.X + c.W / 2f, c.Y + c.H / 2f));
+        }
+        Assert.Equal(new GearDeckHit(GearZone.Figure), g.HitAt(g.Figure.X + g.Figure.W / 2f, g.Figure.Y + 20f));
+    }
+
+    [Fact]
+    public void Figure_TheHeadSitsTopLeft_AndTheWeaponOuterRight()
+    {
+        var g = GearDeckGeometry.Create(800f, FigureInput());
+        int head = Index(EquipMask.HeadWear), weapon = Index(GearSlotCatalog.Weapon);
+        Assert.Equal(g.Equipment.X, g.EquipSlot(head).X, 3);
+        Assert.True(g.EquipSlot(weapon).X > g.Figure.X + g.Figure.W);
+        Assert.True(g.EquipSlot(head).Y < g.EquipSlot(Index(EquipMask.FootWear)).Y);
+    }
+
+    private static int Index(EquipMask mask)
+    {
+        for (int i = 0; i < GearSlotCatalog.Slots.Count; i++)
+            if (GearSlotCatalog.Slots[i].Mask == mask) return i;
+        throw new InvalidOperationException();
+    }
+
+    [Fact]
+    public void Figure_AddsFiftyPointsToTheMinimum_AndFoldedOrSlotsHaveNoFigure()
+    {
+        var slots = new GearDeckLayoutInput(false, false, 2, 30, 7, 0);
+        float baseMin = GearDeckGeometry.MinHeightFor(slots);
+        Assert.Equal(baseMin + 50f, GearDeckGeometry.MinHeightFor(slots with { Figure = true }), 3);
+
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, slots).Figure.W);
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, slots).ClickMap.W);
+        var folded = GearDeckGeometry.Create(800f, FigureInput(folded: true));
+        Assert.Equal(0f, folded.Figure.W);
+        Assert.Equal(0f, folded.ClickMap.W);
+        Assert.Equal(GearDeckGeometry.WornCellSize, folded.Equipment.H, 3);
+    }
+
+    [Theory]
+    [InlineData(1f)]
+    [InlineData(1.5f)]
+    public void FigureLock_SitsInTheFiguresTopRightCorner(float scale)
+    {
+        var g = GearDeckGeometry.Create(GearDeckGeometry.DefaultHeightAt(scale) + 100f * scale, FigureInput(), null, scale);
+        DeckRect l = g.FigureLock, f = g.Figure;
+        Assert.Equal(GearDeckGeometry.LockSize * scale, l.W, 3);
+        Assert.Equal(GearDeckGeometry.LockSize * scale, l.H, 3);
+        Assert.Equal(f.X + f.W - GearDeckGeometry.LockInset * scale, l.X + l.W, 3);
+        Assert.Equal(f.Y + GearDeckGeometry.LockInset * scale, l.Y, 3);
+        Assert.Equal(new GearDeckHit(GearZone.FigureLock), g.HitAt(l.X + l.W / 2f, l.Y + l.H / 2f));
+    }
+
+    [Fact]
+    public void FigureLock_IsZero_WhileTheFigureIsHidden()
+    {
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, new GearDeckLayoutInput(false, false, 2, 30, 7, 0)).FigureLock.W);
+        Assert.Equal(0f, GearDeckGeometry.Create(800f, FigureInput(folded: true)).FigureLock.W);
     }
 }

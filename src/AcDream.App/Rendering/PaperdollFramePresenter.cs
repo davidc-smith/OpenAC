@@ -20,6 +20,9 @@ internal interface IPaperdollDollRenderer
 
     void Prepare();
 
+    /// <summary>Turns and zooms the doll for the view about to be drawn.</summary>
+    void SetPose(PaperdollPose pose) { }
+
     uint Render(int width, int height);
 }
 
@@ -30,6 +33,9 @@ internal interface IPaperdollFrameView
     void SetTextureHandle(uint textureHandle);
 
     void ClearTextureHandle();
+
+    /// <summary>How this view wants the doll turned and zoomed; the retail viewport never moves it.</summary>
+    PaperdollPose Pose => PaperdollPose.Default;
 }
 
 internal interface IPaperdollInventoryVisibility
@@ -127,6 +133,7 @@ internal sealed class PaperdollFramePresenter :
         if (!_view.TryGetVisibleSize(out int width, out int height))
             return;
 
+        _renderer.SetPose(_view.Pose);
         uint textureHandle = _renderer.Render(width, height);
         if (textureHandle != 0u)
             _view.SetTextureHandle(textureHandle);

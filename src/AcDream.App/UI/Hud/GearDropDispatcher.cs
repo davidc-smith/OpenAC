@@ -75,6 +75,32 @@ internal sealed class GearDropDispatcher(
         actions.WieldFromPaperdoll(item, wield);
     }
 
+    /// <summary>Whether a drop on the figure would wear <paramref name="item"/>: at <paramref name="region"/>
+    /// when it fits there, else anywhere for an item retail's doll wears whole (IsAutoWearItem).</summary>
+    public static bool FigureAccepts(ClientObject item, EquipMask region) =>
+        RegionFits(item, region) || ItemEquipRules.IsAutoWearItem(item);
+
+    private static bool RegionFits(ClientObject item, EquipMask region) =>
+        region != EquipMask.None
+        && (ItemEquipRules.IsOffHandWeaponDrop(item, region)
+            || ItemEquipRules.ResolvePaperdollDropWieldMask(item, region) != EquipMask.None);
+
+    /// <summary>A drop on the figure: the body region under the pointer when it fits the item (as a drop on that
+    /// slot), else retail's doll drop (PaperdollController.HandleDollDrop): an auto-wear item at all its valid
+    /// locations, and nothing for anything else.</summary>
+    public void DropOnFigure(uint item, EquipMask region)
+    {
+        if (objects.Get(item) is not { } obj) return;
+        if (RegionFits(obj, region))
+        {
+            DropOnSlot(item, region);
+            return;
+        }
+        if (!ItemEquipRules.IsAutoWearItem(obj)) return;
+        if (!actions.Ready()) return;
+        actions.WieldFromPaperdoll(item, obj.ValidLocations);
+    }
+
     /// <summary>Takes a worn item off into the first pack with room.</summary>
     public void TakeOff(uint item)
     {

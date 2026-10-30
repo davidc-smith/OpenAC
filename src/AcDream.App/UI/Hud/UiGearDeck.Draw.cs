@@ -54,7 +54,15 @@ internal sealed partial class UiGearDeck
         ClientObjectTable objects = _b.Objects();
         DrawEquipHeader(ctx);
         if (g.Input.Folded) DrawWornRow(ctx);
-        else DrawSlots(ctx, objects);
+        else
+        {
+            if (g.Input.Figure)
+            {
+                DrawFigure(ctx);
+                DrawFigureLock(ctx);   // on top of the doll
+            }
+            DrawSlots(ctx, objects);   // the ring in Figure view, the grid in Slots view
+        }
         DrawPacksHeader(ctx);
         DeckChrome.DrawGauge(ctx, g.BurdenBar, _model.BurdenFill, StaminaInk, 1f, _scale);
         DrawQueryBar(ctx);
@@ -171,7 +179,7 @@ internal sealed partial class UiGearDeck
         ctx.DrawLine(c.X + c.W - inset, c.Y + inset, c.X + inset, c.Y + c.H - inset, ink, stroke);
     }
 
-    /// <summary>The ▾ / ▸ fold stud, "Equipment", and the Figure (dimmed in plan 1) and Slots studs.</summary>
+    /// <summary>The ▾ / ▸ fold stud, "Equipment", and the Figure (dim without a figure) and Slots studs.</summary>
     private void DrawEquipHeader(UiRenderContext ctx)
     {
         GearDeckGeometry g = _g;
@@ -182,8 +190,9 @@ internal sealed partial class UiGearDeck
         DrawChevron(ctx, g.FoldStud, g.Input.Folded ? Chevron.Right : Chevron.Down, ink);
         DrawText(ctx, BoldIn(h), "Equipment", g.FoldStud.X + g.FoldStud.W + P(6f), h, LabelInk);
 
-        DrawLabelledStud(ctx, g.FigureStud, "Figure", on: false, dim: true);
-        DrawLabelledStud(ctx, g.SlotsStud, "Slots", on: true);
+        bool figure = g.Input.Figure && !g.Input.Folded;
+        DrawLabelledStud(ctx, g.FigureStud, "Figure", on: figure, dim: !_figureAttached);
+        DrawLabelledStud(ctx, g.SlotsStud, "Slots", on: !figure && !g.Input.Folded);
     }
 
     private void DrawPacksHeader(UiRenderContext ctx)
@@ -233,6 +242,39 @@ internal sealed partial class UiGearDeck
     }
 
     // ---- equipment ----
+
+    /// <summary>The figure: a dark backdrop and the doll the paper doll presenter rendered for it.</summary>
+    private void DrawFigure(UiRenderContext ctx)
+    {
+        DeckRect f = _g.Figure;
+        ctx.FillRoundedRect(f.X, f.Y, f.W, f.H, P(6f), SlotFill);
+        if (!_figureTexture.IsAssigned) return;
+        uint handle = AcDream.App.Rendering.TextRenderer.ResolveExternalTextureSlot(_figureTexture);
+        if (handle == 0u) return;
+        // The private viewport renders top-down (PrivateEntityViewportRenderer.TextureIsBottomUp is false).
+        ctx.DrawSprite(handle, f.X, f.Y, f.W, f.H, 0f, 0f, 1f, 1f, Vector4.One);
+    }
+
+    /// <summary>
+    /// The figure's padlock stud, lit while locked. The padlock is a filled body in the
+    /// lower part of the stud and a shackle of two legs and a top bar; open, the shackle
+    /// rises and its right leg stands clear of the body.
+    /// </summary>
+    private void DrawFigureLock(UiRenderContext ctx)
+    {
+        DeckRect r = _g.FigureLock;
+        if (r.W <= 0f) return;
+        bool locked = FigureLocked;
+        Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: locked);
+        float cx = r.X + r.W / 2f, top = r.Y + P(3f), bottom = r.Y + r.H - P(3f);
+        float bodyH = (bottom - top) * 0.55f, bodyTop = bottom - bodyH;
+        ctx.FillRoundedRect(cx - P(4.5f), bodyTop, P(9f), bodyH, P(1.5f), ink);
+        float w = P(1.5f), legX = P(2.75f);
+        float barY = top + w / 2f + (locked ? P(1.5f) : 0f);
+        ctx.DrawLine(cx - legX - w / 2f, barY, cx + legX + w / 2f, barY, ink, w);
+        ctx.DrawLine(cx - legX, barY, cx - legX, bodyTop, ink, w);
+        ctx.DrawLine(cx + legX, barY, cx + legX, locked ? bodyTop : bodyTop - P(2.5f), ink, w);
+    }
 
     /// <summary>The Slots view: every slot as a dark cell with its worn icon, or its label when
     /// empty. Aetheria slots the character has not unlocked are dimmed, as the paper doll hides them.</summary>
@@ -345,6 +387,7 @@ internal sealed partial class UiGearDeck
                 if (results) face.Draw(ctx, PackBadge(row), r.X + P(2f), r.Y + P(1f), LabelInk);
                 if (picked) StrokeInside(ctx, r, 5f, Handle);
                 else if (Hover.Zone == GearZone.Item && Hover.Index == i) StrokeInside(ctx, r, 5f, Handle with { W = 0.6f });
+                else if (HoverFits(row.Id)) StrokeInside(ctx, r, 5f, DropAccept with { W = 0.8f });
             }
             finally { ctx.PopAlpha(); }
         }
@@ -376,6 +419,8 @@ internal sealed partial class UiGearDeck
                     ctx.FillRoundedRect(r.X, r.Y, r.W, r.H - rule, P(3f), MenuHighlight);
                 if (Hover.Zone == GearZone.Item && Hover.Index == i)
                     StrokeInside(ctx, r, 3f, Handle with { W = 0.6f }, shrinkH: 1f);
+                else if (!_selection.Contains(row.Id) && HoverFits(row.Id))
+                    StrokeInside(ctx, r, 3f, DropAccept with { W = 0.8f }, shrinkH: 1f);
                 ctx.DrawFill(r.X, r.Y + r.H - rule, r.W, rule, RowRule);
 
                 float iconSize = P(ListIcon);
@@ -610,6 +655,8 @@ internal sealed partial class UiGearDeck
         GearZone.SidePack when hit.Index >= 0 => _g.SidePack(hit.Index),
         GearZone.Chip when hit.Index >= 0 && hit.Index < _g.Chips.Count => _g.Chips[hit.Index],
         GearZone.ChipMore => _g.ChipMore,
+        GearZone.Figure => _g.Figure,
+        GearZone.FigureLock => _g.FigureLock,
         GearZone.Item => _g.Input.List ? _g.ListRow(hit.Index, _scrollRow) : _g.GridCell(hit.Index, _scrollRow),
         _ => null,
     };

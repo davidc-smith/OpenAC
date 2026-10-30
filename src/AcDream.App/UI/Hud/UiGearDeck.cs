@@ -21,7 +21,8 @@ internal sealed record GearDeckBindings(
     Silk.NET.Input.IKeyboard? Keyboard = null,
     Func<(bool Toggle, bool Range)>? Modifiers = null,
     IGearSalvage? Salvage = null,
-    HudText? Text = null);
+    HudText? Text = null,
+    PaperdollClickMap? ClickMap = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
@@ -128,12 +129,13 @@ internal sealed partial class UiGearDeck : UiElement
     /// <summary>A text size change does what a scale change does: drop fitted text, rebuild geometry.</summary>
     private void OnTextSizeChanged() => SyncGeometry();
 
-    /// <summary>The live query is not kept between sessions.</summary>
+    /// <summary>The live query is not kept between sessions, and the figure stands up (the default settings are unlocked).</summary>
     private void OnSessionEnded()
     {
         FinishSave(null, "session ended");
         SetQuery(GearQuery.Empty);
         QueryInput.SetText("");
+        ResetFigurePose();
     }
 
     /// <summary>Stops following the session; the runtime calls it as it disposes the deck.</summary>
@@ -310,7 +312,8 @@ internal sealed partial class UiGearDeck : UiElement
         _scrollRow,
         SavedCount: _b.Session.Settings.SavedFilters.Count,
         Suggestions: VisibleSuggestions,
-        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0);
+        SalvageButton: _b.Salvage?.IsOpen == true && (ShowsResults || _selection.Count > 0) && SalvageCount > 0,
+        Figure: ShowsFigureView);
 
     private void SyncGeometry()
     {
@@ -552,10 +555,19 @@ internal sealed partial class UiGearDeck : UiElement
     }
 
     /// <summary>The window is on screen: nothing to restore, the scroll is kept.</summary>
-    public void OnShown() => ClearHover();
+    public void OnShown()
+    {
+        ClearHover();
+        NoteFigureUnavailable();   // UiGearDeck.Figure.cs
+    }
 
-    /// <summary>The window left the screen: forget the hover and any drop highlight, keep the scroll.</summary>
-    public void OnHidden() => ClearHover();
+    /// <summary>The window left the screen: forget the hover and any drop highlight, keep the scroll,
+    /// and stand the figure back up so the next open starts at rest.</summary>
+    public void OnHidden()
+    {
+        ClearHover();
+        ResetFigurePose();
+    }
 
     /// <summary>
     /// A side-edge drag scales the deck: the proposed width snaps live to the
