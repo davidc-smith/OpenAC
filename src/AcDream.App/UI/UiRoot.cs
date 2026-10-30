@@ -806,7 +806,7 @@ public sealed class UiRoot : UiElement
         // Focus may scroll a scrolling ancestor to reveal the target; the
         // press is reported where it landed, so read the position first.
         var sp = target.ScreenPosition;
-        if (btn == UiMouseButton.Left)
+        if (btn == UiMouseButton.Left && !KeepsKeyboardFocus(target))
             SetKeyboardFocus(target.AcceptsFocus && target.FocusOnMouseClick ? target : null);
 
         // Losing focus can close the panel that supplied this mouse target.
@@ -1199,6 +1199,13 @@ public sealed class UiRoot : UiElement
             stops.Add(element);
         foreach (UiElement child in element.Children)
             CollectTabStops(child, stops);
+    }
+
+    private static bool KeepsKeyboardFocus(UiElement target)
+    {
+        for (UiElement? e = target; e is not null; e = e.Parent)
+            if (e.KeepsKeyboardFocusOnClick) return true;
+        return false;
     }
 
     public void SetKeyboardFocus(UiElement? e)

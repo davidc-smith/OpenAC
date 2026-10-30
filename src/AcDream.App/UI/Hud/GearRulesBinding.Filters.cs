@@ -15,6 +15,8 @@ public sealed partial class GearRulesBinding
 
     /// <summary>The selected filter, by name: the deck can add or delete filters while the window is open.</summary>
     private string? _filterSelected;
+    /// <summary>The filter the editor was loaded from (or last saved as): Save renames it when the name changes.</summary>
+    private string? _loadedName;
     private string _draftName = "";
     private string _draftText = "";
     private IReadOnlyList<GearChip> _draftChips = [];
@@ -94,6 +96,7 @@ public sealed partial class GearRulesBinding
     {
         if (SelectedFilterIndex is not (var i and >= 0)) return;
         SavedFilter f = Saved[i];
+        _loadedName = f.Name;
         _draftName = f.Name;
         _draftText = f.Query.Text;
         _draftChips = f.Query.Chips;
@@ -108,7 +111,8 @@ public sealed partial class GearRulesBinding
         if (SelectedFilterIndex is not (var i and >= 0)) return;
         string name = Saved[i].Name;
         Edit(s => s.WithoutSaved(name));
-        if (string.Equals(_draftName.Trim(), name, StringComparison.OrdinalIgnoreCase)) ClearEditor();
+        if (string.Equals(_draftName.Trim(), name, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_loadedName, name, StringComparison.OrdinalIgnoreCase)) ClearEditor();
         _filterSelected = null;
     };
 
@@ -121,7 +125,10 @@ public sealed partial class GearRulesBinding
     };
 
     // ── the editor ──
-    public string EditorTitle => NameIsNew ? "New filter" : $"Edit filter \"{_draftName.Trim()}\" (Save replaces it)";
+    public string EditorTitle =>
+        LoadedName is not { } loaded ? "New filter"
+        : Renaming ? $"Edit filter \"{loaded}\" (Save renames it)"
+        : $"Edit filter \"{loaded}\" (Save replaces it)";
 
     public string DraftName { get { Sync(); return _draftName; } }
     public Action<string> SetDraftName => v => { Sync(); _draftName = v; };
@@ -195,23 +202,61 @@ public sealed partial class GearRulesBinding
     private bool NameIsNew => !Saved.Any(f => string.Equals(f.Name, _draftName.Trim(), StringComparison.OrdinalIgnoreCase));
     private bool SavedFull => NameIsNew && Saved.Count >= SavedFilter.MaxCount;
 
-    public bool CanSaveFilter => _draftName.Trim().Length > 0 && !DraftQuery.IsEmpty && !SavedFull && _session() is not null;
-    public string SaveHint => SavedFull ? $"You can keep up to {SavedFilter.MaxCount} saved filters." : "";
+    /// <summary>The loaded filter's current name, or null when none is loaded or the deck deleted it.</summary>
+    private string? LoadedName => _loadedName is { } n && IndexOf(n) is var i and >= 0 ? Saved[i].Name : null;
 
-    /// <summary>Saves the draft as ★ does: a same-named filter (ignoring case) is replaced, a new one added up to the cap.</summary>
+    /// <summary>A loaded filter whose name was changed (not just its case): Save renames it.</summary>
+    private bool Renaming => LoadedName is { } loaded && _draftName.Trim().Length > 0
+        && !string.Equals(loaded, _draftName.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The name belongs to a filter other than the loaded one: saving would overwrite it, so it is
+    /// refused (a new draft or a rename alike). Only the loaded filter's own name saves over it.</summary>
+    private bool NameTaken => !NameIsNew
+        && !(LoadedName is { } loaded && string.Equals(loaded, _draftName.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private bool CanSaveAny => _draftName.Trim().Length > 0 && !DraftQuery.IsEmpty && _session() is not null;
+
+    public bool CanSaveFilter => CanSaveAny && !NameTaken && (Renaming || !SavedFull);
+
+    /// <summary>Save as new: a loaded filter's draft under a name not yet used, kept beside the original.</summary>
+    public bool CanSaveAsNew => CanSaveAny && Renaming && NameIsNew && !SavedFull;
+
+    public string SaveHint =>
+        NameTaken ? $"A filter named \"{_draftName.Trim()}\" already exists."
+        : SavedFull && !Renaming ? $"You can keep up to {SavedFilter.MaxCount} saved filters."
+        : "";
+
+    /// <summary>Saves the draft. A loaded filter is saved over (renamed in place when its name changed; its
+    /// rules follow); a new draft is added up to the cap. A name another filter has is refused.</summary>
     public Action SaveFilter => () =>
     {
         if (!CanSaveFilter) return;
-        GearQuery query = DraftQuery;
-        Edit(s => s.WithSaved(new SavedFilter(_draftName, query)));
+        var filter = new SavedFilter(_draftName, DraftQuery);
+        if (Renaming && LoadedName is { } loaded) Edit(s => s.WithRenamed(loaded, filter));
+        else Edit(s => s.WithSaved(filter));
+        AfterSave();
+    };
+
+    /// <summary>Saves the draft as a new filter, leaving the loaded one as it was.</summary>
+    public Action SaveFilterAsNew => () =>
+    {
+        if (!CanSaveAsNew) return;
+        Edit(s => s.WithSaved(new SavedFilter(_draftName, DraftQuery)));
+        AfterSave();
+    };
+
+    /// <summary>Selects the saved filter and treats it as the loaded one, so a later name change renames it.</summary>
+    private void AfterSave()
+    {
         string name = _draftName.Trim();
         if (name.Length > SavedFilter.MaxNameLength) name = name[..SavedFilter.MaxNameLength].TrimEnd();   // as WithSaved stores it
         if (IndexOf(name) is var i and >= 0)
         {
             _filterSelected = Saved[i].Name;
+            _loadedName = _filterSelected;
             _draftName = _filterSelected;
         }
-    };
+    }
 
     /// <summary>New: an empty editor (and no filter selected).</summary>
     public Action NewFilter => () =>
@@ -222,6 +267,7 @@ public sealed partial class GearRulesBinding
 
     private void ClearEditor()
     {
+        _loadedName = null;
         _draftName = "";
         _draftText = "";
         _draftChips = [];
@@ -250,7 +296,7 @@ public sealed partial class GearRulesBinding
             <group layout="row" gap="8" grow="1">
               <group layout="column" gap="2" grow="1">
                 <label text="Suggestions (click to add)" h="16" />
-                <list items="{SuggestionTexts}" selected="{NoSuggestionSelected}" onchange="{PickSuggestion}" rowheight="18" grow="1" />
+                <list items="{SuggestionTexts}" selected="{NoSuggestionSelected}" onchange="{PickSuggestion}" keepfocus="true" rowheight="18" grow="1" />
               </group>
               <group layout="column" gap="2" grow="1">
                 <label text="Chips" h="16" />
@@ -263,6 +309,7 @@ public sealed partial class GearRulesBinding
             <group layout="row" gap="6" h="22">
               <button text="New" onclick="{NewFilter}" w="50" h="22" />
               <button text="Save" onclick="{SaveFilter}" enabled="{CanSaveFilter}" w="50" h="22" />
+              <button text="Save as new" onclick="{SaveFilterAsNew}" enabled="{CanSaveAsNew}" w="84" h="22" />
               <button text="Remove chip" onclick="{RemoveChip}" enabled="{HasSelectedChip}" w="90" h="22" />
               <group grow="1" />
               <button text="Edit" onclick="{EditFilter}" enabled="{HasSelectedFilter}" w="44" h="22" />

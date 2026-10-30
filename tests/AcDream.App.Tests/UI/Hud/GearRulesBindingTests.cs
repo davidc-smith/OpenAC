@@ -252,16 +252,36 @@ public sealed class GearRulesBindingTests
     }
 
     [Fact]
-    public void Save_ReplacesASameNamedFilter_IgnoringCase()
+    public void Save_RefusesANewFilterNamedLikeAnother_IgnoringCase()
     {
         var (b, s) = Make();
         b.SetDraftName("salvage");
         b.SetDraftText("worn");
         b.PickSuggestion(0);
+        Assert.Equal("New filter", b.EditorTitle);
+        Assert.False(b.CanSaveFilter);
+        Assert.Equal("A filter named \"salvage\" already exists.", b.SaveHint);
         b.SaveFilter();
-        Assert.Equal(new[] { "salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
-        Assert.Equal(GearQuery.Empty.With(GearChip.WornOnly), s.Settings.SavedFilters[0].Query);
-        Assert.Equal(0, b.SelectedFilterIndex);
+        Assert.Equal(new[] { "Salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(Named("salvage"), s.Settings.SavedFilters[0].Query);
+        b.SetDraftName("Worn");
+        Assert.True(b.CanSaveFilter);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Salvage", "Gems", "Worn" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(2, b.SelectedFilterIndex);
+    }
+
+    [Fact]
+    public void Save_OverALoadedFilter_ReplacesItsQuery()
+    {
+        var (b, s) = Make();
+        b.SelectFilterRow(0);
+        Assert.Equal("Edit filter \"Salvage\" (Save replaces it)", b.EditorTitle);
+        b.SetDraftText("worn");
+        b.PickSuggestion(0);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(Named("salvage").With(GearChip.WornOnly), s.Settings.SavedFilters[0].Query);
     }
 
     [Fact]
@@ -273,9 +293,12 @@ public sealed class GearRulesBindingTests
         b.SetDraftText("gem");
         Assert.False(b.CanSaveFilter);
         Assert.NotEqual("", b.SaveHint);
-        b.SetDraftName("f3");             // replacing one still works
+        b.SelectFilterRow(3);             // saving over a loaded one still works
+        b.SetDraftText("gem");
         Assert.True(b.CanSaveFilter);
         Assert.Equal("", b.SaveHint);
+        b.SetDraftName("Another");        // and so does renaming it
+        Assert.True(b.CanSaveFilter);
     }
 
     [Fact]
@@ -301,6 +324,60 @@ public sealed class GearRulesBindingTests
         b.SetDraftName("Changed");
         b.EditFilter();                   // Edit loads the selected filter again
         Assert.Equal("Rings", b.DraftName);
+    }
+
+    [Fact]
+    public void Save_RenamesALoadedFilterInPlace_AndItsRulesFollow()
+    {
+        var (b, s) = Make();
+        b.AddRule();                      // Salvage -> Main
+        b.SelectFilterRow(0);
+        b.SetDraftName("Scrap");
+        Assert.Equal("Edit filter \"Salvage\" (Save renames it)", b.EditorTitle);
+        Assert.True(b.CanSaveFilter);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Scrap", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(Named("salvage"), s.Settings.SavedFilters[0].Query);
+        Assert.Equal(new[] { new GearPackRule("Scrap", Main, false) }, s.Settings.PackRules);
+        Assert.Equal(new[] { "Scrap" }, b.RuleFilter);
+        Assert.Equal(0, b.SelectedFilterIndex);
+        b.SetDraftName("Junk");           // the renamed filter is still the loaded one
+        b.SaveFilter();
+        Assert.Equal(new[] { "Junk", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+    }
+
+    [Fact]
+    public void Save_RefusesARenameOntoAnotherFiltersName()
+    {
+        var (b, s) = Make();
+        b.SelectFilterRow(0);
+        b.SetDraftName("gems");
+        Assert.False(b.CanSaveFilter);
+        Assert.False(b.CanSaveAsNew);
+        Assert.Equal("A filter named \"gems\" already exists.", b.SaveHint);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        b.SetDraftName("SALVAGE");        // a change of case only is a plain save
+        Assert.True(b.CanSaveFilter);
+        b.SaveFilter();
+        Assert.Equal(new[] { "SALVAGE", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+    }
+
+    [Fact]
+    public void SaveAsNew_AddsACopyUnderTheNewName_AndKeepsTheOriginal()
+    {
+        var (b, s) = Make();
+        b.AddRule();
+        Assert.False(b.CanSaveAsNew);     // nothing loaded
+        b.SelectFilterRow(0);
+        Assert.False(b.CanSaveAsNew);     // name unchanged
+        b.SetDraftName("Salvage 2");
+        Assert.True(b.CanSaveAsNew);
+        b.SaveFilterAsNew();
+        Assert.Equal(new[] { "Salvage", "Gems", "Salvage 2" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(new[] { new GearPackRule("Salvage", Main, false) }, s.Settings.PackRules);
+        Assert.Equal(2, b.SelectedFilterIndex);
+        Assert.Equal("Salvage 2", b.DraftName);
     }
 
     [Fact]

@@ -367,6 +367,81 @@ public class MarkupDocumentTests
         Assert.Equal(["s", "sa"], binding.Heard);   // the owner is not told about its own value
     }
 
+    /// <summary>
+    /// A click on a <c>keepfocus</c> list (the suggestions beside a query field)
+    /// leaves the field focused, and the value its owner cleared on the pick is
+    /// shown at once, while the field still has the caret.
+    /// </summary>
+    [Fact]
+    public void AKeepFocusListLeavesTheFieldFocused_AndTheFieldShowsTheOwnersClearedValue()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" text="{Range}"
+                     onchange="{ChangeRange}" />
+              <list x="4" y="30" w="120" h="60" items="{Items}" selected="{None}"
+                    onchange="{Pick}" keepfocus="true" />
+            </panel>
+            """;
+        var binding = new PickBinding();
+        UiNineSlicePanel panel = MarkupDocument.Build(xml, binding, _ => (1u, 32, 32));
+        UiField field = Assert.IsType<UiField>(panel.Children[0]);
+        var root = new UiRoot { Width = 400, Height = 300 };
+        root.AddChild(panel);
+        panel.TickSelfAndChildren(0.016);
+        root.SetKeyboardFocus(field);
+        field.InsertChar('r');
+        panel.TickSelfAndChildren(0.016);
+
+        root.OnMouseDown(UiMouseButton.Left, 20, 38);
+        root.OnMouseUp(UiMouseButton.Left, 20, 38);
+        Assert.Equal([0], binding.Picked);
+        Assert.Same(field, root.KeyboardFocus);
+        panel.TickSelfAndChildren(0.016);
+        Assert.Equal("", field.Text);
+        Assert.True(field.IsFocused);
+    }
+
+    /// <summary>An owner that reshapes what is typed (trims it) does not fight the
+    /// caret while the field has focus; its value shows once the focus goes.</summary>
+    [Fact]
+    public void AFocusedFieldKeepsTheTyping_WhenItsOwnerTrimsIt()
+    {
+        const string xml = """
+            <panel x="0" y="0" w="240" h="120">
+              <field x="4" y="4" w="120" h="20" text="{Range}"
+                     onchange="{ChangeRange}" />
+            </panel>
+            """;
+        var binding = new PickBinding { Trim = true };
+        UiNineSlicePanel panel = MarkupDocument.Build(xml, binding, _ => (1u, 32, 32));
+        UiField field = Assert.IsType<UiField>(panel.Children[0]);
+        var root = new UiRoot { Width = 400, Height = 300 };
+        root.AddChild(panel);
+        panel.TickSelfAndChildren(0.016);
+        root.SetKeyboardFocus(field);
+        field.InsertChar('a');
+        panel.TickSelfAndChildren(0.016);
+        field.InsertChar(' ');
+        panel.TickSelfAndChildren(0.016);
+        panel.TickSelfAndChildren(0.016);
+        Assert.Equal("a ", field.Text);
+        root.SetKeyboardFocus(null);
+        panel.TickSelfAndChildren(0.016);
+        Assert.Equal("a", field.Text);
+    }
+
+    private sealed class PickBinding
+    {
+        public bool Trim { get; init; }
+        public string Range { get; set; } = "";
+        public IReadOnlyList<string> Items { get; } = ["first", "second"];
+        public int None => -1;
+        public List<int> Picked { get; } = [];
+        public Action<string> ChangeRange => value => Range = Trim ? value.Trim() : value;
+        public Action<int> Pick => i => { Picked.Add(i); Range = ""; };
+    }
+
     private sealed class LateValueBinding
     {
         public string Range { get; set; } = "5";

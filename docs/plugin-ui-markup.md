@@ -344,7 +344,7 @@ Unknown or miscased element names throw at build time.
 | `slider` | Horizontal slider | `x y w h value onchange min max style` |
 | `field` | Single-line text input | `x y w h text maxlength clearonsubmit onchange onsubmit onblur onup ondown color background` |
 | `menu` | Drop-down | `x y w h items selected onchange rows rowheight openupward style` |
-| `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize tree levels keys expanded onexpand collapsed`; column form only) |
+| `list` | Scrolling rows | `x y w h selectmode selected onchange rowheight selectionband keepfocus`, then either `items colors icons iconkind` or `<column>` children (which also take `header resizable sortcolumn sortdescending onsort widths onresize tree levels keys expanded onexpand collapsed`; column form only) |
 | `canvas` | Hosts the plugin canvas registered with `InMarkup` | `id` (required), `x y w h`, and the flex item attributes (see [`<canvas>`](#canvas-a-plugin-drawing-inside-the-window)) |
 | `repeat` | One copy of its children per item of a list (flex containers only) | `items key` |
 
@@ -1512,7 +1512,9 @@ cell draws the same lamp glyph as `<toggle>`; a `checkbox` cell draws the
 `<checkbox>` tick box. When rows overflow the list's height it reserves a
 16-pixel scrollbar at its right edge, drawn with the game's scrollbar art;
 when they fit, no bar and no reservation. Row selection draws no highlight
-band unless `selectionband="true"`.
+band unless `selectionband="true"`. With `keepfocus="true"` a click on the
+list leaves keyboard focus where it was, so a field can keep the caret while
+the list beside it offers suggestions to click.
 
 ### Header, sorting and column widths
 
