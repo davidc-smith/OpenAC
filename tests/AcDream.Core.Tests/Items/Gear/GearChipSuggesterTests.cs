@@ -20,6 +20,12 @@ public sealed class GearChipSuggesterTests
         Assert.Equal(GearChip.NameContains("steel"), s[^1]);
     }
 
+    [Theory]
+    [InlineData("lo")]
+    [InlineData("lock")]
+    public void Lo_SuggestsLockedChip(string typed) =>
+        Assert.Contains(GearChip.LockedOnly, GearChipSuggester.Suggest(typed));
+
     [Fact]
     public void Salv_SuggestsSalvageGroup() =>
         Assert.Equal(GearChip.OfType(GearTypeGroup.Salvage), GearChipSuggester.Suggest("salv")[0]);

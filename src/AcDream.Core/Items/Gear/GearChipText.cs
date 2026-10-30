@@ -12,6 +12,7 @@ public static class GearChipText
         GearField.Material => MaterialNames.Name(chip.Id),
         GearField.Pack => packName(chip.Id),
         GearField.Worn => "Worn",
+        GearField.Locked => "Locked",
         _ => RangeLabel(chip),
     };
 
@@ -21,6 +22,7 @@ public static class GearChipText
         GearField.Type => "Type: " + GearTypeGroups.Label(chip.Group),
         GearField.Material => "Material: " + MaterialNames.Name(chip.Id),
         GearField.Worn => "Worn items",
+        GearField.Locked => "Locked items",
         _ => Label(chip, _ => "Pack"),
     };
 

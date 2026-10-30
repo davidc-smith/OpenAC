@@ -27,6 +27,15 @@ public sealed class GearQueryEngineTests
         GearQuery.Empty with { Chips = chips, Sort = new GearSort(GearSortField.Name, false) };
 
     [Fact]
+    public void LockedChip_KeepsOnlyLockedRows()
+    {
+        var a = Row(1, "Axe") with { Locked = true };
+        var b = Row(2, "Bow");
+        IReadOnlyList<GearItemView> hits = GearQueryEngine.Run([a, b], GearQuery.Empty.With(GearChip.LockedOnly));
+        Assert.Equal(new[] { 1u }, hits.Select(h => h.Id));
+    }
+
+    [Fact]
     public void Workmanship_ComparesAsDisplayed_SoA73fRowMatches73()
     {
         GearItemView[] rows = [Row(1, "A", work: 7.3f)];
