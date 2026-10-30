@@ -31,6 +31,7 @@ public sealed class SelectionInteractionControllerTests
         public bool LastIncludeSelf { get; private set; }
         public bool Current { get; set; } = true;
         public bool Creature { get; set; }
+        public bool DyingCreature { get; set; }
         public bool Hostile { get; set; }
         public bool Attackable { get; set; }
         public bool Useable { get; set; } = true;
@@ -62,6 +63,7 @@ public sealed class SelectionInteractionControllerTests
         public bool IsCurrent(uint serverGuid, uint localEntityId) => Current;
         public string Describe(uint serverGuid) => $"Target {serverGuid:X8}";
         public bool IsCreature(uint serverGuid) => Creature;
+        public bool IsCreatureKind(uint serverGuid) => Creature || DyingCreature;
         public bool IsHostileMonster(uint serverGuid) => Hostile;
         public bool IsAttackableTarget(uint serverGuid) => Attackable;
         public ClosestCombatTarget? FindClosestHostileMonster() => Closest;
@@ -1438,6 +1440,22 @@ public sealed class SelectionInteractionControllerTests
         Assert.Single(h.PendingPlacements);
         Assert.Equal(new[] { Target }, h.CancelledPlacements.Select(p => p.ItemId));
         Assert.Empty(h.Transport.Pickups);
+    }
+
+    [Fact]
+    public void DyingCreatureIsRefusedForPickupAndWorldDrag()
+    {
+        var h = new Harness();
+        h.Query.DyingCreature = true;
+        h.SetApproach(closeRange: true);
+        h.Selection.Select(Target, SelectionChangeSource.World);
+
+        Assert.False(h.Controller.CanPickUp(Target));
+        h.Controller.HandleInputAction(InputAction.SelectionPickUp);
+        h.DriveFrame();
+
+        Assert.Empty(h.Transport.Pickups);
+        Assert.Contains(AcDream.Core.Ui.RetailMessages.CannotPickUpCreatures, h.Toasts);
     }
 
     [Theory]
