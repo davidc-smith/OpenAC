@@ -30,4 +30,37 @@ public sealed class PackTidyPlannerTests
         var rows = new[] { Row(1, name: "A", slot: 0), Row(2, name: "B", slot: 1) };
         Assert.Empty(PackTidyPlanner.Plan(1u, rows));
     }
+
+    [Fact]
+    public void ShuffledInput_GivesTheSameMovesAsSlotOrderedInput()
+    {
+        var rows = new[]
+        {
+            Row(1, name: "Zircon", group: GearTypeGroup.Gems, slot: 0),
+            Row(2, name: "Steel", group: GearTypeGroup.Salvage, work: 5f, slot: 1),
+            Row(3, name: "steel", group: GearTypeGroup.Salvage, work: 9f, slot: 2),
+            Row(4, name: "Amber", group: GearTypeGroup.Gems, slot: 3),
+        };
+        var shuffled = new[] { rows[3], rows[1], rows[0], rows[2] };
+        Assert.Equal(PackTidyPlanner.Plan(1u, rows), PackTidyPlanner.Plan(1u, shuffled));
+    }
+
+    [Fact]
+    public void EqualSortKeys_KeepTheirSlotOrder()
+    {
+        var rows = new[] { Row(2, name: "A", slot: 1), Row(1, name: "A", slot: 0), Row(3, name: "A", slot: 2) };
+        Assert.Empty(PackTidyPlanner.Plan(1u, rows));
+    }
+
+    [Fact]
+    public void WornAndOtherPackRows_AreIgnored()
+    {
+        var rows = new[]
+        {
+            Row(1, name: "A", slot: 0), Row(2, name: "B", slot: 1),
+            Row(3, name: "0", slot: 0, worn: true), Row(4, name: "0", pack: 2, packIndex: 1, slot: 0),
+            Row(5, name: "0", slot: 2, isPack: true),
+        };
+        Assert.Empty(PackTidyPlanner.Plan(1u, rows));
+    }
 }
