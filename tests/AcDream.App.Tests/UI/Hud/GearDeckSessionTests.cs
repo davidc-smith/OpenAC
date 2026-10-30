@@ -150,6 +150,31 @@ public sealed class GearDeckSessionTests
     }
 
     [Fact]
+    public void SwitchingCharacter_EndsTheOldSession_ThenLoadsTheNewOne()
+    {
+        var store = new FakeStore();
+        store.Saved["Bob"] = """{"version":1,"view":"list"}""";
+        string key = "Davian";
+        var s = new GearDeckSession(store, () => key, () => true, () => 0);
+        int ended = 0;
+        s.Ended += () => ended++;
+        s.Tick();
+        Assert.Equal(0, ended);                    // the first character starts a session, it ends none
+        s.Update(x => x with { Folded = true });   // pending: not yet idle long enough to save
+        GearDeckSettings? settingsAtEnd = null;
+        s.Ended += () => settingsAtEnd = s.Settings;
+        key = "Bob";
+        s.Tick();
+        Assert.Equal(1, ended);
+        Assert.Equal(GearDeckSettings.Default, settingsAtEnd);
+        Assert.True(GearDeckSettings.FromJson(store.Saved["Davian"]).Folded);
+        Assert.Equal(GearPackView.List, s.Settings.View);
+        Assert.False(s.Settings.Folded);
+        s.Tick();
+        Assert.Equal(1, ended);
+    }
+
+    [Fact]
     public void EndSession_RaisesEnded()
     {
         var session = new GearDeckSession(null, () => "", () => false);
@@ -187,8 +212,33 @@ public sealed class GearDeckSessionTests
         GearDeckSettings s = GearDeckSettings.FromJson("""{"equip":"slots","future":3}""");
         string json = (s with { Equip = GearEquipView.Figure }).ToJson();
         Assert.Contains("\"equip\":\"figure\"", json);
-        Assert.DoesNotContain("\"equip\":\"slots\"", json);
         Assert.Contains("\"future\":3", json);
+        // Unknown keys are written first, then ours: a kept "equip" would come before "version".
+        Assert.True(json.IndexOf("\"version\"", StringComparison.Ordinal) < json.IndexOf("\"equip\"", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("equip", "3")]
+    [InlineData("equip", "true")]
+    [InlineData("view", "{}")]
+    [InlineData("folded", "\"yes\"")]
+    [InlineData("selectedPack", "\"seven\"")]
+    [InlineData("selectedPack", "-1")]
+    public void AWronglyTypedValue_ReadsAsItsDefault_AndKeepsTheOtherSettings(string key, string value)
+    {
+        var o = new System.Text.Json.Nodes.JsonObject
+        {
+            ["version"] = 1, ["folded"] = true, ["view"] = "list", ["selectedPack"] = 7, ["equip"] = "slots", ["figureLocked"] = true,
+            ["savedFilters"] = new System.Text.Json.Nodes.JsonArray(GearQueryJson.Write(new SavedFilter("Steel", GearQuery.Empty with { Text = "a" }))),
+        };
+        o[key] = System.Text.Json.Nodes.JsonNode.Parse(value);
+        GearDeckSettings s = GearDeckSettings.FromJson(o.ToJsonString());
+        Assert.Equal(key != "folded", s.Folded);
+        Assert.Equal(key == "view" ? GearPackView.Grid : GearPackView.List, s.View);
+        Assert.Equal(key == "selectedPack" ? 0u : 7u, s.SelectedPack);
+        Assert.Equal(key == "equip" ? GearEquipView.Figure : GearEquipView.Slots, s.Equip);
+        Assert.True(s.FigureLocked);
+        Assert.Equal(["Steel"], s.SavedFilters.Select(f => f.Name));
     }
 
     [Fact]
@@ -212,7 +262,10 @@ public sealed class GearDeckSessionTests
     {
         GearDeckSettings s = GearDeckSettings.FromJson(json);
         Assert.False(s.FigureLocked);
-        Assert.DoesNotContain("\"figureLocked\":\"yes\"", s.ToJson());   // not kept as an unknown key
+        string back = s.ToJson();
+        Assert.Contains("\"figureLocked\":false", back);
+        // Not kept as an unknown key: those are written before "version".
+        Assert.True(back.IndexOf("\"version\"", StringComparison.Ordinal) < back.IndexOf("\"figureLocked\"", StringComparison.Ordinal));
     }
 
     [Fact]
