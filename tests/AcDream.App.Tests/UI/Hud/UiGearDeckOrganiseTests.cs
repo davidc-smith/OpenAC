@@ -53,6 +53,8 @@ public sealed class UiGearDeckOrganiseTests
         public required Channel Channel;
         public required Sender Sender;
         public required ItemLocks Locks;
+        public required GearDeckSession Session;
+        public readonly List<GearSplitRequest> SplitRequests = [];
         public (bool Toggle, bool Range) Mods;
     }
 
@@ -82,15 +84,16 @@ public sealed class UiGearDeckOrganiseTests
             Wear(t, new ClientObject { ObjectId = Helm, WielderId = Player, Name = "Helm", ValidLocations = EquipMask.HeadWear }, EquipMask.HeadWear);
             Wear(t, new ClientObject { ObjectId = Sword, WielderId = Player, Name = "Sword", ValidLocations = EquipMask.MeleeWeapon }, EquipMask.MeleeWeapon);
         }
-        var session = new GearDeckSession(null, () => "", () => false);
+        var locks = new ItemLocks();
+        var session = new GearDeckSession(null, () => "", () => false, locks: locks);
         var actions = new Fake();
         var channel = new Channel();
         var sender = new Sender();
         var queue = new GearMoveQueue(channel, sender, () => 0.0);
-        var locks = new ItemLocks();
-        var rig = new Rig { Deck = null!, Actions = actions, Queue = queue, Channel = channel, Sender = sender, Locks = locks };
+        var rig = new Rig { Deck = null!, Actions = actions, Queue = queue, Channel = channel, Sender = sender, Locks = locks, Session = session };
         var b = new GearDeckBindings(() => t, () => Player, () => 100, (_, _, _, _, _) => 0u, (_, _, _, _, _) => 0u,
-            o => o.Name, session, actions, _ => false, () => { }, Modifiers: () => rig.Mods, Queue: queue, Locks: locks);
+            o => o.Name, session, actions, _ => false, () => { }, Modifiers: () => rig.Mods, Queue: queue, Locks: locks,
+            OpenSplit: rig.SplitRequests.Add);
         rig.Deck = new UiGearDeck(b, null, null, () => 0.0);
         rig.Deck.Refresh();
         return rig;
@@ -335,5 +338,87 @@ public sealed class UiGearDeckOrganiseTests
         Send(rig.Deck, UiEventType.DropReleased, rig.Deck.Geometry.SidePack(1), payload);
         Assert.False(rig.Queue.IsRunning);
         Assert.Empty(rig.Sender.Sent);
+    }
+
+    private static (UiRoot Root, Rig Rig) Rooted()
+    {
+        Rig rig = Make();
+        var root = new UiRoot { Width = 1200, Height = 900 };
+        root.AddChild(rig.Deck);
+        rig.Deck.Refresh();
+        return (root, rig);
+    }
+
+    private static void RightClick(UiRoot root, UiGearDeck deck, DeckRect r)
+    {
+        var o = deck.ScreenPosition;
+        int x = (int)(o.X + r.X + r.W / 2f), y = (int)(o.Y + r.Y + r.H / 2f);
+        root.OnMouseMove(x, y);
+        root.OnMouseDown(UiMouseButton.Right, x, y);
+        root.OnMouseUp(UiMouseButton.Right, x, y);
+    }
+
+    private static int SlotOf(Rig rig, uint id) => rig.Deck.Shown[IndexOf(rig, id)].Slot;
+
+    private static void Choose(Rig rig, string label)
+    {
+        IReadOnlyList<string> items = rig.Deck.Menu.ItemsSource!();
+        int i = items.ToList().IndexOf(label);
+        Assert.True(i >= 0, $"no '{label}' in [{string.Join(", ", items)}]");
+        Assert.True(rig.Deck.Menu.ItemsEnabledSource!()[i], $"'{label}' is disabled");
+        rig.Deck.Menu.Selected!(i);
+    }
+
+    [Fact]
+    public void LockFromTheItemMenu_LocksTheSelection_AndTheMenuThenOffersUnlock()
+    {
+        var (root, rig) = Rooted();
+        SelectRows(rig, Misc0, Misc1);
+        RightClick(root, rig.Deck, CellOf(rig, Misc0));
+        Choose(rig, "Lock");
+        Assert.True(rig.Locks.IsLocked(Misc0) && rig.Locks.IsLocked(Misc1));
+        Assert.Equal(new uint[] { Misc0, Misc1 }.Order(), rig.Session.Settings.LockedIds);
+        RightClick(root, rig.Deck, CellOf(rig, Misc0));
+        Choose(rig, "Unlock");
+        Assert.Empty(rig.Locks.Ids);
+    }
+
+    [Fact]
+    public void SplitFromTheItemMenu_AsksForTheStackAndItsNextSlot()
+    {
+        var (root, rig) = Rooted();
+        RightClick(root, rig.Deck, CellOf(rig, Coins50));
+        Choose(rig, "Split...");
+        GearSplitRequest r = rig.SplitRequests.Single();
+        Assert.Equal((Coins50, 50, Player), (r.Stack, r.Max, r.Container));
+        Assert.Equal(SlotOf(rig, Coins50) + 1, r.Slot);
+    }
+
+    [Fact]
+    public void SplitIsDisabledForASingleItem()
+    {
+        var (root, rig) = Rooted();
+        RightClick(root, rig.Deck, CellOf(rig, Misc0));
+        int i = rig.Deck.Menu.ItemsSource!().ToList().IndexOf("Split...");
+        Assert.False(rig.Deck.Menu.ItemsEnabledSource!()[i]);
+    }
+
+    [Fact]
+    public void TidyFromThePackMenu_QueuesTheTidyMoves()
+    {
+        var (root, rig) = Rooted();
+        RightClick(root, rig.Deck, rig.Deck.Geometry.SidePack(0));
+        Assert.Equal(new[] { "Tidy this pack", "Combine stacks", "Apply pack rules", "-", "Pack rules..." }, rig.Deck.Menu.ItemsSource());
+        Choose(rig, "Tidy this pack");
+        Assert.Equal("Tidying", rig.Queue.Label);
+    }
+
+    [Fact]
+    public void CombineLikeStacks_TakesOnlyTheSelectionsKinds()
+    {
+        var (root, rig) = Rooted();
+        RightClick(root, rig.Deck, CellOf(rig, Coins30));
+        Choose(rig, "Combine like stacks");
+        Assert.Equal(GearMove.Merge(Coins30, Coins50, 30), rig.Sender.Sent.Single());
     }
 }

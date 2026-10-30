@@ -50,6 +50,21 @@ internal sealed partial class UiGearDeck
 
     internal void CombineAll() => Run("Combining", CombineMoves);
 
+    internal void SetLocks(IReadOnlyCollection<uint> ids, bool locked)
+    {
+        if (_b.Locks is null || ids.Count == 0) return;
+        _b.Session.Update(s => s.WithLock(ids, locked));
+        _b.Log?.Invoke($"[gear-deck] {(locked ? "lock" : "unlock")} {ids.Count}");
+    }
+
+    private void RequestSplit(GearItemView row) =>
+        _b.OpenSplit?.Invoke(new GearSplitRequest(row.Id, row.Name, row.Stack, row.PackId, row.Slot + 1));
+
+    /// <summary>The pack rules' moves; a later task fills this in. <paramref name="only"/> limits it to arrived items.</summary>
+    internal GearRulePlan RulePlan(IReadOnlyCollection<uint>? only) => new([], new Dictionary<uint, int>());
+
+    private void ApplyRules(IReadOnlyList<GearMove> moves) => Run("Sorting", moves);
+
     internal void StopQueue()
     {
         _b.Queue?.Cancel();

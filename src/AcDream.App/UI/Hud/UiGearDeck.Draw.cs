@@ -294,6 +294,13 @@ internal sealed partial class UiGearDeck
         if (r.W <= 0f) return;
         bool locked = FigureLocked;
         Vector4 ink = DeckChrome.DrawStud(ctx, r, _scale, on: locked);
+        DrawPadlockGlyph(ctx, r, locked, ink);
+    }
+
+    /// <summary>A padlock in <paramref name="r"/>: a filled body in the lower part and a shackle of two legs and a top bar;
+    /// open, the shackle rises and its right leg stands clear of the body.</summary>
+    private void DrawPadlockGlyph(UiRenderContext ctx, DeckRect r, bool locked, Vector4 ink)
+    {
         float cx = r.X + r.W / 2f, top = r.Y + P(3f), bottom = r.Y + r.H - P(3f);
         float bodyH = (bottom - top) * 0.55f, bodyTop = bottom - bodyH;
         ctx.FillRoundedRect(cx - P(4.5f), bodyTop, P(9f), bodyH, P(1.5f), ink);
@@ -412,6 +419,7 @@ internal sealed partial class UiGearDeck
                     float lh = face.LineHeight(ctx);
                     face.Draw(ctx, stack, r.X + r.W - P(2f) - face.Measure(ctx, stack), r.Y + r.H - lh, TextInk);
                 }
+                if (row.Locked) DrawPadlockGlyph(ctx, new DeckRect(r.X + P(1f), r.Y + r.H - P(12f), P(11f), P(11f)), true, TextInk);
                 if (results) face.Draw(ctx, PackBadge(row), r.X + P(2f), r.Y + P(1f), LabelInk);
                 if (picked) StrokeInside(ctx, r, 5f, Handle);
                 else if (Hover.Zone == GearZone.Item && Hover.Index == i) StrokeInside(ctx, r, 5f, Handle with { W = 0.6f });
@@ -454,6 +462,7 @@ internal sealed partial class UiGearDeck
                 float iconSize = P(ListIcon);
                 var icon = new DeckRect(r.X + P(2f), r.Y + (r.H - iconSize) / 2f, iconSize, iconSize);
                 DrawIcon(ctx, IconFor(o), icon);
+                if (row.Locked) DrawPadlockGlyph(ctx, new DeckRect(icon.X, icon.Y + icon.H - P(10f), P(10f), P(10f)), true, TextInk);
                 if (results)
                 {
                     DrawResultColumns(ctx, face, row, r, icon.X + icon.W + P(6f));

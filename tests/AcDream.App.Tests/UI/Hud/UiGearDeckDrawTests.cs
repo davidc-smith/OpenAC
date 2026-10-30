@@ -68,7 +68,7 @@ public sealed class UiGearDeckDrawTests
     private static UiGearDeck Deck(ClientObjectTable table, uint player = Player, DeckFonts? fonts = null,
         EmbeddedSvgSpriteCache? icons = null, Func<GearDeckSettings, GearDeckSettings>? settings = null, uint icon = 0u,
         Func<uint>? playerGuid = null, Func<int?>? strength = null, Func<ItemType, uint, uint, uint, uint, uint>? resolveIcon = null,
-        float? scale = null, Func<double>? clock = null)
+        float? scale = null, Func<double>? clock = null, ItemLocks? locks = null)
     {
         var session = new GearDeckSession(null, () => "", () => false);
         if (settings is not null) session.Update(settings);
@@ -82,7 +82,8 @@ public sealed class UiGearDeckDrawTests
             Session: session,
             Actions: new NoActions(),
             IsPending: id => id == 0xA01u,
-            Close: () => { });
+            Close: () => { },
+            Locks: locks);
         var deck = new UiGearDeck(b, fonts, icons, clock);
         if (scale is { } s) deck.SetScale(s);
         deck.Refresh();
@@ -427,5 +428,32 @@ public sealed class UiGearDeckDrawTests
         h = min - 1f;
         deck.ConstrainResize(ResizeEdges.Top, ref w, ref h);
         Assert.Equal(min, h);
+    }
+
+    [Fact]
+    public void ALockedItemInTheGrid_DrawsAPadlockInItsBottomLeft()
+    {
+        static int Ink(TextRenderer r, DeckRect cell)
+        {
+            int n = 0;
+            foreach (var s in r.DebugSpriteSegmentVerts)
+            {
+                if (s.Texture != 0u) continue;
+                for (int i = 0; i + 8 <= s.Verts.Count; i += 8)
+                    if (s.Verts[i] >= cell.X && s.Verts[i] <= cell.X + cell.W / 2f
+                        && s.Verts[i + 1] >= cell.Y + cell.H / 2f && s.Verts[i + 1] <= cell.Y + cell.H
+                        && MathF.Abs(s.Verts[i + 4] - DeckChrome.TextInk.X) < Tol && MathF.Abs(s.Verts[i + 5] - DeckChrome.TextInk.Y) < Tol
+                        && MathF.Abs(s.Verts[i + 6] - DeckChrome.TextInk.Z) < Tol)
+                        n++;
+            }
+            return n;
+        }
+        var locks = new ItemLocks();
+        UiGearDeck deck = Deck(World(), locks: locks);
+        DeckRect cell = deck.Geometry.GridCell(2, 0)!.Value;
+        Assert.Equal(0, Ink(DrawInside(deck), cell));
+        locks.Set(deck.Shown[2].Id, true);
+        deck.Refresh();
+        Assert.True(Ink(DrawInside(deck), cell) > 0);
     }
 }

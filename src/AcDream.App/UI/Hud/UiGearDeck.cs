@@ -24,7 +24,9 @@ internal sealed record GearDeckBindings(
     HudText? Text = null,
     PaperdollClickMap? ClickMap = null,
     GearMoveQueue? Queue = null,
-    ItemLocks? Locks = null);
+    ItemLocks? Locks = null,
+    Action<GearSplitRequest>? OpenSplit = null,
+    Action? OpenRules = null);
 
 /// <summary>
 /// The Gear Deck: the Modern HUD inventory and paper doll, one column 300
