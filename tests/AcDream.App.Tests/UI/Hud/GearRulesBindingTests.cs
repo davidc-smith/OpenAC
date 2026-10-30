@@ -252,16 +252,36 @@ public sealed class GearRulesBindingTests
     }
 
     [Fact]
-    public void Save_ReplacesASameNamedFilter_IgnoringCase()
+    public void Save_RefusesANewFilterNamedLikeAnother_IgnoringCase()
     {
         var (b, s) = Make();
         b.SetDraftName("salvage");
         b.SetDraftText("worn");
         b.PickSuggestion(0);
+        Assert.Equal("New filter", b.EditorTitle);
+        Assert.False(b.CanSaveFilter);
+        Assert.Equal("A filter named \"salvage\" already exists.", b.SaveHint);
         b.SaveFilter();
-        Assert.Equal(new[] { "salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
-        Assert.Equal(GearQuery.Empty.With(GearChip.WornOnly), s.Settings.SavedFilters[0].Query);
-        Assert.Equal(0, b.SelectedFilterIndex);
+        Assert.Equal(new[] { "Salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(Named("salvage"), s.Settings.SavedFilters[0].Query);
+        b.SetDraftName("Worn");
+        Assert.True(b.CanSaveFilter);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Salvage", "Gems", "Worn" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(2, b.SelectedFilterIndex);
+    }
+
+    [Fact]
+    public void Save_OverALoadedFilter_ReplacesItsQuery()
+    {
+        var (b, s) = Make();
+        b.SelectFilterRow(0);
+        Assert.Equal("Edit filter \"Salvage\" (Save replaces it)", b.EditorTitle);
+        b.SetDraftText("worn");
+        b.PickSuggestion(0);
+        b.SaveFilter();
+        Assert.Equal(new[] { "Salvage", "Gems" }, s.Settings.SavedFilters.Select(f => f.Name));
+        Assert.Equal(Named("salvage").With(GearChip.WornOnly), s.Settings.SavedFilters[0].Query);
     }
 
     [Fact]
@@ -273,9 +293,12 @@ public sealed class GearRulesBindingTests
         b.SetDraftText("gem");
         Assert.False(b.CanSaveFilter);
         Assert.NotEqual("", b.SaveHint);
-        b.SetDraftName("f3");             // replacing one still works
+        b.SelectFilterRow(3);             // saving over a loaded one still works
+        b.SetDraftText("gem");
         Assert.True(b.CanSaveFilter);
         Assert.Equal("", b.SaveHint);
+        b.SetDraftName("Another");        // and so does renaming it
+        Assert.True(b.CanSaveFilter);
     }
 
     [Fact]

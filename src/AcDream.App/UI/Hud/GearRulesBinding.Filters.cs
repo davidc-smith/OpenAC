@@ -126,9 +126,9 @@ public sealed partial class GearRulesBinding
 
     // ── the editor ──
     public string EditorTitle =>
-        Renaming ? $"Edit filter \"{LoadedName}\" (Save renames it)"
-        : NameIsNew ? "New filter"
-        : $"Edit filter \"{_draftName.Trim()}\" (Save replaces it)";
+        LoadedName is not { } loaded ? "New filter"
+        : Renaming ? $"Edit filter \"{loaded}\" (Save renames it)"
+        : $"Edit filter \"{loaded}\" (Save replaces it)";
 
     public string DraftName { get { Sync(); return _draftName; } }
     public Action<string> SetDraftName => v => { Sync(); _draftName = v; };
@@ -209,23 +209,25 @@ public sealed partial class GearRulesBinding
     private bool Renaming => LoadedName is { } loaded && _draftName.Trim().Length > 0
         && !string.Equals(loaded, _draftName.Trim(), StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>A rename onto another filter's name would merge the two: refused.</summary>
-    private bool RenameTaken => Renaming && !NameIsNew;
+    /// <summary>The name belongs to a filter other than the loaded one: saving would overwrite it, so it is
+    /// refused (a new draft or a rename alike). Only the loaded filter's own name saves over it.</summary>
+    private bool NameTaken => !NameIsNew
+        && !(LoadedName is { } loaded && string.Equals(loaded, _draftName.Trim(), StringComparison.OrdinalIgnoreCase));
 
     private bool CanSaveAny => _draftName.Trim().Length > 0 && !DraftQuery.IsEmpty && _session() is not null;
 
-    public bool CanSaveFilter => CanSaveAny && (Renaming ? !RenameTaken : !SavedFull);
+    public bool CanSaveFilter => CanSaveAny && !NameTaken && (Renaming || !SavedFull);
 
     /// <summary>Save as new: a loaded filter's draft under a name not yet used, kept beside the original.</summary>
     public bool CanSaveAsNew => CanSaveAny && Renaming && NameIsNew && !SavedFull;
 
     public string SaveHint =>
-        RenameTaken ? $"A filter named \"{_draftName.Trim()}\" already exists."
+        NameTaken ? $"A filter named \"{_draftName.Trim()}\" already exists."
         : SavedFull && !Renaming ? $"You can keep up to {SavedFilter.MaxCount} saved filters."
         : "";
 
-    /// <summary>Saves the draft. A loaded filter whose name changed is renamed in place (its rules follow);
-    /// otherwise as ★ does: a same-named filter (ignoring case) is replaced, a new one added up to the cap.</summary>
+    /// <summary>Saves the draft. A loaded filter is saved over (renamed in place when its name changed; its
+    /// rules follow); a new draft is added up to the cap. A name another filter has is refused.</summary>
     public Action SaveFilter => () =>
     {
         if (!CanSaveFilter) return;
