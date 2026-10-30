@@ -547,6 +547,36 @@ public sealed class RetailUiRuntime : IDisposable
         if (_chatDeckEditor is { IsOpen: true } open) open.Toggle();
     }
 
+    private PluginAppearanceWindow? _gearSplit;
+    private Hud.GearSplitBinding? _gearSplitBinding;
+
+    private PluginAppearanceWindow GearSplitWindow()
+    {
+        _gearSplitBinding ??= new Hud.GearSplitBinding();
+        Hud.GearSplitBinding binding = _gearSplitBinding;
+        return _gearSplit ??= new PluginAppearanceWindow(Host.Root, close =>
+        {
+            binding.Close = close;
+            return Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.GearSplitBinding.Markup, binding,
+                _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
+                themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close);
+        }, onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _gearDeck, window));
+    }
+
+    private void OpenGearSplit(Hud.GearSplitRequest request)
+    {
+        RuntimeItemInteraction items = ItemInteraction;
+        PluginAppearanceWindow window = GearSplitWindow();
+        _gearSplitBinding!.Open(request, (stack, container, slot, amount) =>
+            items.TrySplitToContainer(stack, container, (uint)Math.Max(0, slot), (uint)Math.Max(0, amount)));
+        window.Show();
+    }
+
+    private void CloseGearSplit()
+    {
+        if (_gearSplit is { IsOpen: true } open) open.Toggle();
+    }
+
     private void CloseChatDeckSettings()
     {
         if (_chatDeckSettings is { IsOpen: true } open) open.Toggle();
@@ -1463,6 +1493,7 @@ public sealed class RetailUiRuntime : IDisposable
         // The next character starts with the Gear Deck closed (hidden on the next tick) and its own settings.
         _hudSwitch?.CloseAllOnDemand();
         _gearDeckSession?.EndSession();
+        CloseGearSplit();
         _gearQueue?.Cancel();   // the next character's inventory is not this queue's
         // A new character starts with nothing identified and no auto-ID gaps.
         _targetAppraisalLog?.Clear();
@@ -4016,7 +4047,8 @@ public sealed class RetailUiRuntime : IDisposable
                     Text: HudTextSize,
                     ClickMap: _paperdollClickMap,
                     Queue: _gearQueue,
-                    Locks: _itemLocks),
+                    Locks: _itemLocks,
+                    OpenSplit: OpenGearSplit),
                 _deckFonts,
                 _hudIcons);
             RetailWindowFrame.Mount(Host.Root, deck, _bindings.Assets.ResolveSprite,

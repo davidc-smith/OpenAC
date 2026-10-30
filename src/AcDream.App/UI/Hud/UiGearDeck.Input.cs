@@ -509,6 +509,18 @@ internal sealed partial class UiGearDeck
             _b.Log?.Invoke($"[gear-deck] drop selection ({_selection.Count}) on {hit.Zone} {hit.Index}");
             return true;
         }
+        // Ctrl/Cmd or Shift on a stack dragged from the deck, onto a pack place: ask how many to split off.
+        (bool toggle, bool range) = ReadModifiers();
+        if ((toggle || range) && fromDeck == p.ObjId && _b.OpenSplit is { } openSplit && GroupTarget(hit) is { } where)
+        {
+            foreach (GearItemView row in Shown)
+            {
+                if (row.Id != p.ObjId) continue;
+                if (row.Stack <= 1) break;
+                openSplit(new GearSplitRequest(row.Id, row.Name, row.Stack, where.Pack, where.Slot));
+                return true;
+            }
+        }
         bool fromGround = p.SourceKind == ItemDragSource.Ground;
         _actions.Last = null;
         string action;
