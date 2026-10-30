@@ -550,6 +550,7 @@ public sealed class RetailUiRuntime : IDisposable
     private PluginAppearanceWindow? _gearSplit;
     private Hud.GearSplitBinding? _gearSplitBinding;
 
+    /// <summary>The Gear Deck's Split stack popup, in the middle of the screen.</summary>
     private PluginAppearanceWindow GearSplitWindow()
     {
         _gearSplitBinding ??= new Hud.GearSplitBinding();
@@ -560,7 +561,7 @@ public sealed class RetailUiRuntime : IDisposable
             return Hud.ChatDeckSettingsBinding.Prepare(MarkupDocument.Build(Hud.GearSplitBinding.Markup, binding,
                 _bindings.Assets.ResolveSprite, _bindings.Assets.Controls, _bindings.Assets.DefaultFont,
                 themes: ChatDeckPopupThemes(), describeKey: DescribeKey(allowCommand: true)), close);
-        }, onOpen: window => Hud.ChatDeckSettingsPlacement.Dock(Host.Root, _gearDeck, window));
+        }, onOpen: window => Hud.ChatDeckSettingsPlacement.Centre(Host.Root, window));
     }
 
     private void OpenGearSplit(Hud.GearSplitRequest request)
