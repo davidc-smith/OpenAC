@@ -1835,6 +1835,23 @@ public sealed class VendorUiControllerTests
     }
 
     [Fact]
+    public void HandleDropRelease_ALockedItem_IsNotStaged_AndSaysWhy()
+    {
+        var h = new Harness();
+        h.State.Apply(VendorGuid, SellProfile((uint)ItemType.Armor), Array.Empty<VendorShopItem>());
+        var locks = new ItemLocks();
+        h.ItemInteraction.Locks = locks;
+        MakeContained(h, PackChildAGuid, Harness.PlayerGuid, ItemType.Armor, 100);
+        locks.Set(PackChildAGuid, true);
+
+        h.Controller.HandleDropRelease(
+            h.SellingList, new UiItemSlot(), DragFromInventory(PackChildAGuid));
+
+        Assert.Equal(0, h.SellingList.GetNumUIItems());
+        Assert.Contains("That item is locked", h.SystemMessages);
+    }
+
+    [Fact]
     public void HandleDropRelease_EmptyPack_StagesThePackItselfAsOneRow()
     {
         var h = new Harness();

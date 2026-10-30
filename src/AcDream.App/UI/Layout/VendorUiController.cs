@@ -1642,6 +1642,8 @@ public sealed class VendorUiController : IRetainedPanelController, IItemListDrag
         quantity = 1;
         if (_objects.Get(itemGuid) is not { } item)
             return VendorSellRejection.WrongType;
+        if (_itemInteraction.Locks?.BlockerOf(_objects, itemGuid) is > 0u)
+            return VendorSellRejection.Locked;
 
         bool ownedByPlayer = _itemInteraction.IsOwnedByPlayer(itemGuid);
         int containedItemCount = _objects.GetContents(itemGuid).Count;

@@ -21,6 +21,9 @@ public enum VendorSellRejection
     /// (<c>pc:005d1af2</c>).
     /// </summary>
     TooCheap,
+
+    /// <summary>The player locked this item (or one inside it) against loss.</summary>
+    Locked,
 }
 
 public static class VendorSellAcceptability
@@ -70,6 +73,7 @@ public static class VendorSellAcceptability
         VendorSellRejection.NoValue => "That item has no value and cannot be sold",
         VendorSellRejection.TooCheap => "That item is too cheap to sell here",
         VendorSellRejection.TooValuable => "That item is too valuable to sell here",
+        VendorSellRejection.Locked => "That item is locked",
         VendorSellRejection.WrongType => "You cannot sell that here",
         _ => "You cannot sell that here",
     };
