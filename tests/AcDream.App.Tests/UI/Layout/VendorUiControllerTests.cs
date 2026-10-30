@@ -1848,7 +1848,25 @@ public sealed class VendorUiControllerTests
             h.SellingList, new UiItemSlot(), DragFromInventory(PackChildAGuid));
 
         Assert.Equal(0, h.SellingList.GetNumUIItems());
-        Assert.Contains("That item is locked", h.SystemMessages);
+        Assert.Equal(new[] { $"The Item {PackChildAGuid:X8} is locked." }, h.SystemMessages);
+    }
+
+    [Fact]
+    public void HandleDropRelease_APackHoldingALockedItem_NamesTheLockedItem()
+    {
+        var h = new Harness();
+        h.State.Apply(VendorGuid, SellProfile((uint)ItemType.Armor | (uint)ItemType.Container), Array.Empty<VendorShopItem>());
+        var locks = new ItemLocks();
+        h.ItemInteraction.Locks = locks;
+        MakeContained(h, PlayerOwnedPackGuid, Harness.PlayerGuid, ItemType.Container, 10, itemsCapacity: 24);
+        MakeContained(h, PackChildAGuid, PlayerOwnedPackGuid, ItemType.Armor, 100);
+        locks.Set(PackChildAGuid, true);
+
+        h.Controller.HandleDropRelease(
+            h.SellingList, new UiItemSlot(), DragFromInventory(PlayerOwnedPackGuid));
+
+        Assert.Equal(0, h.SellingList.GetNumUIItems());
+        Assert.Equal(new[] { $"The Item {PackChildAGuid:X8} is locked." }, h.SystemMessages);
     }
 
     [Fact]

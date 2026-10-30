@@ -1573,7 +1573,9 @@ public sealed class VendorUiController : IRetainedPanelController, IItemListDrag
         VendorSellRejection rejection = EvaluateSellAcceptability(payload.ObjId, out int quantity);
         if (rejection != VendorSellRejection.None)
         {
-            if (VendorSellAcceptability.MessageFor(rejection) is { } message)
+            string? message = rejection == VendorSellRejection.Locked ? LockedMessage(payload.ObjId) : null;
+            message ??= VendorSellAcceptability.MessageFor(rejection);
+            if (message is not null)
                 _systemMessage?.Invoke(message);
             return;
         }
@@ -1636,6 +1638,12 @@ public sealed class VendorUiController : IRetainedPanelController, IItemListDrag
             _sellStaging.Stage(child, childQuantity);
         }
     }
+
+    /// <summary>"The {name} is locked." for the locked item itself, or for the locked item inside a pack.</summary>
+    private string? LockedMessage(uint itemGuid) =>
+        _itemInteraction.Locks?.BlockerOf(_objects, itemGuid) is > 0u and var blocker && _objects.Get(blocker) is { } o
+            ? ItemLocks.Message(_resolveAppropriateName(o))
+            : null;
 
     private VendorSellRejection EvaluateSellAcceptability(uint itemGuid, out int quantity)
     {
