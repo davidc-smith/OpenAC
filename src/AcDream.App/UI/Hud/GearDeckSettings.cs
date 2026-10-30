@@ -5,6 +5,9 @@ namespace AcDream.App.UI.Hud;
 
 internal enum GearPackView { Grid, List }
 
+/// <summary>The expanded Equipment section: the 3D figure with the slot ring, or the 6-column slot grid.</summary>
+internal enum GearEquipView { Figure, Slots }
+
 /// <summary>The Gear Deck's per-character view state and saved filters. Unknown keys, and saved
 /// filters this build cannot read, are kept and written back.</summary>
 internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint SelectedPack)
@@ -13,6 +16,11 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
     private JsonObject? Extra { get; init; }
     private JsonArray? UnreadFilters { get; init; }
     public IReadOnlyList<SavedFilter> SavedFilters { get; init; } = [];
+    /// <summary>Figure or Slots when unfolded. Figure is the default, as the retail paper doll's doll view is.</summary>
+    public GearEquipView Equip { get; init; } = GearEquipView.Figure;
+    /// <summary>The figure's padlock: locked turns and zooms the body and lifts no gear; unlocked (the default)
+    /// keeps the figure at rest and takes gear off.</summary>
+    public bool FigureLocked { get; init; }
 
     public static GearDeckSettings FromJson(string? json)
     {
@@ -23,6 +31,8 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
             bool folded = o["folded"]?.GetValue<bool>() ?? false;
             GearPackView view = (string?)o["view"] == "list" ? GearPackView.List : GearPackView.Grid;
             uint pack = o["selectedPack"]?.GetValue<uint>() ?? 0u;
+            GearEquipView equip = (string?)o["equip"] == "slots" ? GearEquipView.Slots : GearEquipView.Figure;
+            bool figureLocked = o["figureLocked"] is JsonValue v && v.TryGetValue(out bool locked) && locked;
             var saved = new List<SavedFilter>();
             JsonArray? unread = null;
             bool hasFilters = o["savedFilters"] is JsonArray;
@@ -33,11 +43,13 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
                     else (unread ??= []).Add(f?.DeepClone());
                 }
             var extra = (JsonObject)o.DeepClone();
-            foreach (string k in new[] { "version", "folded", "view", "selectedPack" }) extra.Remove(k);
+            foreach (string k in new[] { "version", "folded", "view", "selectedPack", "equip", "figureLocked" }) extra.Remove(k);
             if (hasFilters) extra.Remove("savedFilters");
             return new GearDeckSettings(folded, view, pack)
             {
                 Extra = extra.Count > 0 ? extra : null,
+                Equip = equip,
+                FigureLocked = figureLocked,
                 SavedFilters = saved,
                 UnreadFilters = unread,
             };
@@ -52,6 +64,8 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
         o["folded"] = Folded;
         o["view"] = View == GearPackView.List ? "list" : "grid";
         o["selectedPack"] = SelectedPack;
+        o["equip"] = Equip == GearEquipView.Slots ? "slots" : "figure";
+        o["figureLocked"] = FigureLocked;
         if (SavedFilters.Count > 0 || UnreadFilters is { Count: > 0 })
         {
             var filters = new JsonArray();
@@ -83,7 +97,8 @@ internal sealed record GearDeckSettings(bool Folded, GearPackView View, uint Sel
     };
 
     public bool Equals(GearDeckSettings? other) =>
-        other is not null && Folded == other.Folded && View == other.View && SelectedPack == other.SelectedPack
+        other is not null && Folded == other.Folded && View == other.View && SelectedPack == other.SelectedPack && Equip == other.Equip
+        && FigureLocked == other.FigureLocked
         && SavedFilters.SequenceEqual(other.SavedFilters);
-    public override int GetHashCode() => HashCode.Combine(Folded, View, SelectedPack, SavedFilters.Count);
+    public override int GetHashCode() => HashCode.Combine(Folded, View, SelectedPack, Equip, FigureLocked, SavedFilters.Count);
 }

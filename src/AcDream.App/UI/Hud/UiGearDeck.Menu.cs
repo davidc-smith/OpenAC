@@ -38,7 +38,7 @@ internal sealed partial class UiGearDeck
     private void CreateMenu()
     {
         SetMenuScale();
-        _menu.Opening = (x, y) => PickMenu(_g.HitAt(x, y));
+        _menu.Opening = (x, y) => PickMenu(HitAt(x, y));
         _menu.ItemsSource = MenuItems;
         _menu.ItemsEnabledSource = MenuEnabled;
         _menu.Selected = ChooseMenuItem;

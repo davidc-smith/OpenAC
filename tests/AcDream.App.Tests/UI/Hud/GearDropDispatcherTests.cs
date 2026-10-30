@@ -271,4 +271,55 @@ public sealed class GearDropDispatcherTests
         d.DropOnCell(0xB2, Bag, 0, 0, false);
         Assert.Equal(["put B2 50000001 0"], a.Calls);
     }
+
+    private const uint Shirt = 0xD2, Junk = 0xD3;
+    private const EquipMask ChestRegion = EquipMask.ChestWear | EquipMask.ChestArmor;
+
+    private static (ClientObjectTable t, Fake a, GearDropDispatcher d) WithShirt()
+    {
+        var w = World();
+        Place(w.t, new ClientObject { ObjectId = Shirt, Type = ItemType.Clothing, ValidLocations = EquipMask.ChestWear }, Player, 1);
+        Place(w.t, new ClientObject { ObjectId = Junk, Type = ItemType.Misc }, Player, 2);
+        return w;
+    }
+
+    [Fact]
+    public void DropOnFigure_FittingRegion_WearsThere()
+    {
+        var (t, a, d) = WithShirt();
+        Assert.True(GearDropDispatcher.FigureAccepts(t.Get(Shirt)!, ChestRegion));
+        d.DropOnFigure(Shirt, ChestRegion);
+        Assert.Equal(["wield D2 ChestWear"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnFigure_OffRegionOrNoRegion_WearsAnAutoWearItemAnyway()
+    {
+        var (t, a, d) = WithShirt();
+        Assert.True(GearDropDispatcher.FigureAccepts(t.Get(Shirt)!, EquipMask.HeadWear));
+        d.DropOnFigure(Shirt, EquipMask.HeadWear);
+        d.DropOnFigure(Shirt, EquipMask.None);
+        Assert.Equal(["wield D2 ChestWear", "wield D2 ChestWear"], a.Calls);
+    }
+
+    [Fact]
+    public void DropOnFigure_RefusesWhatTheFigureCannotWear()
+    {
+        var (t, a, d) = WithShirt();
+        Assert.False(GearDropDispatcher.FigureAccepts(t.Get(Junk)!, ChestRegion));
+        Assert.False(GearDropDispatcher.FigureAccepts(t.Get(Sword)!, EquipMask.None));   // a weapon is not auto-wear
+        d.DropOnFigure(Junk, ChestRegion);
+        d.DropOnFigure(Sword, EquipMask.None);
+        d.DropOnFigure(0xDEAD, ChestRegion);   // unknown item
+        Assert.Empty(a.Calls);
+    }
+
+    [Fact]
+    public void DropOnFigure_NotReady_SendsNothing()
+    {
+        var (_, a, d) = WithShirt();
+        a.IsReady = false;
+        d.DropOnFigure(Shirt, EquipMask.None);
+        Assert.Empty(a.Calls);
+    }
 }
