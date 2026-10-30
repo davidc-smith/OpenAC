@@ -580,7 +580,7 @@ public sealed class RetailUiRuntime : IDisposable
 
     private PluginAppearanceWindow? _gearRules;
 
-    /// <summary>The Gear Deck's Pack rules popup, docked by the deck; it edits the deck's session.</summary>
+    /// <summary>The Gear Deck's Pack rules popup (rules and saved filters), docked by the deck; it edits the deck's session.</summary>
     private void ToggleGearRules()
     {
         CloseGearSplit();

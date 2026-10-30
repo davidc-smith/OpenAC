@@ -16,6 +16,17 @@ internal static class GearRules
     public static SavedFilter? FilterOf(GearDeckSettings s, string name) =>
         s.SavedFilters.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>A saved query in words: its chip labels, its free text quoted, then any sort but pack order.</summary>
+    public static string Summary(GearQuery query, IReadOnlyList<GearPack> packs)
+    {
+        var parts = query.Chips.Select(c => GearChipText.Label(c, id => PackName(packs, id))).ToList();
+        if (!string.IsNullOrWhiteSpace(query.Text)) parts.Add("\"" + query.Text.Trim() + "\"");
+        if (query.Sort.Field != GearSortField.Pack)
+            parts.Add("sorted by " + GearChipText.SortLabel(query.Sort.Field)
+                + (query.Sort == GearSort.DefaultFor(query.Sort.Field) ? "" : " (reversed)"));
+        return string.Join(", ", parts);
+    }
+
     public static string PackName(IReadOnlyList<GearPack> packs, uint id)
     {
         for (int i = 0; i < packs.Count; i++)
@@ -25,11 +36,12 @@ internal static class GearRules
 }
 
 /// <summary>
-/// The Pack rules popup: which saved filter goes to which pack, in order (the first rule an item matches
-/// wins), whether a rule also runs on arrival, and "combine stacks when items arrive". Every edit goes
-/// through the session. Built once and kept; it reads the session and the packs when drawn.
+/// The Pack rules popup. Its Rules tab: which saved filter goes to which pack, in order (the first rule an
+/// item matches wins), whether a rule also runs on arrival, and "combine stacks when items arrive". Its
+/// Filters tab lists, adds, edits and deletes the saved filters the rules name (the deck's ★ filters).
+/// Every edit goes through the session. Built once and kept; it reads the session and the packs when drawn.
 /// </summary>
-public sealed class GearRulesBinding
+public sealed partial class GearRulesBinding
 {
     private readonly Func<GearDeckSession?> _session;
     private readonly Func<IReadOnlyList<GearPack>> _packs;
@@ -46,31 +58,43 @@ public sealed class GearRulesBinding
         _packs = packs;
     }
 
-    public const string Markup = """
-        <panel x="100" y="80" w="420" h="380" title="Pack rules" theme="plugin" layout="column" padding="10" gap="6">
-          <label text="Send what a saved filter matches to a pack. The first rule that matches wins." h="16" />
-          <label text="Save a filter first: rules use saved filters." visible="{NoFilters}" h="16" />
-          <list header="true" selected="{SelectedRuleIndex}" onchange="{SelectRuleRow}" rowheight="18" selectionband="true" grow="1">
-            <column type="checkbox" header="On" width="30" values="{RuleOn}" onchange="{ToggleRule}" />
-            <column type="text" header="Filter" width="*" items="{RuleFilter}" />
-            <column type="text" header="Pack" width="80" items="{RulePack}" />
-            <column type="checkbox" header="On arrival" width="70" values="{RuleArrival}" onchange="{ToggleArrival}" />
-          </list>
-          <group layout="row" gap="6" align="center" h="24">
-            <label text="Filter" w="40" />
-            <menu items="{FilterNames}" selected="{SelectedFilter}" onchange="{SelectFilter}" enabled="{HasSelectedRule}" w="150" h="22" />
-            <label text="Pack" w="34" />
-            <menu items="{PackNames}" selected="{SelectedPack}" onchange="{SelectPack}" enabled="{HasSelectedRule}" w="110" h="22" />
-          </group>
-          <group layout="row" gap="6" h="22">
-            <button text="+ Rule" onclick="{AddRule}" enabled="{HasFilters}" w="60" h="22" />
-            <button text="Delete" onclick="{DeleteRule}" enabled="{HasSelectedRule}" w="60" h="22" />
-            <group grow="1" />
-            <button text="Up" onclick="{MoveUp}" enabled="{HasSelectedRule}" w="40" h="22" />
-            <button text="Down" onclick="{MoveDown}" enabled="{HasSelectedRule}" w="44" h="22" />
-          </group>
-          <checkbox text="Combine stacks when items arrive" checked="{CombineOnArrival}" onchange="{SetCombineOnArrival}" h="16" />
+    public const string Markup = Head + RulesPageMarkup + FiltersPageMarkup + """
         </panel>
+        """;
+
+    private const string Head = """
+        <panel x="100" y="80" w="460" h="470" title="Pack rules" theme="plugin" layout="column" padding="10" gap="6">
+          <group layout="row" gap="4" h="24">
+            <tab text="Rules" selected="{OnRulesPage}" onclick="{ShowRulesPage}" w="90" h="22" />
+            <tab text="Filters" selected="{OnFiltersPage}" onclick="{ShowFiltersPage}" w="90" h="22" />
+          </group>
+        """;
+
+    private const string RulesPageMarkup = """
+          <group layout="column" gap="6" grow="1" visible="{OnRulesPage}">
+            <label text="Send what a saved filter matches to a pack. The first rule that matches wins." h="16" />
+            <label text="No saved filters yet: add one on the Filters tab." visible="{NoFilters}" h="16" />
+            <list header="true" selected="{SelectedRuleIndex}" onchange="{SelectRuleRow}" rowheight="18" selectionband="true" grow="1">
+              <column type="checkbox" header="On" width="30" values="{RuleOn}" onchange="{ToggleRule}" />
+              <column type="text" header="Filter" width="*" items="{RuleFilter}" />
+              <column type="text" header="Pack" width="80" items="{RulePack}" />
+              <column type="checkbox" header="On arrival" width="70" values="{RuleArrival}" onchange="{ToggleArrival}" />
+            </list>
+            <group layout="row" gap="6" align="center" h="24">
+              <label text="Filter" w="40" />
+              <menu items="{FilterNames}" selected="{SelectedFilter}" onchange="{SelectFilter}" enabled="{HasSelectedRule}" w="150" h="22" />
+              <label text="Pack" w="34" />
+              <menu items="{PackNames}" selected="{SelectedPack}" onchange="{SelectPack}" enabled="{HasSelectedRule}" w="110" h="22" />
+            </group>
+            <group layout="row" gap="6" h="22">
+              <button text="+ Rule" onclick="{AddRule}" enabled="{HasFilters}" w="60" h="22" />
+              <button text="Delete" onclick="{DeleteRule}" enabled="{HasSelectedRule}" w="60" h="22" />
+              <group grow="1" />
+              <button text="Up" onclick="{MoveUp}" enabled="{HasSelectedRule}" w="40" h="22" />
+              <button text="Down" onclick="{MoveDown}" enabled="{HasSelectedRule}" w="44" h="22" />
+            </group>
+            <checkbox text="Combine stacks when items arrive" checked="{CombineOnArrival}" onchange="{SetCombineOnArrival}" h="16" />
+          </group>
         """;
 
     private GearDeckSettings S => _session()?.Settings ?? GearDeckSettings.Default;
