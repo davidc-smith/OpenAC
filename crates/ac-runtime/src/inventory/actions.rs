@@ -712,6 +712,34 @@ impl Inventory {
     fn snapshot(item: &ClientObject, ctx: &ItemContext<'_>) -> ItemPolicyObject {
         policy_object(ctx.world.items(), item, ctx.player())
     }
+
+    /// View `container` on the ground if it is described as openable. A
+    /// locked one stays unviewed (its use has already gone to the server,
+    /// which answers it with no text), and when `announce` the client says
+    /// why itself. Returns whether the view was asked for.
+    pub(super) fn attempt_set_ground_object(
+        &mut self,
+        container: u32,
+        announce: bool,
+        ctx: &mut ItemContext<'_>,
+    ) -> bool {
+        let object = ctx
+            .world
+            .item(container)
+            .map(|item| Self::snapshot(item, ctx));
+        match interaction::decide_set_ground_object(object.as_ref()) {
+            interaction::GroundObjectDecision::Open => {
+                self.request_external_open(container, ctx);
+                true
+            }
+            interaction::GroundObjectDecision::Refuse(message) => {
+                if announce && let Some(message) = message {
+                    self.notices.push(Notice::Interface(message));
+                }
+                false
+            }
+        }
+    }
 }
 
 /// Whether the item `source` may be used on `target` (the target cursor's
@@ -1288,13 +1316,18 @@ impl Inventory {
         if source.useability.is_none() {
             return false;
         }
-        let compatible = interaction::is_target_compatible(
+        // The pick says what it does, or why it cannot, before anything
+        // else (a mana stone's question comes after the line).
+        match interaction::use_on_target_line(
             &Self::snapshot(&source, ctx),
             &Self::snapshot(&target, ctx),
             ctx.player(),
-        );
-        if !compatible {
-            return false;
+        ) {
+            Ok(line) => self.notices.push(Notice::Interface(line)),
+            Err(failure) => {
+                self.notices.push(Notice::Interface(failure));
+                return false;
+            }
         }
         // An empty mana stone destroys the item it drains: ask first, and
         // never for a retained item.
@@ -1340,7 +1373,13 @@ impl Inventory {
         if object == 0 || !self.ensure_ready(ctx) {
             return false;
         }
-        self.request_use(object, ctx)
+        let sent = self.request_use(object, ctx);
+        // An altar or a rare said yes to is always "Using the <name>".
+        if let Some(name) = ctx.world.item(object).map(|i| i.appropriate_name()) {
+            self.notices
+                .push(Notice::Interface(format!("Using the {name}")));
+        }
+        sent
     }
 
     /// The player said yes to charging a mana stone from an item: the stone
@@ -1418,7 +1457,7 @@ impl Inventory {
                         self.dispatch_targeted_use(action.object_id, action.target_id, false, ctx);
                 }
                 K::SetGroundObject => {
-                    self.request_external_open(action.object_id, ctx);
+                    self.attempt_set_ground_object(action.object_id, true, ctx);
                     acted = true;
                 }
                 K::EnterTargetMode => {
@@ -1442,7 +1481,7 @@ impl Inventory {
                         self.transactions.increment_busy_count(&mut tx);
                     }
                 }
-                K::Reject => {
+                K::Reject | K::Announce => {
                     if let Some(message) = action.message.as_ref().filter(|m| !m.trim().is_empty())
                     {
                         self.notices.push(Notice::Interface(message.clone()));
