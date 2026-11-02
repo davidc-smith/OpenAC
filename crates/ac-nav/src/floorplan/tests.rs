@@ -247,6 +247,13 @@ pub(crate) fn two_rooms() -> FakeDats {
         other_cell_id: 0xFFFF,
         other_portal_id: 0,
     });
+    // Another way out, named only by the cell it does not open onto.
+    upstairs.cell_portals.push(CellPortal {
+        flags: 0,
+        polygon_id: 98,
+        other_cell_id: 0xFFFF,
+        other_portal_id: 0,
+    });
     upstairs.visible_cells = vec![0x0100, 0x0102];
     dats.add(UPSTAIRS_ROOM, upstairs);
     let mut outside = env_cell(CELL_SEEING_OUTSIDE, 0, 0, v(0.0, 0.0, 0.0), IDENTITY, &[]);

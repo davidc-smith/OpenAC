@@ -167,12 +167,15 @@ fn doorway(
     origin: Vec3,
     orientation: Quat,
 ) -> CellDoorway {
-    let leads_outside = portal.flags & CellPortal::NO_OTHER_CELL != 0;
+    // The data marks a doorway outdoors by its flag, and names no cell
+    // there (0xFFFF); either says so.
+    let leads_outside =
+        portal.flags & CellPortal::NO_OTHER_CELL != 0 || portal.other_cell_id == 0xFFFF;
     let center = structure
         .and_then(|s| placed_box_middle(s, portal.polygon_id, origin, orientation))
         .unwrap_or(origin);
     CellDoorway {
-        other_cell_id: if leads_outside || portal.other_cell_id == 0xFFFF {
+        other_cell_id: if leads_outside {
             0
         } else {
             landblock | u32::from(portal.other_cell_id)
@@ -275,6 +278,9 @@ mod tests {
         assert_eq!(out.other_cell_id, 0);
         assert!(out.leads_outside && out.exact_match && out.portal_side);
         assert_eq!(out.center, Vec3::new(40.0, 30.0, 7.2));
+        let unflagged = cells[1].doorways[1];
+        assert_eq!(unflagged.other_cell_id, 0);
+        assert!(unflagged.leads_outside, "0xFFFF names no cell: outdoors");
 
         assert!(cells[2].doorways.is_empty());
     }

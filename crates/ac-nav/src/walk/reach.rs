@@ -142,17 +142,16 @@ impl WalkController {
                 "no collision is loaded around the character",
             )));
         };
+        let (centre, reach) = ground.around();
         let PreviewGround {
             source,
             reused,
             landblock_ids,
             object_ids,
+            ..
         } = ground;
         let cells = self.cells_of(cx, &landblock_ids);
         let body = sample.body;
-        let half = size * 0.5;
-        let centre = Vec3::new(origin_x + half, origin_y + half, 0.0);
-        let reach = half * std::f32::consts::SQRT_2;
         let widen = |spot: NavAvoidance| NavAvoidance::new(spot.centre, spot.radius + body.radius);
         let mut avoid: Vec<NavAvoidance> = cx
             .goals
@@ -227,7 +226,9 @@ pub fn cells_reached(
     let columns = grid.size() / size;
     let mut reached = Vec::new();
     for cell in cells {
-        let mut best: Option<(f32, i32)> = None;
+        // The cheapest node on the cell's floor, and that floor's height
+        // at its column.
+        let mut best: Option<(f32, i32, f32)> = None;
         for [a, b, c] in cell.triangles() {
             let normal = (*b - *a).cross(*c - *a);
             let length = normal.length();
@@ -251,20 +252,20 @@ pub fn cells_reached(
                         let cost = flood.cost(node);
                         if !cost.is_finite()
                             || (grid.position(node).z - floor).abs() > ON_THE_FLOOR
-                            || best.is_some_and(|(b, _)| b <= cost)
+                            || best.is_some_and(|(b, _, _)| b <= cost)
                         {
                             continue;
                         }
-                        best = Some((cost, node));
+                        best = Some((cost, node, floor));
                     }
                 }
             }
         }
-        if let Some((cost, node)) = best {
+        if let Some((cost, node, floor)) = best {
             reached.push(CellReach {
                 cell_id: cell.cell_id(),
                 route_meters: cost,
-                place: grid.position(node),
+                place: grid.position(node).with_z(floor),
                 by_drop: flood.by_drop(node),
             });
         }
