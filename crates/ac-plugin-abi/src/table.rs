@@ -626,6 +626,15 @@ macro_rules! import_table {
             /// Pick an item out of the open container.
             LootPickup = loot_pickup($crate::items::PickupRequest) -> $crate::items::ItemResult,
                 permission: None, window: false, since: (1, 0);
+            /// Put an item into the open container at a placement (API
+            /// 1.5), with its window's checks: the whole stack (amount 0)
+            /// or that many split off. The item is the character's own, or
+            /// one of the open container's own loose items (a reorder; the
+            /// placement counts its loose items, the moved one taken out
+            /// first); the container is the open one. Completed, with
+            /// nothing sent, when the item is already there.
+            LootPut = loot_put($crate::items::MoveRequest) -> $crate::items::ItemResult,
+                permission: None, window: false, since: (1, 5);
             /// Register a loot classifier other plugins can ask (scoped as
             /// `<plugin id>/<id>`); the plugin's handle for it.
             LootClassifierRegister = loot_classifier_register(
@@ -780,8 +789,10 @@ macro_rules! import_table {
             /// Every cell of the sealed dungeon the character stands in that
             /// it can walk to within `max_meters`, each with the length of
             /// its route, from one search (API 1.5): a handle (never 0), or
-            /// 0 when nothing can be searched from (out of the world, in
-            /// portal space or in the air, or not in a sealed dungeon). The
+            /// 0 when nothing can be searched from (no session, out of the
+            /// world, in portal space or in the air, not in a sealed dungeon,
+            /// or before the game data walks need is loaded) or `max_meters`
+            /// is not above 0. The
             /// answer arrives as `Event::NavigationReach` to this plugin, at
             /// the earliest after the call returns. The search runs on a
             /// worker over the grid walks and previews use.

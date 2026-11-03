@@ -7,8 +7,14 @@
 use std::collections::HashSet;
 
 use ac_core::items::TinkerValues;
+use ac_core::items::placement::{
+    evaluate_container_placement, is_pack, loose_contents, placement_leaves_item_in_place,
+    placement_rejection_text,
+};
 use ac_core::items::vendor::{VendorSellCandidate, evaluate_sell, per_unit_value};
-use ac_core::items::{ClientObject, ClientObjectTable, EquipMask, InventoryRequestKind, ItemType};
+use ac_core::items::{
+    ClientObject, ClientObjectTable, EquipMask, InventoryRequestKind, ItemType, PlacementRejection,
+};
 use ac_core::properties::{
     PropertyBool, PropertyDataId, PropertyFloat, PropertyInt, PropertyString,
 };
@@ -1186,6 +1192,90 @@ impl PluginBinding<'_> {
             ),
             Some(BackpackPlacement::Sent) | None => ran,
         }
+    }
+
+    /// Put an item into the open container at a slot, as a drop on that
+    /// container's window does, with the window's checks: the whole stack,
+    /// or `amount` of it split off. The item is the player's own or one of
+    /// the open container's own loose items (a reorder; the window lists
+    /// no others). A put that would leave the item where it is is done
+    /// already, and sends nothing, as the window's drop does.
+    pub(super) fn loot_put(&mut self, request: MoveRequest) -> ItemResult {
+        if !self.in_world() {
+            return ItemResult::of(ItemStatus::Unavailable);
+        }
+        let root = self
+            .state
+            .inventory
+            .external_containers()
+            .current_container_id();
+        if request.container_id == 0 || request.container_id != root {
+            return ItemResult::of(ItemStatus::InvalidTarget);
+        }
+        let player = self.player();
+        let items = self.state.world.items();
+        let listed = loose_contents(items, root);
+        let source = listed.iter().position(|&id| id == request.object_id);
+        let item = if source.is_some() {
+            items.get(request.object_id)
+        } else {
+            owned(items, player, request.object_id)
+        };
+        let Some(item) = item else {
+            return ItemResult::of(ItemStatus::InvalidItem);
+        };
+        if !valid_amount(item, request.amount) {
+            return ItemResult::because(ItemStatus::Refused, "Invalid stack quantity.");
+        }
+        let full = item.stack_size.max(1).unsigned_abs();
+        let whole_stack = request.amount == 0 || request.amount >= full;
+        // The window takes no pack on its item list, and nothing the
+        // placement rules refuse (a full container, an item in a trade).
+        let rejection = if is_pack(item) {
+            Err(PlacementRejection::ContainerCapacityFull)
+        } else {
+            evaluate_container_placement(items, request.object_id, root, 0, whole_stack)
+        };
+        if let Err(rejection) = rejection {
+            let text = placement_rejection_text(rejection, Some(item), items.get(root), 0);
+            return ItemResult::because(ItemStatus::Refused, &text);
+        }
+        // Everything the drop waits on is busy here, before anything runs: a
+        // request in flight, an item shown waiting at a slot, a wield.
+        let inventory = &self.state.inventory;
+        if !inventory.transactions().can_begin_request()
+            || inventory.pending_placement().is_some()
+            || inventory.is_wield_busy()
+        {
+            return ItemResult::of(ItemStatus::Busy);
+        }
+        if whole_stack
+            && source.is_some_and(|at| {
+                placement_leaves_item_in_place(request.placement, listed.len(), at)
+            })
+        {
+            return ItemResult::of(ItemStatus::Completed);
+        }
+        let ran = self.run_item(ItemCommand::DropInto {
+            item: ObjectRef::Guid(request.object_id),
+            container: ObjectRef::Guid(root),
+            slot: request.placement,
+            amount: request.amount,
+            pickup: false,
+            join_stack: false,
+        });
+        // A put the inventory did not send is never a start, or a plugin
+        // would wait for an answer that never comes.
+        let sent = self
+            .state
+            .inventory
+            .transactions()
+            .pending()
+            .is_some_and(|p| p.dispatched && p.item_id == request.object_id);
+        if ran.status == ItemStatus::Started && !sent {
+            return ItemResult::because(ItemStatus::Refused, "the put did not go out");
+        }
+        ran
     }
 }
 
