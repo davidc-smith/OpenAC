@@ -93,7 +93,9 @@ from it, and at the end of the floorplan's `DungeonCell` its bounds and floor
 height. It also added `Host::reachable_cells` and its answer,
 `Event::NavigationReach`, which a plugin built for an older version never
 hears, and `Host::put_in_open_container`, which puts an owned item into the
-open chest at a slot, or moves one already in it to another. API 1.6 added
+open chest at a slot, or moves one already in it to another. It also added
+`Host::landscape_terrain` and `Host::terrain_palette`, which read the
+landscape from the player's game files for a map. API 1.6 added
 `server_position` at the end of `WorldObject` and `CombatTarget`: the last
 position the server sent for the object, beside `position` (and, for a target,
 `distance`), which give where the client has it now, a creature's simulated
@@ -284,6 +286,38 @@ and a tall room's cell can sit a band above a low corridor on the same floor.
 `floor_z` is `None` for a cell with no floor of its own. Tall rooms are built
 as one cell on top of another, so the upper cell has none; nor does a shaft.
 A plugin that needs a floor for such a cell can follow its doorways down.
+
+**Landscape data.** `Host::landscape_terrain(&[u16])` (API 1.5) reads the
+outdoor terrain of landblocks from the game files, so a plugin can draw a
+map of Dereth. A landblock is named `x << 8 | y`, `x` counting east and `y`
+north. It is a square 192 m on a side, and its terrain is a grid of 9 by 9
+vertices 24 m apart, covering it edge to edge: its east and north edges are
+its neighbours' west and south edges. Each `LandblockTerrain` lists its 81
+vertices with vertex `(x, y)` at index `x * 9 + y` (`LandblockTerrain::vertex`
+finds one). Vertex `(0, 0)` is the landblock's south-west corner and vertex
+`(x, y)` stands at landblock-local `(24 x, 24 y)` metres. Each vertex has a
+`terrain_type` (0 to 31), its `road` bits (0 to 3, non-zero where a road
+runs) and `height_meters`, the ground's height there as the character
+stands on it. Landblocks come back in the order asked; one with no terrain
+in the files is left out. A call answers at most 256 landblocks
+(`world::LANDSCAPE_TERRAIN_MAX`); the rest of a longer request is left out,
+so a map of the whole world asks for it a page at a time over several ticks.
+Each landblock is read once and kept; a full request takes a few
+milliseconds at most.
+`Host::terrain_palette()` lists each terrain type the region defines, so a
+map looks like the game. Each `TerrainColor` has the type's name and two
+colours, both `0xRRGGBB`. `rgb` is the mean colour of the type's landscape
+texture, what the ground looks like close up. `map_rgb` is the colour the
+game's data assigns the type for maps. After the 32 terrain types comes one
+entry for roads, `terrain_type` 32 (`world::ROAD_TERRAIN_TYPE`), named
+"Road": its `rgb` is the mean colour of the road texture, and since the
+game's data gives roads no map colour, its `map_rgb` repeats `rgb`. Use it
+where a vertex's `road` is non-zero; there the game draws the road over the
+vertex's terrain type. The palette is worked out once a session, about 20 ms
+the first time, so ask for it once (at start, or when the map is first drawn)
+and keep it. A texture that does not decode gives its type an `rgb` of 0.
+Neither call needs a permission; both are empty without the
+game files.
 
 ## Testing natively
 

@@ -675,6 +675,46 @@ mod tests {
         );
     }
 
+    // The landscape reads answer empty on a host without game files; then
+    // the replies a test sets come back, and the request carries the
+    // landblocks asked for.
+    #[test]
+    fn the_landscape_reads_empty_until_set_and_carries_its_landblocks() {
+        use ac_plugin_abi::world::{LandblockTerrain, TerrainColor, TerrainVertex};
+        let mut fake = FakeHost::new("test.landscape");
+        {
+            let mut host = Host::with_transport(&mut fake);
+            assert!(host.landscape_terrain(&[0xA9B4]).is_empty());
+            assert!(host.terrain_palette().is_empty());
+        }
+        let holtburg = LandblockTerrain {
+            landblock: 0xA9B4,
+            vertices: vec![
+                TerrainVertex {
+                    terrain_type: 1,
+                    road: 0,
+                    height_meters: 66.0,
+                };
+                81
+            ],
+        };
+        fake.set_reply::<calls::LandscapeTerrain>(&vec![holtburg.clone()]);
+        fake.set_reply::<calls::LandscapeTerrainPalette>(&vec![TerrainColor {
+            terrain_type: 1,
+            rgb: 0x5A_5E30,
+            map_rgb: 0x64_9664,
+            name: Some("Grassland".into()),
+        }]);
+        let mut host = Host::with_transport(&mut fake);
+        assert_eq!(host.landscape_terrain(&[0xA9B4, 0xFF00]), [holtburg]);
+        let palette = host.terrain_palette();
+        assert_eq!((palette[0].rgb, palette[0].map_rgb), (0x5A_5E30, 0x64_9664));
+        assert_eq!(
+            fake.requests::<calls::LandscapeTerrain>(),
+            [vec![0xA9B4], vec![0xA9B4, 0xFF00]]
+        );
+    }
+
     // The process numbers read as zeros from a host that gives none; then
     // values a test sets coming back through the encoding.
     #[test]
