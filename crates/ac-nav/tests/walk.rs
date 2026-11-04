@@ -1283,6 +1283,45 @@ fn a_goal_too_far_away_for_one_region_is_walked_to_in_stages() {
     assert_eq!(report.replans, 0);
 }
 
+/// The character stands 12 m from the edge of the only landblock loaded,
+/// the goal 300 m beyond it, as just after a portal before the landblocks
+/// ahead have loaded: the walk waits for them, then walks on.
+#[test]
+fn a_stage_at_the_edge_of_the_loaded_ground_waits_for_the_ground_ahead() {
+    let mut h = Harness::new(
+        flat_world(1),
+        SimBody::at(v(40.0, 180.0, 0.0)),
+        goals_with(&[(TARGET, v(40.0, 480.0, 0.0))]),
+    );
+
+    h.walk.walk_to(TARGET, DEFAULT_ARRIVAL_METERS);
+    h.run(3.0);
+
+    assert_eq!(
+        h.report().state,
+        WalkState::Planning,
+        "{}",
+        h.report().reason
+    );
+    assert_eq!(
+        h.report().reason,
+        "waiting for the ground toward the goal to load"
+    );
+    for index in 1..3 {
+        h.physics.add_landblock(
+            0xA9B4_FFFF + (index << 16),
+            TerrainSurface::new(&[0; 81], &[0.0; 256], 0, 0, None),
+            Vec::new(),
+            Vec::new(),
+            0.0,
+            index as f32 * 192.0,
+        );
+    }
+    let report = h.run_until_settled(300.0);
+
+    assert_eq!(report.state, WalkState::Arrived, "{}", report.reason);
+}
+
 #[test]
 fn a_walk_toward_a_goal_beyond_the_loaded_world_ends_where_it_can_get_no_nearer() {
     let mut h = harness(&[(TARGET, v(40.0, 900.0, 0.0))]);
@@ -2773,37 +2812,49 @@ fn a_walk_plans_around_a_creature_in_its_way_and_keeps_clear_of_it() {
     );
 }
 
-#[test]
-fn a_walk_steps_around_a_creature_that_walks_onto_its_route_without_stopping() {
-    let creature = Vec2::new(40.0, 80.0);
+/// Where a creature steps onto a walk's route north to y 120.
+const ONTO_THE_ROUTE: Vec2 = Vec2::new(40.0, 80.0);
+
+/// What a walk says when a plan around a creature arrives.
+const AROUND: &str = "planned a way around a creature or player on the route";
+
+/// A walk heading north to y 120, running past y 60, where a creature has
+/// just stepped onto its route at [`ONTO_THE_ROUTE`].
+fn creature_steps_onto_the_route() -> Harness {
     let there = Rc::new(Cell::new(false));
     let mut body = SimBody::at(v(40.0, 40.0, 0.0));
-    body.obstacle = Some((creature, reach()));
+    body.obstacle = Some((ONTO_THE_ROUTE, reach()));
     let present = Rc::clone(&there);
     body.obstacle_active = Some(Rc::new(move || present.get()));
     let mut goals = goals_with(&[(TARGET, v(40.0, 120.0, 0.0))]);
     let present = Rc::clone(&there);
     goals.crowd_now = Some(Box::new(move || {
         if present.get() {
-            vec![NavAvoidance::new(creature.extend(0.0), 0.8)]
+            vec![NavAvoidance::new(ONTO_THE_ROUTE.extend(0.0), 0.8)]
         } else {
             Vec::new()
         }
     }));
     let mut h = Harness::new(flat_world(1), body, goals);
-    let nearest = Cell::new(f32::INFINITY);
-    let longest_still = Cell::new(0);
-    let planning = Cell::new(false);
-
     h.walk.walk_to(TARGET, DEFAULT_ARRIVAL_METERS);
     h.run_until(
         |report, body| report.state == WalkState::Walking && body.position.y > 60.0,
         120.0,
     );
     there.set(true);
+    h
+}
+
+#[test]
+fn a_walk_steps_around_a_creature_that_walks_onto_its_route_without_stopping() {
+    let mut h = creature_steps_onto_the_route();
+    let nearest = Cell::new(f32::INFINITY);
+    let longest_still = Cell::new(0);
+    let planning = Cell::new(false);
+
     let report = h.run_until(
         |report, body| {
-            nearest.set(nearest.get().min(body.flat().distance(creature)));
+            nearest.set(nearest.get().min(body.flat().distance(ONTO_THE_ROUTE)));
             longest_still.set(longest_still.get().max(body.still_frames));
             planning.set(planning.get() || report.state == WalkState::Planning);
             settled(report, body)
@@ -2823,6 +2874,50 @@ fn a_walk_steps_around_a_creature_that_walks_onto_its_route_without_stopping() {
         longest_still.get() <= 10,
         "the walk stood still for {} frames",
         longest_still.get()
+    );
+}
+
+/// Stopped in the same tick as the plan around a creature arrives, the walk
+/// stops the run it was making: the new plan's drive takes over the moves
+/// under way when it first steps, and one cancelled before then still
+/// stops them. Seen live: the character ran on 18 m until it was blocked.
+#[test]
+fn a_walk_stopped_as_its_plan_around_a_creature_arrives_stops_its_run() {
+    // Find the tick at which the plan around the creature arrives.
+    let mut h = creature_steps_onto_the_route();
+    let mut ticks = 0;
+    while !h.said().iter().any(|line| line.contains(AROUND)) {
+        assert!(ticks < 600, "no plan around the creature: {:#?}", h.said());
+        h.tick();
+        h.integrate(FRAME);
+        ticks += 1;
+    }
+
+    // The same walk again, stopped just before that tick.
+    let mut h = creature_steps_onto_the_route();
+    for _ in 0..ticks - 1 {
+        h.tick();
+        h.integrate(FRAME);
+    }
+    assert!(h.body.borrow().travelling(), "running before the stop");
+    h.walk.stop();
+    h.tick();
+
+    let said = h.said();
+    let around = said.iter().position(|l| l.contains(AROUND));
+    let stopped = said.iter().position(|l| l.ends_with(": stopped"));
+    assert!(
+        around.is_some() && around < stopped,
+        "the plan around arrived, then the stop: {said:#?}"
+    );
+    assert_eq!(h.report().state, WalkState::Stopped);
+    assert!(!h.body.borrow().travelling(), "the run was not stopped");
+    let at = h.body.borrow().flat();
+    h.run(3.0);
+    assert!(
+        h.body.borrow().flat().distance(at) < 1.0,
+        "the character ran on {:.1} m after the stop",
+        h.body.borrow().flat().distance(at)
     );
 }
 
@@ -4512,78 +4607,4 @@ mod reach {
         assert!(plan.grid_reused, "it waited for the reach's build");
         assert_eq!(reach.cells.len(), 5);
     }
-}
-
-/// A walk heading north at a creature that steps onto its route at y 80
-/// once `there` is set.
-fn creature_steps_onto_the_route() -> (Harness, Rc<Cell<bool>>) {
-    let creature = Vec2::new(40.0, 80.0);
-    let there = Rc::new(Cell::new(false));
-    let mut body = SimBody::at(v(40.0, 40.0, 0.0));
-    body.obstacle = Some((creature, reach()));
-    let present = Rc::clone(&there);
-    body.obstacle_active = Some(Rc::new(move || present.get()));
-    let mut goals = goals_with(&[(TARGET, v(40.0, 120.0, 0.0))]);
-    let present = Rc::clone(&there);
-    goals.crowd_now = Some(Box::new(move || {
-        if present.get() {
-            vec![NavAvoidance::new(creature.extend(0.0), 0.8)]
-        } else {
-            Vec::new()
-        }
-    }));
-    let mut h = Harness::new(flat_world(1), body, goals);
-    h.walk.walk_to(TARGET, DEFAULT_ARRIVAL_METERS);
-    h.run_until(
-        |report, body| report.state == WalkState::Walking && body.position.y > 60.0,
-        120.0,
-    );
-    there.set(true);
-    (h, there)
-}
-
-const AROUND: &str = "planned a way around a creature or player on the route";
-
-/// Stopped in the same tick as the plan around a creature arrives, the walk
-/// stops the run it was making: the new plan's drive takes over the moves
-/// under way when it first steps, and one cancelled before then still
-/// stops them. Seen live: the character ran on 18 m until it was blocked.
-#[test]
-fn a_walk_stopped_as_its_plan_around_a_creature_arrives_stops_its_run() {
-    // Find the tick at which the plan around the creature arrives.
-    let (mut h, _there) = creature_steps_onto_the_route();
-    let mut ticks = 0;
-    while !h.said().iter().any(|line| line.contains(AROUND)) {
-        assert!(ticks < 600, "no plan around the creature: {:#?}", h.said());
-        h.tick();
-        h.integrate(FRAME);
-        ticks += 1;
-    }
-
-    // The same walk again, stopped just before that tick.
-    let (mut h, _there) = creature_steps_onto_the_route();
-    for _ in 0..ticks - 1 {
-        h.tick();
-        h.integrate(FRAME);
-    }
-    assert!(h.body.borrow().travelling(), "running before the stop");
-    h.walk.stop();
-    h.tick();
-
-    let said = h.said();
-    let around = said.iter().position(|l| l.contains(AROUND));
-    let stopped = said.iter().position(|l| l.ends_with(": stopped"));
-    assert!(
-        around.is_some() && around < stopped,
-        "the plan around arrived, then the stop: {said:#?}"
-    );
-    assert_eq!(h.report().state, WalkState::Stopped);
-    assert!(!h.body.borrow().travelling(), "the run was not stopped");
-    let at = h.body.borrow().flat();
-    h.run(3.0);
-    assert!(
-        h.body.borrow().flat().distance(at) < 1.0,
-        "the character ran on {:.1} m after the stop",
-        h.body.borrow().flat().distance(at)
-    );
 }

@@ -64,7 +64,7 @@ fn manifest_json(id: &str, version: &str, permissions: bool) -> String {
   "displayName": "Hello",
   "version": "{version}",
   "entry": "{ENTRY}",
-  "apiVersion": "1.6",
+  "apiVersion": "1.7",
   "minHostVersion": "0.1.0"{permissions}
 }}"#
     )
@@ -182,7 +182,7 @@ fn a_valid_directory_passes() {
     assert_no_failure(&report);
     let (status, message) = check(&report, "module matches its manifest");
     assert_eq!(status, CheckStatus::Pass);
-    assert!(message.starts_with("API 1.6;"), "{message}");
+    assert!(message.starts_with("API 1.7;"), "{message}");
     assert!(message.contains("Permissions used: chat"), "{message}");
 }
 
@@ -493,7 +493,7 @@ fn a_module_built_for_another_api_version_than_its_manifest_fails() {
     );
     assert_eq!(status, CheckStatus::Fail);
     assert!(
-        message.starts_with("the .wasm was built for API 2.0 but plugin.json says 1.6"),
+        message.starts_with("the .wasm was built for API 2.0 but plugin.json says 1.7"),
         "{message}"
     );
 }
@@ -759,6 +759,61 @@ fn pack_refuses_a_malformed_index_and_writes_nothing() {
         arguments.extend(extra);
         assert_eq!(run_with(&arguments).0, 2);
     }
+}
+
+// A hotfix of an older line (1.0.0 packed after 1.2.0) is packed, but the
+// index keeps naming the higher version, and the command says so.
+#[test]
+fn pack_never_moves_the_index_back_to_a_lower_version() {
+    let root = Root::new("pack-index-hotfix");
+    let folder = hello_folder(&root);
+    let index = root.join("plugins-index.json");
+    let previous = r#"{ "schemaVersion": 1, "plugins": [
+        { "id": "acme.hello", "stable": "wasm-acme.hello-v1.2.0" } ] }"#;
+    std::fs::write(&index, previous).unwrap();
+    let (code, output, error) = run_with(&[
+        "pack",
+        folder.to_str().unwrap(),
+        root.join("release").to_str().unwrap(),
+        "--index",
+        index.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{output}{error}");
+    assert!(
+        output.contains("the release tagged wasm-acme.hello-v1.0.0"),
+        "{output}"
+    );
+    assert!(
+        output.contains("still names wasm-acme.hello-v1.2.0, a higher version"),
+        "{output}"
+    );
+    assert!(!output.contains("Then upload"), "{output}");
+    assert_eq!(std::fs::read_to_string(&index).unwrap(), previous);
+    assert!(root.join("release").join("acme.hello-1.0.0.zip").is_file());
+}
+
+// The index file is read strictly: bytes that are not UTF-8 are refused,
+// not replaced.
+#[test]
+fn pack_refuses_an_index_that_is_not_utf8() {
+    let root = Root::new("pack-index-utf8");
+    let folder = hello_folder(&root);
+    let index = root.join("plugins-index.json");
+    std::fs::write(
+        &index,
+        b"{ \"schemaVersion\": 1, \"plugins\": [ { \"id\": \"acme.\xFF\", \"stable\": \"wasm-v1.0.0\" } ] }",
+    )
+    .unwrap();
+    let (code, _, error) = run_with(&[
+        "pack",
+        folder.to_str().unwrap(),
+        root.join("out").to_str().unwrap(),
+        "--index",
+        index.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 1);
+    assert!(error.contains("it is not UTF-8"), "{error}");
+    assert!(!root.join("out").exists());
 }
 
 #[test]

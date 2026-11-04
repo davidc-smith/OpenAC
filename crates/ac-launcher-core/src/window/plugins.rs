@@ -15,8 +15,8 @@ use crate::launcher_log::LauncherLog;
 use crate::net::HttpTransport;
 use crate::plugins::{
     InstalledPluginInfo, InstalledPluginRecord, InstalledPluginRecordStore, MAXIMUM_DOCUMENT_BYTES,
-    PermissionDeclaration, PluginCatalog, PluginInstaller, PluginInventory,
-    PluginReleaseCandidates, PluginReleaseClient, PluginReleaseFetchResult,
+    MAXIMUM_REPOSITORY_PLUGINS, PermissionDeclaration, PluginCatalog, PluginInstaller,
+    PluginInventory, PluginReleaseCandidates, PluginReleaseClient, PluginReleaseFetchResult,
     PluginReleaseResolveResult, PluginReleaseResolver, describe, version_only_reason,
 };
 use crate::updates::{ClientVersionResolution, LauncherVersion};
@@ -110,10 +110,17 @@ impl std::fmt::Debug for PluginComposition {
 }
 
 impl PluginComposition {
-    /// Builds the backend for `paths` over `transport`. A record file that
-    /// cannot be read only costs the launcher its memory of which plugins it
-    /// manages; it never keeps the window from opening.
-    pub fn new(paths: &PathSet, list_uri: WebUrl, transport: Arc<dyn HttpTransport>) -> Self {
+    /// Builds the backend for `paths` over `transport`, writing what only a
+    /// publisher needs to `log` (the launcher's own, so one instance rolls
+    /// the file over). A record file that cannot be read only costs the
+    /// launcher its memory of which plugins it manages; it never keeps the
+    /// window from opening.
+    pub fn new(
+        paths: &PathSet,
+        list_uri: WebUrl,
+        transport: Arc<dyn HttpTransport>,
+        log: LauncherLog,
+    ) -> Self {
         let mut store = InstalledPluginRecordStore::for_paths(paths);
         if store.load().is_err() {
             store.records.clear();
@@ -130,7 +137,7 @@ impl PluginComposition {
             inventory: PluginInventory::new(paths),
             records,
             current_catalog: Mutex::new(None),
-            log: LauncherLog::open(paths),
+            log,
         }
     }
 
@@ -145,6 +152,18 @@ impl PluginComposition {
         if let Some(warning) = warning {
             self.log
                 .line(&format!("Plugin index of {repo} ignored: {warning}"));
+        }
+    }
+
+    /// Notes in the launcher log that a repository names more plugins than
+    /// one Add from URL searches, so the publisher learns why some are
+    /// never offered.
+    pub fn log_plugins_not_searched(&self, repo: &str, not_searched: usize) {
+        if not_searched > 0 {
+            self.log.line(&format!(
+                "Add from URL: {repo} names {not_searched} more plugin(s) than the \
+                 {MAXIMUM_REPOSITORY_PLUGINS} searched; those were not offered."
+            ));
         }
     }
 

@@ -1017,6 +1017,13 @@ impl UiRoot {
         }
     }
 
+    /// True while any mouse button is held, wherever it went down (the
+    /// world takes no capture, so its drags reach the UI as plain moves).
+    #[must_use]
+    pub fn any_button_down(&self) -> bool {
+        self.left_down || self.right_down || self.middle_down
+    }
+
     /// The element with keyboard focus.
     #[must_use]
     pub fn keyboard_focus(&self) -> Option<ElementId> {
@@ -1210,16 +1217,8 @@ impl UiRoot {
                 self.drag_candidate = false;
             }
         }
-        if self.is_within(self.hover, subtree)
-            && let Some(hover) = self.hover
-        {
-            let e = self.event_for(hover, kind::HOVER_LEAVE);
-            self.send_event(hover, &e);
-            if self.tooltip_fired {
-                self.emit(UiOutput::TooltipHide(hover));
-            }
-            self.hover = None;
-            self.tooltip_fired = false;
+        if self.is_within(self.hover, subtree) {
+            self.leave_hover();
         }
         if self.is_within(self.last_drag_hover, subtree) {
             self.last_drag_hover = None;
@@ -2140,6 +2139,20 @@ impl UiRoot {
         self.hover
     }
 
+    /// Nothing is hovered any more: the hovered element hears it left, and
+    /// a tooltip it showed goes.
+    pub fn leave_hover(&mut self) {
+        if let Some(hover) = self.hover {
+            let e = self.event_for(hover, kind::HOVER_LEAVE);
+            self.send_event(hover, &e);
+            if self.tooltip_fired {
+                self.emit(UiOutput::TooltipHide(hover));
+            }
+            self.hover = None;
+            self.tooltip_fired = false;
+        }
+    }
+
     fn update_hover(&mut self, x: i32, y: i32) {
         let w = match self.popup_hit(x, y) {
             Some(h) => Some(h),
@@ -2324,6 +2337,16 @@ impl UiRoot {
         self.mouse = (x, y);
         self.set_button(button, true);
         self.press = (x, y);
+
+        // A press off the hovered element ends its hover: the pointer can
+        // reach a press with no move between, as when what was under it
+        // moved or closed.
+        if self.captured.is_none()
+            && self.hover.is_some()
+            && self.popup_hit(x, y).or_else(|| self.pick(x, y)) != self.hover
+        {
+            self.leave_hover();
+        }
 
         if let Some(modal) = self.modal
             && !self.contains_absolute(modal, x, y)
