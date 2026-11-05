@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, SystemTime};
 
-use ac_host::PathSet;
+use ac_host_core::PathSet;
 
 use super::capabilities::{LauncherCapability, LauncherPlatformCapabilities};
 use super::executables::LauncherExecutableSet;
@@ -34,6 +34,7 @@ use crate::profiles::{
     AccountProfile, CharacterProfile, CharacterRosterEntry, LaunchMode, LauncherProfileStore,
     LauncherTextEditorKind, ProfileError, ServerProfile, apply_text, describe_account_removals,
     read_text, same_account,
+    thwarg::{self, ThwargFiles, ThwargImportReport},
 };
 use crate::status::{
     StatusEvent, StatusEventKind, StatusEventSource, StatusEventSourceFactory,
@@ -582,10 +583,8 @@ fn clone_account_without_characters(source: &AccountProfile) -> AccountProfile {
 
 fn clone_character(source: &CharacterProfile, mode: LaunchMode) -> CharacterProfile {
     CharacterProfile {
-        name: source.name.clone(),
-        id: source.id.clone(),
         launch_mode: mode,
-        plugins: source.plugins.clone(),
+        ..source.clone()
     }
 }
 
@@ -697,6 +696,7 @@ impl LauncherOrchestrator {
             is_installation_ready: state.install_record.is_some(),
             installation_status: state.installation_status.clone(),
             show_beta_plugins: state.store.document().show_beta_plugins,
+            profiles: state.store.document().profiles.clone(),
         })
     }
 
@@ -933,6 +933,30 @@ impl LauncherOrchestrator {
         self.mutate_profiles(|store, _| Ok(store.add_server(name, host, port)?))
     }
 
+    /// Imports the Thwarg launcher's `files` into the profiles (`apply`),
+    /// or only reports what that would do. The import only adds, so it may
+    /// run while sessions do; it is saved as one transaction.
+    pub fn import_thwarg(
+        &self,
+        files: &ThwargFiles,
+        apply: bool,
+    ) -> Result<ThwargImportReport, OrchestratorError> {
+        if !apply {
+            let state = self.inner.state()?;
+            return Ok(thwarg::preview(files, state.store.document()));
+        }
+        let report = {
+            let mut state = self.inner.state()?;
+            state
+                .store
+                .execute_transaction(|store| -> Result<_, ProfileError> {
+                    Ok(thwarg::import(files, store.document_mut()))
+                })?
+        };
+        self.inner.raise_state_changed();
+        Ok(report)
+    }
+
     /// Edits an idle server.
     pub fn edit_server(
         &self,
@@ -1061,6 +1085,38 @@ impl LauncherOrchestrator {
             )?;
             Ok(store.set_character_plugins(server_name, account_name, character_name, plugins)?)
         })
+    }
+
+    /// The profiles a character is in; each is taken off the account's
+    /// other characters.
+    pub fn update_character_profiles(
+        &self,
+        server_name: &str,
+        account_name: &str,
+        character_name: &str,
+        profiles: &[String],
+    ) -> Result<(), OrchestratorError> {
+        self.mutate_profiles(|store, _| {
+            Ok(
+                store.set_character_profiles(
+                    server_name,
+                    account_name,
+                    character_name,
+                    profiles,
+                )?,
+            )
+        })
+    }
+
+    /// Adds an empty profile.
+    pub fn create_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        self.mutate_profiles(|store, _| Ok(store.create_profile(name)?))
+    }
+
+    /// Deletes a profile from the list and from every account and
+    /// character.
+    pub fn delete_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        self.mutate_profiles(|store, _| Ok(store.delete_profile(name)?))
     }
 
     /// The plugins every character on an account launches with unless it
@@ -1664,7 +1720,8 @@ fn account_snapshot(
                 id: character.id.clone(),
                 launch_mode: character.launch_mode,
                 plugins: account.plugins_for(Some(character)).to_vec(),
-                login_commands: account.login_commands.clone(),
+                login_commands: account.login_commands_for(Some(character)),
+                profiles: character.profiles.clone(),
                 has_running_session: running.is_some(),
                 session_status: running.map_or_else(
                     || "Not running".to_owned(),
@@ -2295,13 +2352,19 @@ fn apply_roster(
     let server_name = activity.server_name.clone();
     let account = activity.account_name.clone();
     match store.execute_transaction(|store| store.merge_roster(&server_name, &account, &roster)) {
-        Ok(()) => {
+        Ok(notes) => {
             if update_status {
                 activity.status = if roster.len() == 1 {
                     "Character roster refreshed: 1 character.".into()
                 } else {
                     format!("Character roster refreshed: {} characters.", roster.len())
                 };
+            }
+            // What merging two entries of one character could not keep is
+            // said, never dropped quietly.
+            for note in notes {
+                activity.status.push(' ');
+                activity.status.push_str(&note);
             }
         }
         Err(error) => {

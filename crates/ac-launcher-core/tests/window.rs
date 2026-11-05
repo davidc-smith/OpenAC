@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ac_host::PathSet;
+use ac_host_core::PathSet;
 use ac_launcher_core::cancel::{CancelToken, Cancelled};
 use ac_launcher_core::installation::LauncherInstallRecord;
 use ac_launcher_core::launcher_log::LauncherLog;
@@ -53,6 +53,8 @@ type LaunchRequest = (String, String, Option<String>, LaunchMode);
 /// server, account, character, mode, its own plugins (`None`: the
 /// account's).
 type SettingsUpdate = (String, String, String, LaunchMode, Option<Vec<String>>);
+/// server, account, character, its profiles.
+type CharacterProfileUpdate = (String, String, String, Vec<String>);
 /// server, account, plugins.
 type AccountPluginUpdate = (String, String, Vec<String>);
 
@@ -85,6 +87,16 @@ struct Fake {
     window_switches: Mutex<Vec<(String, bool)>>,
     /// Refuses the next window switch with this message.
     window_switch_refusal: Mutex<Option<String>>,
+    /// What the Thwarg import works on, and each call's `apply`.
+    thwarg_document: Mutex<ac_launcher_core::profiles::LauncherProfileDocument>,
+    thwarg_imports: Mutex<Vec<bool>>,
+    /// Every row selection saved, in order: account, character, mode.
+    saved_row_selections: Mutex<Vec<(String, Option<String>, LaunchMode)>>,
+    /// The profile list; the snapshot adds the tags in use, as the store
+    /// does.
+    profiles: Mutex<Vec<String>>,
+    /// Each character profile edit: server, account, character, profiles.
+    character_profile_updates: Mutex<Vec<CharacterProfileUpdate>>,
 }
 
 fn character(
@@ -102,6 +114,7 @@ fn character(
         launch_mode: mode,
         plugins: plugins.iter().map(|id| (*id).to_owned()).collect(),
         login_commands: Vec::new(),
+        profiles: Vec::new(),
         has_running_session: false,
         session_status: "Ready".into(),
         // A character listed with plugins of its own.
@@ -233,13 +246,32 @@ impl Orchestration for Fake {
             Some(sessions) => sessions,
             None => self.session.lock().unwrap().clone().into_iter().collect(),
         };
+        let servers = self.servers.lock().unwrap().clone();
+        let mut profiles = self.profiles.lock().unwrap().clone();
+        for tag in servers
+            .iter()
+            .flat_map(|server| server.accounts.iter())
+            .flat_map(|account| {
+                account.profiles.iter().chain(
+                    account
+                        .characters
+                        .iter()
+                        .flat_map(|character| character.profiles.iter()),
+                )
+            })
+        {
+            if !profiles.iter().any(|known| known.eq_ignore_ascii_case(tag)) {
+                profiles.push(tag.clone());
+            }
+        }
         Ok(LauncherStateSnapshot {
-            servers: self.servers.lock().unwrap().clone(),
+            servers,
             sessions,
             platform: Self::platform(),
             is_installation_ready: self.installed.lock().unwrap().is_some(),
             installation_status: "No installed client is configured.".into(),
             show_beta_plugins: *self.show_beta_plugins.lock().unwrap(),
+            profiles,
         })
     }
     fn launch_capability(&self, mode: LaunchMode) -> Result<LauncherCapability, OrchestratorError> {
@@ -349,6 +381,60 @@ impl Orchestration for Fake {
         ));
         Ok(())
     }
+    fn update_character_profiles(
+        &self,
+        server: &str,
+        account: &str,
+        character: &str,
+        profiles: &[String],
+    ) -> Result<(), OrchestratorError> {
+        self.character_profile_updates.lock().unwrap().push((
+            server.into(),
+            account.into(),
+            character.into(),
+            profiles.to_vec(),
+        ));
+        Ok(())
+    }
+    // The fake keeps the store's list rules: a real store sits behind the
+    // window tests that need them.
+    fn create_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        let mut profiles = self.profiles.lock().unwrap();
+        if name.trim().is_empty()
+            || profiles
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(name))
+        {
+            return Err(OrchestratorError::Operation(format!(
+                "'{name}' cannot be added."
+            )));
+        }
+        profiles.push(name.to_owned());
+        Ok(())
+    }
+    fn delete_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        self.profiles
+            .lock()
+            .unwrap()
+            .retain(|known| !known.eq_ignore_ascii_case(name));
+        for account in self
+            .servers
+            .lock()
+            .unwrap()
+            .iter_mut()
+            .flat_map(|server| server.accounts.iter_mut())
+        {
+            account
+                .profiles
+                .retain(|tag| !tag.eq_ignore_ascii_case(name));
+            for character in &mut account.characters {
+                character
+                    .profiles
+                    .retain(|tag| !tag.eq_ignore_ascii_case(name));
+            }
+        }
+        Ok(())
+    }
     fn remove_character(
         &self,
         server: &str,
@@ -361,6 +447,20 @@ impl Orchestration for Fake {
     }
     fn take_profile_migration_notice(&self) -> Result<Option<String>, OrchestratorError> {
         Ok(None)
+    }
+    fn import_thwarg(
+        &self,
+        files: &ac_launcher_core::profiles::thwarg::ThwargFiles,
+        apply: bool,
+    ) -> Result<ac_launcher_core::profiles::thwarg::ThwargImportReport, OrchestratorError> {
+        use ac_launcher_core::profiles::thwarg;
+        self.thwarg_imports.lock().unwrap().push(apply);
+        let mut document = self.thwarg_document.lock().unwrap();
+        Ok(if apply {
+            thwarg::import(files, &mut document)
+        } else {
+            thwarg::preview(files, &document)
+        })
     }
     fn add_server(&self, name: &str, host: &str, port: i32) -> Result<(), OrchestratorError> {
         let mut servers = self.servers.lock().unwrap();
@@ -381,11 +481,16 @@ impl Orchestration for Fake {
     fn update_account_selection(
         &self,
         _server: &str,
-        _account: &str,
+        account: &str,
         character: Option<&str>,
         mode: LaunchMode,
     ) -> Result<(), OrchestratorError> {
         *self.saved_row_selection.lock().unwrap() = Some((character.map(str::to_owned), mode));
+        self.saved_row_selections.lock().unwrap().push((
+            account.to_owned(),
+            character.map(str::to_owned),
+            mode,
+        ));
         Ok(())
     }
     fn launch(
@@ -492,6 +597,8 @@ fn parts(fake: Arc<dyn Orchestration>, spawner: Arc<dyn Spawner>) -> LauncherWin
         apply_launcher_update: None,
         install_folder: None,
         checked_accounts: None,
+        relaunch_settings: None,
+        console_settings: None,
         relaunch_clock: None,
         known_servers: None,
         classic_migration: None,
@@ -2152,6 +2259,128 @@ fn restoring_and_refreshing_checks_does_not_rewrite_the_selection_file() {
     assert!(fake.saved_row_selection.lock().unwrap().is_none());
 }
 
+// --- Keeping checked clients running, remembered -----------------------------------------
+// Not OpenAC tests: its launcher keeps these settings for one run and never
+// starts a client just because its account is checked.
+
+impl CheckedFixture {
+    fn relaunch_file_path(&self) -> PathBuf {
+        self.root
+            .join(ac_launcher_core::profiles::RELAUNCH_SETTINGS_FILE_NAME)
+    }
+
+    /// A window with both remembered files, started as the launcher starts.
+    fn started_window(&self, fake: &Arc<Fake>) -> LauncherWindow {
+        let mut parts = parts(fake.clone(), Arc::new(InlineSpawner));
+        parts.checked_accounts = Some(LauncherCheckedAccountStore::new(&self.file_path()));
+        parts.relaunch_settings = Some(
+            ac_launcher_core::profiles::LauncherRelaunchSettingsStore::new(
+                &self.relaunch_file_path(),
+            ),
+        );
+        parts.console_settings = Some(
+            ac_launcher_core::profiles::LauncherConsoleSettingsStore::new(
+                &self
+                    .root
+                    .join(ac_launcher_core::profiles::CONSOLE_SETTINGS_FILE_NAME),
+            ),
+        );
+        let mut window = LauncherWindow::new(parts);
+        window.initialize();
+        window.start_background_initialization();
+        window.poll();
+        window.close_active_modal();
+        window.poll();
+        window
+    }
+}
+
+#[test]
+fn keeping_clients_running_and_the_delay_are_remembered() {
+    let selection = CheckedFixture::new();
+    {
+        let mut window = selection.started_window(&batch());
+        assert!(!window.relaunch_checked_clients_automatically());
+        assert_eq!(window.relaunch_delay_seconds_text(), "30");
+        window.set_relaunch_checked_clients_automatically(true);
+        window.set_relaunch_delay_seconds_text("45");
+        // A box that is not a delay keeps the last valid one.
+        window.set_relaunch_delay_seconds_text("4");
+        assert_eq!(window.last_error, None);
+    }
+    let window = selection.started_window(&batch());
+    assert!(window.relaunch_checked_clients_automatically());
+    assert_eq!(window.relaunch_delay_seconds_text(), "45");
+}
+
+#[test]
+fn the_consoles_verbose_is_remembered() {
+    let selection = CheckedFixture::new();
+    {
+        let mut window = selection.started_window(&batch());
+        // By default a console shows only what a player would see.
+        assert!(!window.console_verbose());
+        window.set_console_verbose(true);
+        assert_eq!(window.last_error, None);
+    }
+    let mut window = selection.started_window(&batch());
+    assert!(window.console_verbose());
+    window.set_console_verbose(false);
+    let window = selection.started_window(&batch());
+    assert!(!window.console_verbose());
+}
+
+#[test]
+fn a_relaunch_settings_file_that_cannot_be_read_says_so() {
+    let selection = CheckedFixture::new();
+    std::fs::write(selection.relaunch_file_path(), "{ not json").unwrap();
+    let window = selection.started_window(&batch());
+    assert!(!window.relaunch_checked_clients_automatically());
+    let error = window.last_error.clone().unwrap_or_default();
+    assert!(error.contains("relaunch settings"), "{error}");
+}
+
+#[test]
+fn opening_the_launcher_starts_the_checked_accounts_when_clients_are_kept_running() {
+    for enabled in [false, true] {
+        let selection = CheckedFixture::new();
+        ac_launcher_core::profiles::LauncherRelaunchSettingsStore::new(
+            &selection.relaunch_file_path(),
+        )
+        .save(ac_launcher_core::profiles::LauncherRelaunchSettings {
+            enabled,
+            delay_seconds: 30,
+        })
+        .unwrap();
+        LauncherCheckedAccountStore::new(&selection.file_path())
+            .save([ac_launcher_core::profiles::LauncherCheckedAccount::new(
+                "One", "Alice",
+            )])
+            .unwrap();
+        let fake = batch();
+        for server in fake.servers.lock().unwrap().iter_mut() {
+            for account in &mut server.accounts {
+                account.selected_character = Some("A character".into());
+            }
+        }
+        let mut window = selection.started_window(&fake);
+        window.poll();
+        let launched: Vec<(String, String)> = fake
+            .launch_requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|request| (request.0.clone(), request.1.clone()))
+            .collect();
+        let expected = if enabled {
+            vec![("One".to_owned(), "Alice".to_owned())]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(launched, expected, "enabled: {enabled}");
+    }
+}
+
 // OpenAC LauncherWindowViewModelTests.ACheckedAccountMatchesItsRowWhateverTheCaseOfItsName.
 #[test]
 fn a_checked_account_matches_its_row_whatever_the_case_of_its_name() {
@@ -2291,9 +2520,19 @@ fn request() -> InstallDialogRequest {
 #[test]
 fn the_enable_choice_decides_which_characters_are_written() {
     let mut dialog = PluginInstallDialog::default();
+    // Changed from OpenAC (owner, 2026-11-05): a first install turns the
+    // plugin on everywhere; an update keeps each one's choice.
     dialog.open(request());
+    assert_eq!(dialog.choice, PluginEnableChoice::All);
+    assert!(dialog.enable_note().is_some());
+    dialog.open(InstallDialogRequest {
+        is_update: true,
+        ..request()
+    });
     assert_eq!(dialog.choice, PluginEnableChoice::None);
+    assert!(dialog.enable_note().is_none());
     assert!(dialog.chosen_characters().is_empty());
+    dialog.open(request());
     dialog.choice = PluginEnableChoice::All;
     assert_eq!(dialog.chosen_characters().len(), 2);
     dialog.choice = PluginEnableChoice::Choose;
@@ -2709,6 +2948,226 @@ fn offline_with_no_cache_shows_an_error() {
     );
 }
 
+// Not an OpenAC test: an open launcher reads the installed plugins' release
+// feeds every 30 seconds and runs the plugin check when one changes, so a
+// new release shows without Refresh list.
+#[test]
+fn a_new_plugin_release_shows_within_half_a_minute() {
+    let fixture = PanelFixture::new();
+    fixture.write_manifest("edwards.hello", "0.1.0");
+    fixture.add_record("edwards.hello", "0.1.0");
+    fixture.list(&["edwards.hello"], "");
+    fixture.release("edwards.hello", "0.1.0");
+    let mut window = fixture.window();
+    startup_check(&mut window);
+    check(&mut window);
+    let feed = ac_launcher_core::plugins::github::releases_feed(HELLO_REPO)
+        .unwrap()
+        .to_string();
+    let reads = || fixture.server.count(&feed);
+    // Offered, or withheld for a reason (this fixture has no client installed):
+    // either way the check found the newer release.
+    let has_update = |window: &LauncherWindow| {
+        let row = &window.plugins.installed[0];
+        row.update.is_some() || row.update_withheld_reason.is_some()
+    };
+    assert!(!has_update(&window));
+    let before = reads();
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+
+    window.poll_plugin_release_watch(at(0));
+    window.poll_plugin_release_watch(at(29));
+    window.poll();
+    assert_eq!(reads(), before);
+    // The first read only remembers what the feed lists.
+    window.poll_plugin_release_watch(at(30));
+    window.poll();
+    assert_eq!(reads(), before + 1);
+    let checks = fixture.server.count(LIST_URI);
+
+    // Nothing new: no check.
+    window.poll_plugin_release_watch(at(30));
+    window.poll_plugin_release_watch(at(60));
+    window.poll();
+    assert_eq!(reads(), before + 2);
+    assert_eq!(fixture.server.count(LIST_URI), checks);
+    assert!(!has_update(&window));
+
+    // A release is published: the next read sees it and the check runs.
+    fixture.release("edwards.hello", "0.2.0");
+    window.poll_plugin_release_watch(at(60));
+    window.poll_plugin_release_watch(at(90));
+    window.poll();
+    assert_eq!(fixture.server.count(LIST_URI), checks + 1);
+    assert!(has_update(&window));
+}
+
+// Not an OpenAC test: a repository whose feed cannot be read (moved,
+// removed) does not stop the watch of the others, and a check that could
+// not read the plugin list is tried again at the next read.
+#[test]
+fn the_plugin_release_watch_survives_an_unreadable_feed_and_a_failed_check() {
+    let fixture = PanelFixture::new();
+    fixture.write_manifest("edwards.hello", "0.1.0");
+    fixture.write_manifest("someone.gone", "1.0.0");
+    let path = fixture
+        .paths()
+        .data_directory
+        .join("app")
+        .join("plugins-installed.json");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let record = |id: &str, repo: &str, version: &str| {
+        format!(
+            r#"{{ "id": "{id}", "repo": "{repo}", "source": "listed", "version": "{version}",
+              "tag": "wasm-v{version}", "zipSha256": "{}", "installedAt": "2026-01-01T00:00:00Z",
+              "pending": null }}"#,
+            "a".repeat(64)
+        )
+    };
+    std::fs::write(
+        &path,
+        format!(
+            r#"{{ "schemaVersion": 1, "plugins": [{}, {}] }}"#,
+            record("edwards.hello", HELLO_REPO, "0.1.0"),
+            record("someone.gone", "someone/gone-plugin", "1.0.0")
+        ),
+    )
+    .unwrap();
+    fixture.list(&["edwards.hello"], "");
+    fixture.release("edwards.hello", "0.1.0");
+    let mut window = fixture.window();
+    startup_check(&mut window);
+    check(&mut window);
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+    let tick = |window: &mut LauncherWindow, seconds: u64| {
+        window.poll_plugin_release_watch(at(seconds));
+        window.poll_plugin_release_watch(at(seconds + 30));
+        window.poll();
+    };
+    tick(&mut window, 0);
+    let checks = || fixture.server.count(LIST_URI);
+    let before = checks();
+
+    // A release while the plugin list cannot be read: checked, not seen.
+    fixture.release("edwards.hello", "0.2.0");
+    fixture
+        .server
+        .add_route(LIST_URI, common::fixtures::Route::Status(429));
+    tick(&mut window, 30);
+    assert_eq!(checks(), before + 1);
+    // So the next read checks again, and this time the list answers.
+    fixture.list(&["edwards.hello"], "");
+    tick(&mut window, 60);
+    assert_eq!(checks(), before + 2);
+    let row = window
+        .plugins
+        .installed
+        .iter()
+        .find(|row| row.info.id == "edwards.hello")
+        .unwrap();
+    assert!(row.update.is_some() || row.update_withheld_reason.is_some());
+    // Seen: no more checks.
+    tick(&mut window, 90);
+    assert_eq!(checks(), before + 2);
+}
+
+// Not an OpenAC test: when GitHub asks to slow down, the watch waits ten
+// minutes.
+#[test]
+fn the_plugin_release_watch_backs_off_when_rate_limited() {
+    let fixture = PanelFixture::new();
+    fixture.write_manifest("edwards.hello", "0.1.0");
+    fixture.add_record("edwards.hello", "0.1.0");
+    fixture.list(&["edwards.hello"], "");
+    let feed = ac_launcher_core::plugins::github::releases_feed(HELLO_REPO)
+        .unwrap()
+        .to_string();
+    fixture
+        .server
+        .add_route(&feed, common::fixtures::Route::Status(429));
+    let mut window = fixture.window();
+    startup_check(&mut window);
+    let before = fixture.server.count(&feed);
+    let start = Instant::now();
+    let at = |seconds: u64| start + Duration::from_secs(seconds);
+    window.poll_plugin_release_watch(at(0));
+    window.poll_plugin_release_watch(at(30));
+    window.poll();
+    assert_eq!(fixture.server.count(&feed), before + 1);
+    window.poll_plugin_release_watch(at(30));
+    window.poll_plugin_release_watch(at(60));
+    window.poll_plugin_release_watch(at(629));
+    window.poll();
+    assert_eq!(fixture.server.count(&feed), before + 1);
+    window.poll_plugin_release_watch(at(630));
+    window.poll();
+    assert_eq!(fixture.server.count(&feed), before + 2);
+}
+
+// Not an OpenAC test (owner, 2026-11-05): a first install turns the plugin
+// on for every account and for every character with a plugin list of its
+// own; a character that already has it is left alone.
+#[test]
+fn a_first_install_turns_the_plugin_on_for_every_account_and_character() {
+    let fixture = PanelFixture::new();
+    fixture.list(&["edwards.hello"], "");
+    fixture.release("edwards.hello", "1.0.0");
+    fixture.release_zip(
+        &ac_launcher_core::plugins::release_tag("1.0.0"),
+        "edwards.hello",
+        "1.0.0",
+    );
+    let fake = batch();
+    for server in fake.servers.lock().unwrap().iter_mut() {
+        for account in &mut server.accounts {
+            if account.account_name == "Bob" {
+                account.characters[0].has_own_plugins = true;
+                account.characters[0].plugins = vec!["someone.other".into()];
+            }
+        }
+    }
+    let mut window = fixture.window_with(fake.clone());
+    check(&mut window);
+    window.refresh_discover_details();
+    window.poll();
+    window.open_discover_install("edwards.hello");
+    assert!(window.plugins.install_dialog.is_open);
+    window.poll();
+    window.confirm_install();
+    window.poll();
+    assert!(
+        !window.plugins.install_dialog.is_open,
+        "{:?}",
+        window.plugins.install_dialog.error
+    );
+    let mut accounts: Vec<(String, String)> = fake
+        .account_plugin_updates
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(_, _, plugins)| plugins.iter().any(|id| id == "edwards.hello"))
+        .map(|(server, account, _)| (server.clone(), account.clone()))
+        .collect();
+    accounts.sort();
+    assert_eq!(
+        accounts,
+        [
+            ("One".to_owned(), "Alice".to_owned()),
+            ("One".to_owned(), "Bob".to_owned()),
+            ("Two".to_owned(), "Alice".to_owned()),
+        ]
+    );
+    let characters = fake.settings_updates.lock().unwrap().clone();
+    assert_eq!(characters.len(), 1, "{characters:?}");
+    assert_eq!(characters[0].1, "Bob");
+    assert_eq!(
+        characters[0].4.as_deref(),
+        Some(&["someone.other".to_owned(), "edwards.hello".to_owned()][..])
+    );
+}
+
 fn classic_migration_dialog(profiles: PathBuf) -> ClassicMigrationDialog {
     ClassicMigrationDialog::with_finders(profiles, Arc::new(|| None), Arc::new(|| None))
 }
@@ -3019,7 +3478,7 @@ fn the_plugin_backend_writes_to_the_log_it_is_given() {
         LauncherLog::at(
             &given,
             1024 * 1024,
-            ac_host::local_time::LocalZone::fixed(0),
+            ac_host_core::local_time::LocalZone::fixed(0),
         ),
     );
     composition.log_index_warning_text(HELLO_REPO, Some("a test warning"));
@@ -4229,7 +4688,7 @@ fn checked_filter_combines_with_profiles_and_keeps_selections_while_active_can_b
     let mut window = create_initialized(&fake);
     assert!(!window.show_only_checked_accounts());
     assert!(!window.relaunch_checked_clients_automatically());
-    assert_eq!(window.relaunch_delay_seconds_text(), "180");
+    assert_eq!(window.relaunch_delay_seconds_text(), "30");
     // The running row's selection cannot be edited, but its check can change.
     let row = window.row("Alice", "One").unwrap();
     assert!(row.is_active());
@@ -4328,6 +4787,78 @@ fn can_stop_second_client_while_first_stop_is_still_awaiting_exit() {
     window.poll();
     assert_eq!(*fake.stopped.lock().unwrap(), ["session-1", "second"]);
     assert_eq!(window.operation_status, "Stop requested.");
+}
+
+// Not an OpenAC test: Stop all stops every running client at once, and is
+// offered only while one runs.
+#[test]
+fn stop_all_stops_every_running_client() {
+    let fake = batch();
+    let mut exited = live_session("third", "Two", "Alice");
+    exited.state = LauncherActivityState::Exited;
+    exited.has_live_process = Some(false);
+    *fake.sessions_override.lock().unwrap() = Some(vec![
+        live_session("session-1", "One", "Alice"),
+        live_session("second", "One", "Bob"),
+        exited,
+    ]);
+    let (mut window, spawner) = create_started_queued(&fake);
+    assert!(window.can_stop_all());
+    window.stop_all();
+    assert_eq!(window.operation_status, "Logging out 2 clients…");
+    // Each stop is under way: nothing is left for Stop all.
+    assert!(!window.can_stop_all());
+    spawner.run_all();
+    window.poll();
+    assert_eq!(*fake.stopped.lock().unwrap(), ["session-1", "second"]);
+
+    let idle = batch();
+    *idle.sessions_override.lock().unwrap() = Some(Vec::new());
+    let (mut window, spawner) = create_started_queued(&idle);
+    assert!(!window.can_stop_all());
+    // A start not made yet is cancelled too.
+    window.launch_row("Bob", "One");
+    assert!(window.can_stop_all());
+    window.stop_all();
+    spawner.run_all();
+    window.poll();
+    assert!(idle.launch_requests.lock().unwrap().is_empty());
+    assert!(!window.can_stop_all());
+}
+
+// Not an OpenAC test: the search shows the accounts whose name or one of
+// whose characters' names holds the text, ignoring case; it only hides rows.
+#[test]
+fn the_search_hides_rows_but_play_selected_still_starts_them() {
+    let fake = batch();
+    let mut window = create_started(&fake);
+    window.set_row_checked("Alice", "One", true);
+    let shown = |window: &LauncherWindow| -> Vec<(String, String)> {
+        window
+            .accounts
+            .iter()
+            .filter(|group| group.is_shown())
+            .flat_map(|group| group.servers.iter())
+            .filter(|row| row.is_shown())
+            .map(|row| (row.account_name.clone(), row.server_name.clone()))
+            .collect()
+    };
+    window.set_account_search("  BO ");
+    assert_eq!(shown(&window), [("Bob".to_owned(), "One".to_owned())]);
+    assert_eq!(window.checked_rows_hidden_by_search(), 1);
+    assert!(
+        window.play_checked_text().contains('1'),
+        "{}",
+        window.play_checked_text()
+    );
+    // A character's name finds its account.
+    window.set_account_search("a CHARACTER");
+    assert_eq!(shown(&window).len(), 3);
+    window.set_account_search("nobody");
+    assert!(shown(&window).is_empty());
+    window.set_account_search("");
+    assert_eq!(shown(&window).len(), 3);
+    assert_eq!(window.checked_rows_hidden_by_search(), 0);
 }
 
 // OpenAC LauncherWindowViewModelTests.StopAndPlayOnDifferentAccountsDoNotBlockEachOtherOrSettings.
@@ -4565,7 +5096,7 @@ mod add_server {
     use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
-    use ac_host::local_time::LocalZone;
+    use ac_host_core::local_time::LocalZone;
     use ac_launcher_core::orchestration::{LauncherExecutableSet, LauncherOrchestrator};
     use ac_launcher_core::profiles::LauncherProfileStore;
     use ac_launcher_core::status::{
@@ -5307,4 +5838,392 @@ fn the_session_log_says_the_server_may_hold_the_account_only_when_it_may() {
         describe_status(&ended),
         "The server is currently full. Please try again later."
     );
+}
+
+// The Thwarg import: the folder found on open, Preview before Import, the
+// report kept after importing, all through the window's worker.
+#[test]
+fn the_window_previews_then_imports_from_the_thwarg_folder() {
+    use ac_launcher_core::window::thwarg_import::ThwargImportDialog;
+    let folder = std::env::temp_dir()
+        .join("openac-window-thwarg-import")
+        .join(format!("{}", std::process::id()));
+    std::fs::create_dir_all(folder.join("characters")).unwrap();
+    std::fs::write(folder.join("Accounts.txt"), "Name=Wanderer,Password=pw\n").unwrap();
+    std::fs::create_dir_all(folder.join("Servers")).unwrap();
+    std::fs::write(
+        folder.join("Servers").join("UserServerList.xml"),
+        "\u{feff}<ArrayOfServerItem><ServerItem><name>Homestead</name>\
+         <connect_string>home.example.test:9000</connect_string></ServerItem></ArrayOfServerItem>",
+    )
+    .unwrap();
+    std::fs::write(
+        folder.join("characters").join("characters_Homestead_Wanderer.txt"),
+        r#"{"Homestead-Wanderer": {"ZoneId": "wanderer", "CharacterList": [{"Id": 1, "Name": "Roamer"}]}}"#,
+    )
+    .unwrap();
+
+    let fake = Arc::new(Fake::default());
+    let spawner = Arc::new(QueueSpawner::default());
+    let mut window = LauncherWindow::new(parts(fake.clone(), spawner.clone()));
+    window.initialize();
+    let found = folder.clone();
+    window.thwarg_import = ThwargImportDialog::with_finder(Arc::new(move || Some(found.clone())));
+
+    window.open_thwarg_import();
+    assert!(window.is_modal_open());
+    assert_eq!(window.thwarg_import.folder, folder.display().to_string());
+    assert!(
+        !window.thwarg_import.can_import(),
+        "Import waits for a preview"
+    );
+
+    window.run_thwarg_import(false);
+    assert!(window.thwarg_import.is_busy());
+    spawner.run_all();
+    window.poll();
+    let dialog = &window.thwarg_import;
+    assert_eq!(
+        dialog.status.as_deref(),
+        Some(
+            "Ready to import: 1 new server, 1 new account, 0 already here, 0 skipped. Press \
+             Import to add them."
+        )
+    );
+    assert!(
+        dialog
+            .lines
+            .contains(&"  Wanderer on Homestead: 1 character".to_owned())
+    );
+    assert!(dialog.can_import());
+
+    window.run_thwarg_import(true);
+    spawner.run_all();
+    window.poll();
+    let _ = std::fs::remove_dir_all(&folder);
+    assert_eq!(*fake.thwarg_imports.lock().unwrap(), [false, true]);
+    let dialog = &window.thwarg_import;
+    assert!(dialog.is_open, "the report stays shown");
+    assert!(
+        dialog
+            .status
+            .as_deref()
+            .unwrap()
+            .starts_with("Imported: 1 new server")
+    );
+    assert!(dialog.lines.contains(&"Accounts added".to_owned()));
+    assert!(!dialog.can_import(), "the import does not run twice");
+    assert_eq!(
+        fake.thwarg_document.lock().unwrap().servers[0].accounts[0].account,
+        "Wanderer"
+    );
+
+    window.close_active_modal();
+    assert!(!window.is_modal_open());
+}
+
+#[test]
+fn the_thwarg_import_reports_a_missing_folder() {
+    use ac_launcher_core::window::thwarg_import::ThwargImportDialog;
+    let fake = Arc::new(Fake::default());
+    let mut window = LauncherWindow::new(parts(fake.clone(), Arc::new(InlineSpawner)));
+    window.initialize();
+    window.thwarg_import = ThwargImportDialog::with_finder(Arc::new(|| None));
+    window.open_thwarg_import();
+    assert!(window.thwarg_import.folder.is_empty());
+    assert!(!window.thwarg_import.can_preview());
+    window.thwarg_import.folder = std::env::temp_dir()
+        .join("openac-no-such-thwarg-folder")
+        .display()
+        .to_string();
+    window.run_thwarg_import(false);
+    window.poll();
+    assert!(window.thwarg_import.has_error());
+    assert!(fake.thwarg_imports.lock().unwrap().is_empty());
+}
+
+// --- Profiles on characters ---------------------------------------------------------------
+
+/// On "One": "alpha" with Ann and Bea (Bea in Main, the row on Ann);
+/// "beta" itself in Main, with Cid (the row on Cid); "gamma" in no profile.
+fn character_profiled() -> Arc<Fake> {
+    let named = |account: &str, name: &str, profiles: &[&str]| {
+        let mut character = character("One", account, name, LaunchMode::Gui, &[]);
+        character.profiles = profiles.iter().map(|tag| (*tag).to_owned()).collect();
+        character
+    };
+    let mut alpha = account(
+        "One",
+        "alpha",
+        vec![named("alpha", "Ann", &[]), named("alpha", "Bea", &["Main"])],
+    );
+    alpha.selected_character = Some("Ann".into());
+    let mut beta = account("One", "beta", vec![named("beta", "Cid", &[])]);
+    beta.profiles = vec!["Main".into()];
+    beta.selected_character = Some("Cid".into());
+    let gamma = account("One", "gamma", vec![named("gamma", "Dot", &["Bots"])]);
+    let fake = Fake::default();
+    *fake.servers.lock().unwrap() = vec![server("One", vec![alpha, beta, gamma])];
+    *fake.profiles.lock().unwrap() = vec!["Spare".into()];
+    *fake.session.lock().unwrap() = Some(session(LauncherActivityState::Exited));
+    Arc::new(fake)
+}
+
+#[test]
+fn a_profile_chip_shows_an_account_through_its_character_and_switches_the_row_to_it() {
+    let fake = character_profiled();
+    let mut window = create_started(&fake);
+    let chips: Vec<&str> = window
+        .profile_filters
+        .iter()
+        .map(|chip| chip.label.as_str())
+        .collect();
+    // An empty profile has its chip; the tags in use follow the list.
+    assert_eq!(chips, ["All", "Spare", "Main", "Bots"]);
+    fake.saved_row_selections.lock().unwrap().clear();
+
+    window.set_profile_filter(Some("main"));
+
+    let visible: Vec<(&str, bool)> = window
+        .accounts
+        .iter()
+        .map(|group| (group.account_name.as_str(), group.is_visible))
+        .collect();
+    assert_eq!(visible, [("alpha", true), ("beta", true), ("gamma", false)]);
+    // alpha is in Main through Bea: its row switches to her, saved as a
+    // pick by hand. beta is in Main itself and keeps Cid.
+    assert_eq!(
+        window.row("alpha", "One").unwrap().selected_character,
+        "Bea"
+    );
+    assert_eq!(window.row("beta", "One").unwrap().selected_character, "Cid");
+    assert_eq!(
+        *fake.saved_row_selections.lock().unwrap(),
+        [("alpha".to_owned(), Some("Bea".to_owned()), LaunchMode::Gui)]
+    );
+
+    // Play selected starts the profile's character.
+    window.set_row_checked("alpha", "One", true);
+    window.launch_checked();
+    window.poll();
+    assert_eq!(
+        fake.launch_requests.lock().unwrap().last().cloned(),
+        Some((
+            "One".to_owned(),
+            "alpha".to_owned(),
+            Some("Bea".to_owned()),
+            LaunchMode::Gui
+        ))
+    );
+
+    // All shows every account and changes no character.
+    fake.saved_row_selections.lock().unwrap().clear();
+    window.set_profile_filter(None);
+    assert!(window.accounts.iter().all(|group| group.is_visible));
+    assert_eq!(
+        window.row("alpha", "One").unwrap().selected_character,
+        "Bea"
+    );
+    assert!(fake.saved_row_selections.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_profile_chip_leaves_a_row_already_on_the_profiles_character_alone() {
+    let fake = character_profiled();
+    let mut window = create_started(&fake);
+    window.set_row_character("alpha", "One", "Bea");
+    fake.saved_row_selections.lock().unwrap().clear();
+    window.set_profile_filter(Some("Main"));
+    assert!(fake.saved_row_selections.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_profile_chip_leaves_a_running_rows_character_alone() {
+    let ann = character("Local ACE", "testaccount", "Ann", LaunchMode::Gui, &[]);
+    let mut bea = character("Local ACE", "testaccount", "Bea", LaunchMode::Gui, &[]);
+    bea.profiles = vec!["Main".into()];
+    let fake = account_with_plugins(&[], vec![ann, bea]);
+    fake.servers.lock().unwrap()[0].accounts[0].selected_character = Some("Ann".into());
+    fake.set_session(|session| {
+        session.state = LauncherActivityState::InWorld;
+        session.character_name = Some("Ann".into());
+    });
+    let mut window = create_started(&fake);
+    assert!(window.row("testaccount", "Local ACE").unwrap().is_active());
+    fake.saved_row_selections.lock().unwrap().clear();
+
+    window.set_profile_filter(Some("Main"));
+
+    // Still shown (Bea is in Main), but the running row keeps Ann, so a
+    // relaunch brings Ann back.
+    let row = window.row("testaccount", "Local ACE").unwrap();
+    assert!(row.is_visible);
+    assert_eq!(row.selected_character, "Ann");
+    assert!(fake.saved_row_selections.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_characters_options_tick_the_profiles_it_is_in_and_save_a_change() {
+    let mut bea = character("Local ACE", "testaccount", "Bea", LaunchMode::Gui, &[]);
+    bea.profiles = vec!["Bots".into()];
+    let fake = account_with_plugins(&[], vec![bea]);
+    *fake.profiles.lock().unwrap() = vec!["Main".into()];
+    let mut window = create_started(&fake);
+    open_character(&mut window, "Bea");
+    assert_eq!(window.row_options_title(), "Options for Bea");
+    let boxes: Vec<(&str, bool)> = window
+        .row_options_profiles
+        .iter()
+        .map(|profile| (profile.name.as_str(), profile.is_checked))
+        .collect();
+    assert_eq!(boxes, [("Main", false), ("Bots", true)]);
+
+    // Left alone, the profiles are not written.
+    window.save_row_options();
+    assert!(fake.character_profile_updates.lock().unwrap().is_empty());
+
+    open_character(&mut window, "Bea");
+    window.row_options_profiles[0].is_checked = true;
+    window.save_row_options();
+    assert_eq!(
+        *fake.character_profile_updates.lock().unwrap(),
+        [(
+            "Local ACE".to_owned(),
+            "testaccount".to_owned(),
+            "Bea".to_owned(),
+            vec!["Main".to_owned(), "Bots".to_owned()]
+        )]
+    );
+    assert!(!window.is_row_options_open);
+
+    // An account's plugins show no profile boxes.
+    window.open_account_plugins("testaccount", "Local ACE");
+    assert!(window.row_options_profiles.is_empty());
+}
+
+// --- The Profiles dialog (real orchestrator) --------------------------------------------
+
+struct ProfilesFixture {
+    _root: common::TempDir,
+    core: Arc<LauncherOrchestrator>,
+}
+
+impl ProfilesFixture {
+    /// Coldeve with "alpha" (Ann in Main) and "beta" (in Main itself).
+    fn new() -> Self {
+        let root = common::TempDir::new("profiles-dialog");
+        let paths = root.path_set();
+        let core = Arc::new(LauncherOrchestrator::new(
+            LauncherProfileStore::for_paths(&paths),
+            paths,
+            LauncherExecutableSet::new("unused-client", "unused-headless", None),
+            None,
+        ));
+        core.load_profiles().unwrap();
+        core.add_server("Coldeve", "play.example.test", 9000)
+            .unwrap();
+        core.add_account("Coldeve", "alpha", "pw").unwrap();
+        core.add_account("Coldeve", "beta", "pw").unwrap();
+        core.add_character("Coldeve", "alpha", "Ann", None).unwrap();
+        core.update_character_profiles("Coldeve", "alpha", "Ann", &["Main".to_owned()])
+            .unwrap();
+        core.save_profile_text(
+            LauncherTextEditorKind::Accounts,
+            "#Coldeve\nName=alpha,Password=pw\nName=beta,Password=pw,Profiles=Main\n",
+            &core
+                .read_profile_text(LauncherTextEditorKind::Accounts)
+                .unwrap(),
+        )
+        .unwrap();
+        Self { _root: root, core }
+    }
+
+    fn window(&self) -> LauncherWindow {
+        let mut window = LauncherWindow::new(parts(self.core.clone(), Arc::new(InlineSpawner)));
+        window.initialize();
+        window
+    }
+}
+
+fn chip_labels(window: &LauncherWindow) -> Vec<String> {
+    window
+        .profile_filters
+        .iter()
+        .map(|chip| chip.label.clone())
+        .collect()
+}
+
+#[test]
+fn the_profiles_dialog_lists_every_profile_and_new_profile_adds_an_empty_one() {
+    let fixture = ProfilesFixture::new();
+    let mut window = fixture.window();
+    window.open_profiles();
+    assert!(window.profiles_dialog.is_open);
+    assert!(window.is_modal_open());
+    let entries: Vec<(&str, &str)> = window
+        .profiles_dialog
+        .entries
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry.members.as_str()))
+        .collect();
+    assert_eq!(entries, [("Main", "1 account, 1 character")]);
+
+    window.profiles_dialog.new_name = "  Farm  ".into();
+    window.create_profile();
+    assert_eq!(window.profiles_dialog.error, None);
+    assert!(window.profiles_dialog.new_name.is_empty());
+    assert_eq!(window.profiles_dialog.entries[1].name, "Farm");
+    assert_eq!(window.profiles_dialog.entries[1].members, "empty");
+    assert_eq!(chip_labels(&window), ["All", "Main", "Farm"]);
+    // It survives a restart.
+    assert_eq!(chip_labels(&fixture.window()), ["All", "Main", "Farm"]);
+
+    for refused in ["", "farm", "a;b"] {
+        window.profiles_dialog.new_name = refused.into();
+        window.create_profile();
+        assert!(window.profiles_dialog.error.is_some(), "{refused:?}");
+    }
+    assert_eq!(fixture.core.snapshot().unwrap().profiles, ["Main", "Farm"]);
+}
+
+#[test]
+fn deleting_a_profile_asks_then_removes_it_from_every_account_and_character() {
+    let fixture = ProfilesFixture::new();
+    let mut window = fixture.window();
+    window.set_profile_filter(Some("Main"));
+    window.open_profiles();
+    window.request_delete_profile("Main");
+    assert_eq!(
+        window.profiles_dialog.delete_title(),
+        "Delete the profile Main?"
+    );
+    assert!(
+        window
+            .profiles_dialog
+            .delete_message()
+            .contains("(1 account, 1 character)")
+    );
+    // Cancel keeps it.
+    window.cancel_delete_profile();
+    assert_eq!(fixture.core.snapshot().unwrap().profiles, ["Main"]);
+
+    window.request_delete_profile("Main");
+    window.confirm_delete_profile();
+    let snapshot = fixture.core.snapshot().unwrap();
+    assert!(snapshot.profiles.is_empty());
+    let accounts = &snapshot.servers[0].accounts;
+    assert!(accounts.iter().all(|account| account.profiles.is_empty()));
+    assert!(
+        accounts
+            .iter()
+            .flat_map(|account| account.characters.iter())
+            .all(|character| character.profiles.is_empty())
+    );
+    // The chips go, and the filter is back on All.
+    assert_eq!(window.profile_filter, None);
+    assert!(!window.has_profile_filters());
+    assert!(window.profiles_dialog.entries.is_empty());
+    assert!(window.profiles_dialog.is_open);
+    window.close_active_modal();
+    assert!(!window.profiles_dialog.is_open);
 }

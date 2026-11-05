@@ -64,6 +64,9 @@ pub struct AccountGroup {
     pub is_expanded: bool,
     /// False while the profile filter hides this account.
     pub is_visible: bool,
+    /// False while the search hides this account. The search only hides:
+    /// Play selected still starts what the profile filter shows.
+    pub matches_search: bool,
     /// The account's profile tags.
     pub profiles: Vec<String>,
     /// The account's plugins by name, such as "Combat · Stats", or "none".
@@ -82,11 +85,17 @@ impl AccountGroup {
             server_name: String::new(),
             is_expanded: true,
             is_visible: true,
+            matches_search: true,
             profiles: Vec::new(),
             plugins_summary: "none".into(),
             subtitle: String::new(),
             servers: Vec::new(),
         }
+    }
+
+    /// Drawn: the profile filter and the search both show it.
+    pub fn is_shown(&self) -> bool {
+        self.is_visible && self.matches_search
     }
 
     /// The account is on one server only.
@@ -187,8 +196,12 @@ pub struct AccountServerRow {
     pub hold_text: Option<String>,
     /// False while the profile filter hides this row.
     pub is_visible: bool,
+    /// False while the search hides this row.
+    pub matches_search: bool,
     /// The account's profile tags on this server.
     pub profiles: Vec<String>,
+    /// Each character's profile tags, by character name.
+    pub character_profiles: Vec<(String, Vec<String>)>,
     active_session_id: Option<String>,
     /// The running play session's window, while it can be switched.
     active_window: Option<LauncherSessionWindow>,
@@ -215,11 +228,31 @@ impl AccountServerRow {
             disabled_reason: String::new(),
             hold_text: None,
             is_visible: true,
+            matches_search: true,
             profiles: Vec::new(),
+            character_profiles: Vec::new(),
             active_session_id: None,
             active_window: None,
             selection_loaded: false,
         }
+    }
+
+    /// Drawn: the profile filter and the search both show it.
+    pub fn is_shown(&self) -> bool {
+        self.is_visible && self.matches_search
+    }
+
+    /// Whether `query` (already lowercase, not empty) is part of the
+    /// account's name or one of its characters' names, ignoring case.
+    pub fn matches(&self, query: &str) -> bool {
+        let contains = |text: &str| text.to_lowercase().contains(query);
+        contains(&self.account_name)
+            || self
+                .character_choices
+                .iter()
+                .filter(|choice| choice.as_str() != CHARACTER_SELECT)
+                .any(|choice| contains(choice))
+            || self.active_character_name.as_deref().is_some_and(contains)
     }
 
     /// What a launch from this row asks for: headless, the character
@@ -254,11 +287,22 @@ impl AccountServerRow {
         }
     }
 
-    /// Whether the account carries `profile` on this server, ignoring case.
+    /// Whether the account on this server, or one of its characters,
+    /// carries `profile`, ignoring case.
     pub fn has_profile(&self, profile: &str) -> bool {
         self.profiles
             .iter()
             .any(|known| known.eq_ignore_ascii_case(profile))
+            || self.character_in_profile(profile).is_some()
+    }
+
+    /// The account's character in `profile` (ignoring case): the one the
+    /// row switches to when that profile is chosen.
+    pub fn character_in_profile(&self, profile: &str) -> Option<&str> {
+        self.character_profiles
+            .iter()
+            .find(|(_, tags)| tags.iter().any(|tag| tag.eq_ignore_ascii_case(profile)))
+            .map(|(name, _)| name.as_str())
     }
 
     /// The Options button's name for a screen reader: which row it acts on.
@@ -391,6 +435,11 @@ impl AccountServerRow {
         session: Option<&LauncherSessionSnapshot>,
     ) {
         self.profiles.clone_from(&account.profiles);
+        self.character_profiles = account
+            .characters
+            .iter()
+            .map(|character| (character.name.clone(), character.profiles.clone()))
+            .collect();
         let endpoint = format!("{}:{}", server.host, server.port);
         if self.endpoint != endpoint {
             self.is_server_online = None;

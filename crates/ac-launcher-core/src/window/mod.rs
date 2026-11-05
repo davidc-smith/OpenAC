@@ -9,7 +9,8 @@
 //! - [`accounts`]: the account groups and their per-server rows.
 //! - [`sessions`]: how a session reads in the session log.
 //! - [`profile_editor`]: the Edit accounts / Edit servers / Logon commands
-//!   editors.
+//!   editors; [`profiles_dialog`]: the Profiles dialog (create and delete
+//!   profiles).
 //! - [`plugins`] and [`plugins_panel`]: the plugin check pipeline and the
 //!   Plugins tab; [`install_dialog`]: the install and update dialog.
 //! - [`first_run`], [`update_prompt`], [`console`]: content setup, the
@@ -18,6 +19,7 @@
 //! - [`install_folder`]: the install folder section of the settings.
 //! - [`closing`]: closing the launcher over running clients.
 //! - [`classic_migration`]: the classic VirindiTank and UtilityBelt import.
+//! - [`thwarg_import`]: the import from the Thwarg launcher.
 //!
 //! Every slow step (a launch, a stop, an HTTP request, hashing) runs on a
 //! worker through a [`Spawner`] and reports back as a message the window
@@ -37,8 +39,10 @@ mod launcher;
 pub mod plugins;
 pub mod plugins_panel;
 pub mod profile_editor;
+pub mod profiles_dialog;
 pub mod sessions;
 pub mod startup;
+pub mod thwarg_import;
 pub mod update_prompt;
 
 use std::path::PathBuf;
@@ -47,7 +51,7 @@ use std::time::Duration;
 
 pub use launcher::{
     ApplyLauncherUpdate, ClosePrompt, LauncherMainTab, LauncherWindow, LauncherWindowParts,
-    RowOptionsChoice,
+    RowOptionsChoice, RowOptionsProfile,
 };
 
 use crate::cancel::{CancelToken, Cancelled};
@@ -57,6 +61,7 @@ use crate::orchestration::{
     LauncherStateSnapshot, OrchestratorError, StateChangedListener,
 };
 use crate::plugins::PluginCatalog;
+use crate::profiles::thwarg::{ThwargFiles, ThwargImportReport};
 use crate::profiles::{LaunchMode, LauncherTextEditorKind};
 use crate::status::{ServerHealthService, ServerHealthSnapshot};
 
@@ -166,6 +171,19 @@ pub trait Orchestration: Send + Sync {
         account_name: &str,
         plugins: &[String],
     ) -> Result<(), OrchestratorError>;
+    /// The profiles a character is in; each is taken off the account's
+    /// other characters.
+    fn update_character_profiles(
+        &self,
+        server_name: &str,
+        account_name: &str,
+        character_name: &str,
+        profiles: &[String],
+    ) -> Result<(), OrchestratorError>;
+    /// Adds an empty profile.
+    fn create_profile(&self, name: &str) -> Result<(), OrchestratorError>;
+    /// Deletes a profile everywhere.
+    fn delete_profile(&self, name: &str) -> Result<(), OrchestratorError>;
     fn remove_character(
         &self,
         server_name: &str,
@@ -173,6 +191,13 @@ pub trait Orchestration: Send + Sync {
         character_name: &str,
     ) -> Result<(), OrchestratorError>;
     fn add_server(&self, name: &str, host: &str, port: i32) -> Result<(), OrchestratorError>;
+    /// Imports the Thwarg launcher's files (`apply`), or reports what that
+    /// would do.
+    fn import_thwarg(
+        &self,
+        files: &ThwargFiles,
+        apply: bool,
+    ) -> Result<ThwargImportReport, OrchestratorError>;
     fn take_profile_migration_notice(&self) -> Result<Option<String>, OrchestratorError>;
     fn update_account_selection(
         &self,
@@ -295,6 +320,27 @@ impl Orchestration for LauncherOrchestrator {
     ) -> Result<(), OrchestratorError> {
         LauncherOrchestrator::update_account_plugins(self, server_name, account_name, plugins)
     }
+    fn update_character_profiles(
+        &self,
+        server_name: &str,
+        account_name: &str,
+        character_name: &str,
+        profiles: &[String],
+    ) -> Result<(), OrchestratorError> {
+        LauncherOrchestrator::update_character_profiles(
+            self,
+            server_name,
+            account_name,
+            character_name,
+            profiles,
+        )
+    }
+    fn create_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        LauncherOrchestrator::create_profile(self, name)
+    }
+    fn delete_profile(&self, name: &str) -> Result<(), OrchestratorError> {
+        LauncherOrchestrator::delete_profile(self, name)
+    }
     fn remove_character(
         &self,
         server_name: &str,
@@ -305,6 +351,13 @@ impl Orchestration for LauncherOrchestrator {
     }
     fn add_server(&self, name: &str, host: &str, port: i32) -> Result<(), OrchestratorError> {
         LauncherOrchestrator::add_server(self, name, host, port)
+    }
+    fn import_thwarg(
+        &self,
+        files: &ThwargFiles,
+        apply: bool,
+    ) -> Result<ThwargImportReport, OrchestratorError> {
+        LauncherOrchestrator::import_thwarg(self, files, apply)
     }
     fn take_profile_migration_notice(&self) -> Result<Option<String>, OrchestratorError> {
         LauncherOrchestrator::take_profile_migration_notice(self)

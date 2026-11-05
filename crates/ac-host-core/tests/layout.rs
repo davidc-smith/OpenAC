@@ -6,13 +6,13 @@ mod common;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use ac_host::layout::{
+use ac_host_core::layout::{
     self, LauncherSessionFolder, MigrationError, clean_old_logs, create_session_folder, migrate,
     parse_old_session_id, parse_session_folder_name, session_folder_name,
 };
-use ac_host::local_time::LocalZone;
-use ac_host::paths::file_name_safe;
-use ac_host::{InstallSessionLease, PathSet, RootSource};
+use ac_host_core::local_time::LocalZone;
+use ac_host_core::paths::file_name_safe;
+use ac_host_core::{InstallSessionLease, PathSet, RootSource};
 use common::TempDir;
 
 /// 2026-11-02 12:00:00 UTC.
@@ -51,7 +51,7 @@ fn root(name: &str) -> (TempDir, PathSet) {
 /// An old session folder name for a UTC start `ms` after the epoch.
 fn old_session_name(ms: u64, hex: char) -> String {
     let seconds = i64::try_from(ms / 1000).unwrap();
-    let (year, month, day) = ac_host::status::civil_from_days(seconds.div_euclid(86_400));
+    let (year, month, day) = ac_host_core::status::civil_from_days(seconds.div_euclid(86_400));
     let second = seconds.rem_euclid(86_400);
     format!(
         "{year:04}{month:02}{day:02}{:02}{:02}{:02}{:03}-{}",
@@ -72,10 +72,43 @@ fn old_session_document(host: &str, port: u16, account: &str) -> String {
 }
 
 fn profiles(paths: &PathSet) {
+    profiles_at(&paths.launcher_profiles_file(), 3);
+}
+
+/// A profile document at `path` naming the server "Coldeve".
+fn profiles_at(path: &Path, version: i32) {
     write(
-        &paths.launcher_profiles_file(),
-        r#"{ "version": 2, "servers": [ { "name": "Coldeve", "host": "play.example.net", "port": 9000, "accounts": [] } ] }"#,
+        path,
+        &format!(
+            r#"{{ "version": {version}, "servers": [ {{ "name": "Coldeve", "host": "play.example.net", "port": 9000, "accounts": [] }} ] }}"#
+        ),
     );
+}
+
+#[test]
+fn a_session_folder_takes_its_server_name_from_the_version2_profiles_while_no_newer_exist() {
+    let (_dir, paths) = root("layout-v2-profiles");
+    old_root(&paths);
+    // Only an older launcher's file: the launcher has not run since.
+    profiles_at(&paths.older_launcher_profiles_file(), 2);
+    assert!(!paths.launcher_profiles_file().exists());
+    let recent = old_session_name(NOW_MS - 3_600_000, 'b');
+    let session = paths.launcher_log_directory().join(&recent);
+    write(
+        &session.join("session.json"),
+        &old_session_document("play.example.net", 9000, "bot1"),
+    );
+    write(
+        &session.join("status.jsonl"),
+        "{\"v\":1,\"e\":\"started\",\"sessionId\":\"x\"}\n\
+         {\"v\":1,\"e\":\"enteredWorld\",\"sessionId\":\"x\",\"characterId\":1,\"characterName\":\"Tester\"}\n",
+    );
+    write(&session.join("client.err.log"), "errors");
+    assert!(migrate(&paths, now(), &utc()).unwrap().moved);
+    let moved = paths
+        .session_logs_directory("Coldeve", "Tester")
+        .join("2026-11-02 11-00-00");
+    assert_eq!(read(&moved.join("client.err.log")), "errors");
 }
 
 /// An older root with something in every place the migration moves.
@@ -136,7 +169,7 @@ fn old_root(paths: &PathSet) -> PathBuf {
 
 fn quoted(path: &Path) -> String {
     let mut text = String::new();
-    ac_host::json::write_string(&mut text, &path.to_string_lossy());
+    ac_host_core::json::write_string(&mut text, &path.to_string_lossy());
     text
 }
 
@@ -167,10 +200,10 @@ fn an_older_root_moves_into_the_current_layout() {
     let game = paths.game_data_directory();
     assert_eq!(read(&game.join("pak").join("acdream.pak")), "pak");
     let record = read(&game.join("install.json"));
-    let document = ac_host::json::parse(record.as_bytes()).unwrap();
-    let members = ac_host::json::object_members(&document).unwrap();
+    let document = ac_host_core::json::parse(record.as_bytes()).unwrap();
+    let members = ac_host_core::json::object_members(&document).unwrap();
     let value = |name: &str| {
-        ac_host::json::string_or_null(&members.iter().find(|m| m.name == name).unwrap().value)
+        ac_host_core::json::string_or_null(&members.iter().find(|m| m.name == name).unwrap().value)
             .unwrap()
             .unwrap()
     };

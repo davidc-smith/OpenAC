@@ -8,7 +8,6 @@ use ac_launcher_core::plugins::PluginReleaseChannel;
 use ac_launcher_core::profiles::LauncherTextEditorKind;
 use ac_launcher_core::window::accounts::{AccountGroup, AccountServerRow, RowLaunchMode};
 use ac_launcher_core::window::closing::ClosingClientState;
-use ac_launcher_core::window::install_dialog::PluginEnableChoice;
 use ac_launcher_core::window::install_folder::InstallFolderRow;
 use ac_launcher_core::window::plugins_panel::{
     BETA_CHANNEL_LABEL, PluginDiscoverRow, PluginInstalledRow, STABLE_CHANNEL_LABEL,
@@ -130,6 +129,21 @@ fn chip(ui: &mut Ui, text: &str, fill: Color32, color: Color32) {
         });
 }
 
+/// A profile tag beside an account: a small boxed label in its own colour,
+/// so it reads as a label and not as a button.
+fn profile_tag(ui: &mut Ui, text: &str) {
+    Frame::new()
+        .fill(theme::TAG)
+        .stroke(egui::Stroke::new(1.0, theme::TAG_EDGE))
+        .corner_radius(CornerRadius::same(3))
+        .inner_margin(Margin::symmetric(4, 0))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text).size(10.0).color(theme::TAG_TEXT));
+        })
+        .response
+        .on_hover_text(format!("Profile: {text}"));
+}
+
 /// The expander's triangle: pointing down when open, right when closed.
 fn expander_arrow(ui: &mut Ui, expanded: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
@@ -190,7 +204,8 @@ fn header(app: &mut LauncherApp, root: &mut Ui) {
                         )
                         .on_hover_text(
                             "Checks the client, the launcher and your plugins now; the launcher \
-                             also checks every 20 minutes",
+                             also checks every 20 minutes, and watches for new plugin releases \
+                             every 30 seconds",
                         )
                         .clicked()
                     {
@@ -472,18 +487,41 @@ fn accounts_tab(app: &mut LauncherApp, ui: &mut Ui) {
             if button(ui, "Check servers", window.can_check_servers()) {
                 window.check_servers();
             }
+            if button(ui, "Stop all", window.can_stop_all()) {
+                window.stop_all();
+            }
         });
     });
-    if window.has_profile_filters() {
-        ui.horizontal(|ui| {
+    ui.horizontal(|ui| {
+        if window.has_profile_filters() {
             for chip in window.profile_filters.clone() {
                 if ui.selectable_label(chip.is_selected, &chip.label).clicked() {
                     window.set_profile_filter(chip.profile.as_deref());
                 }
             }
-        });
-    }
+            ui.add_space(8.0);
+        }
+        if ui
+            .add_enabled(window.can_interact(), egui::Button::new("Profiles…"))
+            .on_hover_text("Create and delete profiles")
+            .clicked()
+        {
+            window.open_profiles();
+        }
+    });
     ui.horizontal_wrapped(|ui| {
+        let mut search = window.account_search().to_owned();
+        if ui
+            .add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Search accounts and characters")
+                    .desired_width(220.0),
+            )
+            .changed()
+        {
+            window.set_account_search(&search);
+        }
+        ui.add_space(12.0);
         let mut only_checked = window.show_only_checked_accounts();
         if ui
             .checkbox(&mut only_checked, "Show only checked accounts")
@@ -494,7 +532,7 @@ fn accounts_tab(app: &mut LauncherApp, ui: &mut Ui) {
         ui.add_space(12.0);
         let mut relaunch = window.relaunch_checked_clients_automatically();
         if ui
-            .checkbox(&mut relaunch, "Relaunch checked clients automatically")
+            .checkbox(&mut relaunch, "Keep checked clients running")
             .changed()
         {
             window.set_relaunch_checked_clients_automatically(relaunch);
@@ -511,8 +549,9 @@ fn accounts_tab(app: &mut LauncherApp, ui: &mut Ui) {
     });
     ui.label(
         RichText::new(
-            "When enabled, checked clients relaunch after a crash or Stop. Uncheck a client or \
-             turn this off to keep it stopped. These controls last for this launcher session.",
+            "When enabled, checked accounts with a character chosen start when the launcher \
+             opens, and a client that crashes or exits starts again after the delay. Stop keeps \
+             a client down until you press Play.",
         )
         .color(theme::MUTED)
         .size(11.0),
@@ -526,6 +565,14 @@ fn accounts_tab(app: &mut LauncherApp, ui: &mut Ui) {
             .color(hex("#F17474"))
             .size(11.0),
         );
+    }
+    let hidden = window.checked_rows_hidden_by_search();
+    if hidden > 0 {
+        ui.label(muted(format!(
+            "The search hides {hidden} checked {}; Play selected still starts {}.",
+            if hidden == 1 { "account" } else { "accounts" },
+            if hidden == 1 { "it" } else { "them" }
+        )));
     }
     ui.add_space(4.0);
     let has_logs = window
@@ -640,7 +687,7 @@ fn account_list(
                 ui.add_space(16.0);
                 ui.label(muted("Add your users and servers with the editors below."));
             }
-            for group in groups.iter().filter(|group| group.is_visible) {
+            for group in groups.iter().filter(|group| group.is_shown()) {
                 Frame::new()
                     .fill(theme::GROUP)
                     .stroke(Stroke::new(GROUP_BORDER, theme::BORDER))
@@ -650,7 +697,7 @@ fn account_list(
                         ui.spacing_mut().item_spacing.y = 0.0;
                         group_header(ui, group, interact, &mut actions, layout);
                         if group.is_expanded {
-                            for row in group.servers.iter().filter(|row| row.is_visible) {
+                            for row in group.servers.iter().filter(|row| row.is_shown()) {
                                 let cells =
                                     account_row(ui, &columns, row, states(row), &mut actions);
                                 layout.rows.push(cells);
@@ -730,7 +777,7 @@ fn group_header(
                         }
                         ui.spacing_mut().item_spacing.x = 4.0;
                         for tag in &group.profiles {
-                            chip(ui, tag, theme::GOLD, theme::ON_GOLD);
+                            profile_tag(ui, tag);
                         }
                         ui.add_space(4.0);
                         cut(ui, muted(&group.subtitle));
@@ -950,7 +997,7 @@ fn account_row(
                         );
                         item(
                             ui,
-                            "Plugins for this character…",
+                            "Options for this character…",
                             row.character_name().is_some(),
                             RowAction::CharacterPlugins,
                         );
@@ -1419,6 +1466,16 @@ fn bottom_bar(app: &mut LauncherApp, root: &mut Ui) {
                     if button(ui, "Logon commands", interact) {
                         window.open_text_editor(LauncherTextEditorKind::LogonCommands);
                     }
+                    if ui
+                        .add_enabled(interact, egui::Button::new("Import from Thwarg launcher…"))
+                        .on_hover_text(
+                            "Add the servers, accounts, characters, profiles and logon commands \
+                             of a Thwarg launcher install",
+                        )
+                        .clicked()
+                    {
+                        window.open_thwarg_import();
+                    }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if window.has_cancelable_operation()
@@ -1503,6 +1560,9 @@ fn dialogs(app: &mut LauncherApp, ctx: &egui::Context) {
     if window.add_server.is_open {
         modal(ctx, "add-server", 900.0, |ui| add_server(window, ui));
     }
+    if window.thwarg_import.is_open {
+        modal(ctx, "thwarg-import", 900.0, |ui| thwarg_import(window, ui));
+    }
     if window
         .classic_migration
         .as_ref()
@@ -1536,6 +1596,25 @@ fn dialogs(app: &mut LauncherApp, ctx: &egui::Context) {
     if !window.plugins.add_from_url_choices.is_empty() {
         modal(ctx, "add-from-url-choice", 520.0, |ui| {
             add_from_url_choice(window, ui);
+        });
+    }
+    if window.profiles_dialog.is_open {
+        modal(ctx, "profiles", 520.0, |ui| profiles_dialog(window, ui));
+    }
+    if window.profiles_dialog.delete_target.is_some() {
+        modal(ctx, "delete-profile", 440.0, |ui| {
+            dialog_title(ui, &window.profiles_dialog.delete_title());
+            ui.label(muted(window.profiles_dialog.delete_message()));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let delete =
+                    egui::Button::new(RichText::new("Delete").strong()).fill(theme::DANGER);
+                if ui.add(delete).clicked() {
+                    window.confirm_delete_profile();
+                }
+                if ui.button("Cancel").clicked() {
+                    window.cancel_delete_profile();
+                }
+            });
         });
     }
     if window.remove_character_target.is_some() {
@@ -1720,6 +1799,68 @@ fn add_server(window: &mut Window, ui: &mut Ui) {
             window.add_server.close();
         }
     });
+}
+
+/// The Import from Thwarg launcher dialog: the Thwarg data folder (typed;
+/// there is no folder picker), the outcome, the report, then Close,
+/// Preview and Import. Import is offered once a preview found something.
+fn thwarg_import(window: &mut Window, ui: &mut Ui) {
+    let mut run = None;
+    let dialog = &mut window.thwarg_import;
+    dialog_title(ui, "Import from Thwarg launcher");
+    ui.add(
+        egui::Label::new(muted(
+            "Adds the servers, accounts (with their passwords), characters, profiles and logon \
+             commands the Thwarg launcher has saved. Accounts already here are not overwritten; \
+             the Thwarg files are only read. Preview shows what will change.",
+        ))
+        .wrap(),
+    );
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        ui.add_sized([100.0, 18.0], egui::Label::new("Thwarg folder"));
+        ui.add(
+            egui::TextEdit::singleline(&mut dialog.folder)
+                .hint_text(r"%APPDATA%\ThwargLauncher")
+                .desired_width(ui.available_width()),
+        );
+    });
+    if dialog.has_error() {
+        ui.label(error_text(dialog.error.clone().unwrap_or_default()));
+    } else if let Some(status) = &dialog.status {
+        ui.add(egui::Label::new(RichText::new(status).color(hex("#8FD18F"))).wrap());
+    }
+    let height = (ui.ctx().content_rect().height() - 380.0).clamp(160.0, 640.0);
+    well(ui, |ui| {
+        egui::ScrollArea::both()
+            .id_salt("thwarg-import-lines")
+            .max_height(height)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                for line in &dialog.lines {
+                    ui.add(
+                        egui::Label::new(RichText::new(line).monospace().size(12.0))
+                            .selectable(true)
+                            .extend(),
+                    );
+                }
+            });
+    });
+    let (can_preview, can_import) = (dialog.can_preview(), dialog.can_import());
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if primary(ui, "Import", true, can_import) {
+            run = Some(true);
+        }
+        if button(ui, "Preview", can_preview) {
+            run = Some(false);
+        }
+        if button(ui, "Close", dialog.can_close()) {
+            dialog.close();
+        }
+    });
+    if let Some(apply) = run {
+        window.run_thwarg_import(apply);
+    }
 }
 
 /// OpenAC's Import VirindiTank & UtilityBelt dialog: the two classic
@@ -2133,6 +2274,28 @@ fn row_options(window: &mut Window, ui: &mut Ui) {
                 }
             });
         });
+    if window.show_character_plugin_choice() {
+        ui.add_space(8.0);
+        ui.label(RichText::new("Profiles").strong());
+        if window.row_options_profiles.is_empty() {
+            ui.label(muted(
+                "No profiles yet. Create one with Profiles… above the accounts.",
+            ));
+        } else {
+            ui.label(muted(
+                "Choosing a profile picks this character on its account's row. A profile is on \
+                 one character per account.",
+            ));
+            egui::ScrollArea::vertical()
+                .id_salt("row-options-profiles")
+                .max_height(140.0)
+                .show(ui, |ui| {
+                    for profile in &mut window.row_options_profiles {
+                        ui.checkbox(&mut profile.is_checked, &profile.name);
+                    }
+                });
+        }
+    }
     if let Some(error) = &window.last_error {
         ui.label(error_text(error));
     }
@@ -2142,6 +2305,58 @@ fn row_options(window: &mut Window, ui: &mut Ui) {
         }
         if ui.button("Cancel").clicked() {
             window.close_desktop_dialogs();
+        }
+    });
+}
+
+/// Profiles…: every profile with what is in it, New profile and Delete.
+fn profiles_dialog(window: &mut Window, ui: &mut Ui) {
+    dialog_title(ui, "Profiles");
+    ui.label(muted(
+        "A profile groups accounts and characters; its chip above the accounts shows them. Put \
+         a character in a profile from its row's Options › Options for this character, an \
+         account with Edit accounts (Profiles=).",
+    ));
+    ui.add_space(4.0);
+    let entries = window.profiles_dialog.entries.clone();
+    egui::ScrollArea::vertical()
+        .id_salt("profiles-list")
+        .max_height(260.0)
+        .show(ui, |ui| {
+            if entries.is_empty() {
+                ui.label(muted("No profiles yet."));
+            }
+            for entry in &entries {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&entry.name).strong());
+                    ui.label(muted(&entry.members));
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if ui.button("Delete").clicked() {
+                            window.request_delete_profile(&entry.name);
+                        }
+                    });
+                });
+            }
+        });
+    ui.separator();
+    ui.horizontal(|ui| {
+        let response = ui.add(
+            egui::TextEdit::singleline(&mut window.profiles_dialog.new_name)
+                .hint_text("New profile name")
+                .desired_width(220.0),
+        );
+        let entered =
+            response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+        if ui.button("New profile").clicked() || entered {
+            window.create_profile();
+        }
+    });
+    if let Some(error) = &window.profiles_dialog.error {
+        ui.label(error_text(error));
+    }
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if ui.button("Close").clicked() {
+            window.close_profiles();
         }
     });
 }
@@ -2444,31 +2659,8 @@ fn install_dialog(window: &mut Window, ui: &mut Ui) {
     if let Some(text) = dialog.no_permissions_text() {
         ui.label(muted(text));
     }
-    if dialog.show_enable_choice() {
-        ui.label(RichText::new("Enable for").strong());
-        ui.radio_value(
-            &mut dialog.choice,
-            PluginEnableChoice::None,
-            "None (enable later)",
-        );
-        ui.radio_value(
-            &mut dialog.choice,
-            PluginEnableChoice::All,
-            "All characters",
-        );
-        ui.radio_value(
-            &mut dialog.choice,
-            PluginEnableChoice::Choose,
-            "Choose characters",
-        );
-        if dialog.choice == PluginEnableChoice::Choose {
-            for character in &mut dialog.characters {
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.checkbox(&mut character.is_checked, &character.option.display_name);
-                });
-            }
-        }
+    if let Some(note) = dialog.enable_note() {
+        ui.label(muted(note));
     }
     if dialog.show_keep_enabled_choice() {
         ui.label(RichText::new("New permissions").strong());
@@ -2578,6 +2770,9 @@ fn remove_dialog(window: &mut Window, ui: &mut Ui) {
 fn consoles(app: &mut LauncherApp, ctx: &egui::Context) {
     let window = &mut app.window;
     let mut send = None;
+    // One Verbose for every console: off, a console shows only chat, the
+    // status box, typed lines and their answers.
+    let mut verbose = window.console_verbose();
     for (index, console) in window.consoles.iter_mut().enumerate() {
         let mut open = console.is_open;
         egui::Window::new(console.title.clone())
@@ -2590,7 +2785,7 @@ fn consoles(app: &mut LauncherApp, ctx: &egui::Context) {
                     .auto_shrink([false, false])
                     .max_height(ui.available_height() - 36.0)
                     .show(ui, |ui| {
-                        for runs in console.lines() {
+                        for runs in console.lines(verbose) {
                             ui.horizontal_wrapped(|ui| {
                                 ui.spacing_mut().item_spacing.x = 0.0;
                                 for run in runs {
@@ -2607,7 +2802,7 @@ fn consoles(app: &mut LauncherApp, ctx: &egui::Context) {
                 ui.horizontal(|ui| {
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut console.input)
-                            .desired_width(ui.available_width() - 70.0),
+                            .desired_width(ui.available_width() - 150.0),
                     );
                     let entered = response.lost_focus()
                         && ui.input(|input| input.key_pressed(egui::Key::Enter));
@@ -2619,6 +2814,9 @@ fn consoles(app: &mut LauncherApp, ctx: &egui::Context) {
                     {
                         send = Some(index);
                     }
+                    ui.checkbox(&mut verbose, "Verbose").on_hover_text(
+                        "Show everything the client writes, not only chat and status",
+                    );
                 });
                 if !console.notice.is_empty() {
                     ui.label(error_text(console.notice.clone()));
@@ -2626,6 +2824,7 @@ fn consoles(app: &mut LauncherApp, ctx: &egui::Context) {
             });
         console.is_open = open;
     }
+    window.set_console_verbose(verbose);
     if let Some(index) = send {
         window.send_console_line(index);
     }

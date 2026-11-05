@@ -11,6 +11,9 @@
 //! commands; see [`HELP`] and `docs/launch-options.md`.
 
 use crate::stdio::errln;
+use std::borrow::Cow;
+
+use ac_host::console_kind::ConsoleLineKind;
 use ac_runtime::communication::{CLIENT_LOCAL_TAG, ChatLine, ContractSummary, JournalPage};
 use ac_runtime::gameplay::combat::{CombatAttackCommand, InputActivation};
 use ac_runtime::gameplay::{
@@ -206,6 +209,119 @@ fn split_word(text: &str) -> (&str, &str) {
 /// In front of every line the console says about itself, never in front of
 /// a line of chat.
 pub const NOTICE_PREFIX: &str = "-- ";
+
+/// `line` as the console writes it: when the launcher asked for marks
+/// (`marks`), every line of it behind the mark of its `kind`; a line of no
+/// kind (the client's log) and every line when marks were not asked for are
+/// written as they are.
+#[must_use]
+pub fn marked(kind: Option<ConsoleLineKind>, line: &str, marks: bool) -> Cow<'_, str> {
+    match kind.filter(|_| marks) {
+        Some(kind) => Cow::Owned(ac_host::console_kind::mark_lines(kind, line)),
+        None => Cow::Borrowed(line),
+    }
+}
+
+/// How long after a command typed on a session's console that session's
+/// answers are shown as answers: the replies a typed command gets come
+/// within a round trip to the server, and the same events caused by a
+/// plugin or a bot policy at any other time are the client's log.
+pub const ANSWER_WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether `event` is the kind of event that answers a command (a list, a
+/// view, a refusal, a move's end). It is shown as an answer only while a
+/// command typed on its session's console waits for one (see
+/// [`AnswerWindow`]); a plugin's or a policy's requests make the same
+/// events. An appraisal answers only the player's own question (a plugin's
+/// quiet identify does not open the examination window).
+#[must_use]
+pub fn answer_kind(event: &HostEvent) -> bool {
+    use ac_runtime::movement::MovementEvent;
+    match event {
+        HostEvent::Appraisal(view) => view.opens_window,
+        HostEvent::Objects(_)
+        | HostEvent::GameTime(_)
+        | HostEvent::Contracts(_)
+        | HostEvent::Journal { .. }
+        | HostEvent::Inventory(_)
+        | HostEvent::Vendor(_)
+        | HostEvent::Trade(_)
+        | HostEvent::ItemMana(_)
+        | HostEvent::OpenSalvage(_)
+        | HostEvent::BeginGame(_)
+        | HostEvent::LinkStatus(_)
+        | HostEvent::Corpses(_)
+        | HostEvent::CharacterOptions(_)
+        | HostEvent::CommandRefused(_)
+        | HostEvent::CharacterSelection(_)
+        | HostEvent::CharacterCreation(_)
+        | HostEvent::Movement(
+            MovementEvent::Status(_) | MovementEvent::Refused(_) | MovementEvent::MoveEnded { .. },
+        ) => true,
+        HostEvent::Gameplay(event) => matches!(
+            event.as_ref(),
+            GameplayEvent::Spellbook(_)
+                | GameplayEvent::Enchantments(_)
+                | GameplayEvent::Character(_)
+                | GameplayEvent::Combat(_)
+                | GameplayEvent::Refused(_)
+                | GameplayEvent::Selection { .. }
+                | GameplayEvent::CombatMode(_)
+                | GameplayEvent::Vitae(_)
+                | GameplayEvent::Book(_)
+                | GameplayEvent::Fellowship(_)
+                | GameplayEvent::Allegiance(_)
+                | GameplayEvent::House(_)
+                | GameplayEvent::Titles(_)
+        ),
+        _ => false,
+    }
+}
+
+/// One session's answer window: open for [`ANSWER_WINDOW`] after the last
+/// command typed on its console. The console thread opens it, the session's
+/// monitor reads it; a new command moves the end on, so repeated commands
+/// keep one window, never a queue.
+#[derive(Debug, Default)]
+pub struct AnswerWindow(std::sync::Mutex<Option<std::time::Instant>>);
+
+impl AnswerWindow {
+    /// A command was typed at `now`.
+    pub fn open(&self, now: std::time::Instant) {
+        if let Ok(mut until) = self.0.lock() {
+            *until = Some(now + ANSWER_WINDOW);
+        }
+    }
+
+    /// Whether a typed command still waits for answers at `now`.
+    pub fn is_open(&self, now: std::time::Instant) -> bool {
+        self.0
+            .lock()
+            .ok()
+            .and_then(|until| *until)
+            .is_some_and(|until| now < until)
+    }
+}
+
+/// The kind of the console's lines for `event` at `now`: chat the main chat
+/// window shows, the status box's text, an answer to a command typed within
+/// the session's answer window or a question for the player, or `None` for
+/// the client's log.
+#[must_use]
+pub fn event_kind(
+    event: &HostEvent,
+    answers: &AnswerWindow,
+    now: std::time::Instant,
+) -> Option<ConsoleLineKind> {
+    match event {
+        HostEvent::Chat(_) => Some(ConsoleLineKind::Chat),
+        HostEvent::InterfaceText(_) => Some(ConsoleLineKind::Status),
+        // The client asks the player something: shown whatever asked it.
+        HostEvent::Confirmation(_) => Some(ConsoleLineKind::Reply),
+        event if answer_kind(event) && answers.is_open(now) => Some(ConsoleLineKind::Reply),
+        _ => None,
+    }
+}
 
 /// The game tables every session of the process shares, read once from
 /// `dat_dir` (else the usual install place). Without them spells have no
@@ -2048,6 +2164,136 @@ mod tests {
             "[client] You can't jump while in the air"
         );
         assert_eq!(notice("entered world", Some("a")), "-- [a] entered world");
+    }
+
+    #[test]
+    fn a_line_is_marked_with_its_kind_only_when_the_launcher_asks() {
+        let line = "[system] Welcome\n  powered by ACEmulator";
+        assert_eq!(marked(Some(ConsoleLineKind::Chat), line, false), line);
+        assert_eq!(
+            marked(Some(ConsoleLineKind::Chat), line, true),
+            "\u{1e}c[system] Welcome\n\u{1e}c  powered by ACEmulator"
+        );
+        // The client's log is never marked.
+        assert_eq!(marked(None, "-- portal: reveal", true), "-- portal: reveal");
+    }
+
+    fn gameplay(event: GameplayEvent) -> HostEvent {
+        HostEvent::Gameplay(Box::new(event))
+    }
+
+    /// An appraisal answer; `asked` when it answers the player's own
+    /// question (the examination window opens on it).
+    fn appraisal(asked: bool) -> HostEvent {
+        HostEvent::Appraisal(Box::new(ac_runtime::inventory::AppraisalView {
+            name: Some("Sword".into()),
+            response: ac_proto::appraise::IdentifyObjectResponse {
+                guid: 7,
+                success: true,
+                ..Default::default()
+            },
+            present_in_ui: asked,
+            opens_window: asked,
+        }))
+    }
+
+    /// The events a typed command, a plugin or a bot policy can cause alike.
+    fn answers() -> Vec<HostEvent> {
+        use ac_runtime::movement::MovementEvent;
+        vec![
+            HostEvent::GameTime(None),
+            HostEvent::Objects(Vec::new()),
+            HostEvent::Corpses(Vec::new()),
+            HostEvent::CommandRefused("no such object".into()),
+            gameplay(GameplayEvent::Refused("no spell".into())),
+            HostEvent::Movement(MovementEvent::Status(None)),
+            HostEvent::Movement(MovementEvent::Refused("not placed".into())),
+            gameplay(GameplayEvent::Selection {
+                selected: Some(7),
+                name: None,
+            }),
+            appraisal(true),
+        ]
+    }
+
+    #[test]
+    fn chat_and_the_status_box_are_always_what_a_player_sees() {
+        let window = AnswerWindow::default();
+        let now = std::time::Instant::now();
+        let chat = ChatLine {
+            sequence: 1,
+            kind: ChatKind::LocalSpeech,
+            log_text_type: 2,
+            combat_kind: None,
+            received_unix_ms: 0,
+            text: "Bob says, \"hi\"".into(),
+            channel_name: String::new(),
+            sender: "Bob".into(),
+            sender_guid: 0x5000_0002,
+            words: String::new(),
+            display_text: String::new(),
+            channel_id: 0,
+            spans: None,
+        };
+        assert_eq!(
+            event_kind(&HostEvent::Chat(chat), &window, now),
+            Some(ConsoleLineKind::Chat)
+        );
+        assert_eq!(
+            event_kind(&HostEvent::InterfaceText("You fail".into()), &window, now),
+            Some(ConsoleLineKind::Status)
+        );
+        // What only the client's log keeps, even right after a command.
+        window.open(now);
+        for log in [
+            HostEvent::Logout(ac_runtime::world::transit::LogoutStage::Requested),
+            gameplay(GameplayEvent::Health {
+                guid: 1,
+                percent: 0.5,
+            }),
+            gameplay(GameplayEvent::CreatureDied(1)),
+        ] {
+            assert_eq!(event_kind(&log, &window, now), None, "{log:?}");
+        }
+    }
+
+    #[test]
+    fn answers_a_plugin_or_a_policy_caused_are_the_clients_log() {
+        // No command was typed on this console: a looting bot's identify,
+        // a plugin's refused command, a policy's movement status.
+        let window = AnswerWindow::default();
+        let now = std::time::Instant::now();
+        for event in answers() {
+            assert_eq!(event_kind(&event, &window, now), None, "{event:?}");
+        }
+    }
+
+    #[test]
+    fn a_typed_commands_answers_are_shown_until_the_window_closes() {
+        let window = AnswerWindow::default();
+        let typed = std::time::Instant::now();
+        window.open(typed);
+        let soon = typed + ANSWER_WINDOW / 2;
+        for event in answers() {
+            assert_eq!(
+                event_kind(&event, &window, soon),
+                Some(ConsoleLineKind::Reply),
+                "{event:?}"
+            );
+        }
+        // A plugin's quiet identify is not the player's question.
+        assert_eq!(event_kind(&appraisal(false), &window, soon), None);
+        let late = typed + ANSWER_WINDOW;
+        for event in answers() {
+            assert_eq!(event_kind(&event, &window, late), None, "{event:?}");
+        }
+        // Another command opens one window again, from its own time; many
+        // commands keep one window, not a queue.
+        for _ in 0..3 {
+            window.open(late);
+        }
+        assert!(window.is_open(late + ANSWER_WINDOW / 2));
+        assert!(!window.is_open(late + ANSWER_WINDOW));
     }
 
     #[test]

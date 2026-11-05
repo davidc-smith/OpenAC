@@ -4,7 +4,7 @@
 //! worker's result arrives as a message that [`LauncherWindow::poll`]
 //! applies.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -20,22 +20,26 @@ use super::console::SessionConsole;
 use super::first_run::FirstRunSetup;
 use super::icon::{PluginIcon, decode_icon};
 use super::install_dialog::{InstallDialogRequest, PluginCharacterOption};
-use super::plugins::{PluginCheckOutcome, PluginComposition, PluginSingleCheckResult};
+use super::plugins::{
+    PluginCheckOutcome, PluginComposition, PluginFeedState, PluginSingleCheckResult,
+};
 use super::plugins_panel::{
     AddFromUrlChoice, DiscoverChannelOption, DiscoverDetails, PluginsPanel,
 };
 use super::profile_editor::ProfileTextEditor;
+use super::profiles_dialog::{ProfileListEntry, ProfilesDialog, describe_members};
 use super::sessions::SessionRow;
+use super::thwarg_import::ThwargImportDialog;
 use super::update_prompt::UpdatePrompt;
 use super::{Orchestration, ServerHealth, Spawner, Wake, safe_display_error};
 use crate::cancel::CancelToken;
 use crate::installation::{InstallRecordVerification, LauncherInstallRecord, RetailContentStore};
 use crate::orchestration::{
-    AccountCapabilities, LauncherAccountSnapshot, LauncherActivityState, LauncherCapability,
-    LauncherCharacterSnapshot, LauncherRelaunchController, LauncherRelaunchSelection,
-    LauncherSessionSnapshot, LauncherStateSnapshot, LauncherStopGate,
-    MAXIMUM_RELAUNCH_DELAY_SECONDS, MINIMUM_RELAUNCH_DELAY_SECONDS, MonotonicClock,
-    OrchestratorError, RelaunchAttempt,
+    AccountCapabilities, DEFAULT_RELAUNCH_DELAY_SECONDS, LauncherAccountSnapshot,
+    LauncherActivityKind, LauncherActivityState, LauncherCapability, LauncherCharacterSnapshot,
+    LauncherRelaunchController, LauncherRelaunchSelection, LauncherSessionSnapshot,
+    LauncherStateSnapshot, LauncherStopGate, MAXIMUM_RELAUNCH_DELAY_SECONDS,
+    MINIMUM_RELAUNCH_DELAY_SECONDS, MonotonicClock, OrchestratorError, RelaunchAttempt,
 };
 use crate::plugins::{
     ICON_FILE_NAME, ICON_MAXIMUM_BYTES, InstallRules, InstalledPluginInfo, InstalledPluginSource,
@@ -45,15 +49,16 @@ use crate::plugins::{
     github, is_built_for_csharp, is_well_formed_id,
 };
 use crate::profiles::{
-    LaunchMode, LauncherCheckedAccount, LauncherCheckedAccountStore, LauncherTextEditorKind,
-    find_account, same_account,
+    LaunchMode, LauncherCheckedAccount, LauncherCheckedAccountStore, LauncherConsoleSettings,
+    LauncherConsoleSettingsStore, LauncherRelaunchSettings, LauncherRelaunchSettingsStore,
+    LauncherTextEditorKind, find_account, same_account,
 };
 use crate::status::{KnownServerCatalog, KnownServerList};
 use crate::updates::{
     ClientVersionResolution, LauncherUpdateCheckResult, LauncherUpdateProgress, LauncherUpdater,
     LauncherVersion,
 };
-use ac_host::local_time::LocalZone;
+use ac_host_core::local_time::LocalZone;
 
 /// How long Stop waits for a graceful logout before killing the process.
 pub const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(30);
@@ -87,6 +92,15 @@ pub struct RowOptionsChoice {
     pub is_checked: bool,
     /// Saved but not offered.
     pub is_missing: bool,
+}
+
+/// One profile in a character's options: whether the character is in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowOptionsProfile {
+    /// The profile's name.
+    pub name: String,
+    /// The character is in it.
+    pub is_checked: bool,
 }
 
 /// The question asked when the launcher window is closed while clients it
@@ -145,6 +159,12 @@ pub struct LauncherWindowParts {
     /// Which account rows were ticked, remembered across restarts; `None`
     /// keeps them for this run only.
     pub checked_accounts: Option<LauncherCheckedAccountStore>,
+    /// Whether checked clients are kept running and the relaunch delay,
+    /// remembered across restarts; `None` keeps them for this run only.
+    pub relaunch_settings: Option<LauncherRelaunchSettingsStore>,
+    /// Whether session consoles show every line (Verbose), remembered across
+    /// restarts; `None` keeps it for this run only.
+    pub console_settings: Option<LauncherConsoleSettingsStore>,
     /// The clock automatic relaunch times its delay on; `None`: the
     /// system's monotonic clock.
     pub relaunch_clock: Option<MonotonicClock>,
@@ -200,6 +220,8 @@ enum Message {
         verified: bool,
     },
     PluginUpdatesChecked(Box<PluginCheckOutcome>),
+    /// The installed plugins' release feeds were read.
+    PluginFeedsWatched(Box<PluginFeedState>),
     KnownServersLoaded(Result<Option<KnownServerList>, String>),
     LocalZipInspected {
         path: PathBuf,
@@ -241,6 +263,10 @@ enum Message {
     ClassicMigrationFinished {
         apply: bool,
         result: Result<Vec<crate::classic_migration::ClassicMigrationItem>, String>,
+    },
+    ThwargImportFinished {
+        apply: bool,
+        result: Result<crate::profiles::thwarg::ThwargImportReport, String>,
     },
 }
 
@@ -298,6 +324,14 @@ pub struct LauncherWindow {
     row_options_character: Option<(String, String, String)>,
     /// The plugins dialog's checklist.
     pub row_options_choices: Vec<RowOptionsChoice>,
+    /// A character's options: one box per profile, ticked when the
+    /// character is in it. Empty for an account's plugins.
+    pub row_options_profiles: Vec<RowOptionsProfile>,
+    /// The profile list the boxes opened with: what is saved when the
+    /// boxes are left alone.
+    row_options_saved_profiles: Vec<String>,
+    /// The Profiles dialog: every profile, New profile and Delete.
+    pub profiles_dialog: ProfilesDialog,
     /// The character's launch mode in the dialog.
     pub character_launch_mode: LaunchMode,
     /// The character launches with its account's plugins; unticked, it
@@ -315,6 +349,9 @@ pub struct LauncherWindow {
     pub profile_filters: Vec<ProfileFilterChip>,
     checked_accounts: Option<LauncherCheckedAccountStore>,
     checked_accounts_loaded: bool,
+    relaunch_settings: Option<LauncherRelaunchSettingsStore>,
+    console_settings: Option<LauncherConsoleSettingsStore>,
+    console_verbose: bool,
     /// The session log dialog is open.
     pub is_session_log_open: bool,
     /// The settings dialog is open.
@@ -341,6 +378,7 @@ pub struct LauncherWindow {
     automatic_relaunch: LauncherRelaunchController,
     relaunch_attempt_running: bool,
     show_only_checked_accounts: bool,
+    account_search: String,
     relaunch_checked_clients_automatically: bool,
     relaunch_delay_seconds_text: String,
     /// (server, account) rows whose start runs: only those are locked.
@@ -357,12 +395,23 @@ pub struct LauncherWindow {
     /// launcher was built without it.
     pub classic_migration: Option<ClassicMigrationDialog>,
     known_servers: Option<Arc<KnownServerCatalog>>,
+    /// The import from the Thwarg launcher.
+    pub thwarg_import: ThwargImportDialog,
     time_zone: LocalZone,
     /// A check has verified the installed client.
     client_verified: bool,
     /// The startup content and update checks have finished.
     startup_initialization_complete: bool,
     next_update_check: Option<Instant>,
+    next_plugin_watch: Option<Instant>,
+    plugin_watch_running: bool,
+    plugin_watch_backoff: bool,
+    /// What the release feeds listed when the installed plugins were last
+    /// checked against them.
+    plugin_feeds_seen: Option<BTreeMap<String, Vec<String>>>,
+    /// What they listed when a change started the check now running: seen
+    /// once that check has read the plugin list.
+    plugin_feeds_pending: Option<BTreeMap<String, Vec<String>>>,
 }
 
 impl std::fmt::Debug for LauncherWindow {
@@ -403,6 +452,13 @@ fn short_version(version: &str) -> String {
 
 /// How often an open launcher checks for updates.
 pub const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(20 * 60);
+
+/// How often an open launcher reads the installed plugins' release feeds,
+/// so a new release shows within half a minute without the full check.
+pub const PLUGIN_RELEASE_WATCH_INTERVAL: Duration = Duration::from_secs(30);
+
+/// How long the release watch waits after GitHub asks to slow down.
+pub const PLUGIN_RELEASE_WATCH_BACKOFF: Duration = Duration::from_secs(10 * 60);
 
 /// Whether `rows` (server, account pairs) hold `account` on `server`: the
 /// server exactly, the account in any case.
@@ -583,6 +639,9 @@ impl LauncherWindow {
             row_options_account: None,
             row_options_character: None,
             row_options_choices: Vec::new(),
+            row_options_profiles: Vec::new(),
+            row_options_saved_profiles: Vec::new(),
+            profiles_dialog: ProfilesDialog::default(),
             character_launch_mode: LaunchMode::GuiSelect,
             character_uses_account_plugins: false,
             remove_character_target: None,
@@ -591,6 +650,9 @@ impl LauncherWindow {
             profile_filters: Vec::new(),
             checked_accounts: parts.checked_accounts,
             checked_accounts_loaded: false,
+            relaunch_settings: parts.relaunch_settings,
+            console_settings: parts.console_settings,
+            console_verbose: false,
             is_session_log_open: false,
             is_settings_open: false,
             install_folder: parts
@@ -611,8 +673,9 @@ impl LauncherWindow {
                 .unwrap_or_default(),
             relaunch_attempt_running: false,
             show_only_checked_accounts: false,
+            account_search: String::new(),
             relaunch_checked_clients_automatically: false,
-            relaunch_delay_seconds_text: "180".into(),
+            relaunch_delay_seconds_text: DEFAULT_RELAUNCH_DELAY_SECONDS.to_string(),
             starting_rows: HashSet::new(),
             row_launches: Vec::new(),
             next_row_launch: 0,
@@ -621,11 +684,17 @@ impl LauncherWindow {
             character_select_availability: AccountCapabilities::new(),
             add_server: AddServerDialog::default(),
             classic_migration: parts.classic_migration,
+            thwarg_import: ThwargImportDialog::default(),
             known_servers: parts.known_servers,
             time_zone: LocalZone::system(),
             client_verified: false,
             startup_initialization_complete: false,
             next_update_check: None,
+            next_plugin_watch: None,
+            plugin_watch_running: false,
+            plugin_watch_backoff: false,
+            plugin_feeds_seen: None,
+            plugin_feeds_pending: None,
         }
     }
 
@@ -674,6 +743,9 @@ impl LauncherWindow {
                 if self.checked_accounts_loaded {
                     self.last_error = None;
                 }
+                // After the clear: a settings file that cannot be read says so.
+                self.restore_relaunch_settings();
+                self.restore_console_settings();
             }
             Err(error) => self.last_error = Some(error_text(&error)),
         }
@@ -840,6 +912,7 @@ impl LauncherWindow {
                 startup,
             } => self.apply_content_verification(*verification, startup),
             Message::PluginUpdatesChecked(outcome) => self.apply_installed_plugin_updates(*outcome),
+            Message::PluginFeedsWatched(state) => self.apply_plugin_feeds(*state),
             Message::LocalZipInspected { path, result } => self.apply_local_zip(&path, result),
             Message::KnownServersLoaded(result) => match result {
                 Ok(list) => {
@@ -1036,6 +1109,14 @@ impl LauncherWindow {
                     dialog.finish(apply, result);
                 }
             }
+            Message::ThwargImportFinished { apply, result } => {
+                let imported = apply && result.as_ref().is_ok_and(|report| report.has_changes());
+                self.thwarg_import.finish(apply, result);
+                if imported {
+                    // New accounts show at once, not only the checked ones.
+                    self.on_server_added();
+                }
+            }
         }
     }
 
@@ -1070,6 +1151,30 @@ impl LauncherWindow {
         self.run(move |sender, wake| {
             let result = run.run();
             let _ = sender.send(Message::ClassicMigrationFinished {
+                apply: run.apply,
+                result,
+            });
+            wake();
+        });
+    }
+
+    /// Opens the Import from Thwarg launcher dialog.
+    pub fn open_thwarg_import(&mut self) {
+        if self.can_interact() {
+            self.thwarg_import.open();
+        }
+    }
+
+    /// The Thwarg import's Preview (`apply` false) or Import, off the
+    /// window's thread.
+    pub fn run_thwarg_import(&mut self, apply: bool) {
+        let Some(run) = self.thwarg_import.begin_run(apply) else {
+            return;
+        };
+        let orchestrator = Arc::clone(&self.orchestrator);
+        self.run(move |sender, wake| {
+            let result = run.run(orchestrator.as_ref());
+            let _ = sender.send(Message::ThwargImportFinished {
                 apply: run.apply,
                 result,
             });
@@ -1272,12 +1377,48 @@ impl LauncherWindow {
         self.relaunch_checked_clients_automatically
     }
 
-    /// Turns automatic relaunch on or off; off cancels every pending
-    /// relaunch.
+    /// Turns keeping checked clients running on or off, and remembers it.
+    /// On starts every checked account with a character and no client; off
+    /// cancels every pending relaunch.
     pub fn set_relaunch_checked_clients_automatically(&mut self, value: bool) {
         if self.relaunch_checked_clients_automatically != value {
             self.relaunch_checked_clients_automatically = value;
+            self.save_relaunch_settings();
             self.observe_current_session_controls();
+        }
+    }
+
+    /// Takes the remembered relaunch settings (at start-up, before the
+    /// first observation).
+    fn restore_relaunch_settings(&mut self) {
+        let Some(store) = &self.relaunch_settings else {
+            return;
+        };
+        match store.load() {
+            Ok(settings) => {
+                self.relaunch_checked_clients_automatically = settings.enabled;
+                self.relaunch_delay_seconds_text = settings.delay_seconds.to_string();
+                // In range by construction.
+                let _ = self
+                    .automatic_relaunch
+                    .set_delay_seconds(settings.delay_seconds);
+            }
+            Err(error) => self.last_error = Some(error.0),
+        }
+    }
+
+    /// Remembers the relaunch settings; a delay box that is not a valid
+    /// delay keeps the last valid one.
+    fn save_relaunch_settings(&mut self) {
+        let Some(store) = &self.relaunch_settings else {
+            return;
+        };
+        let settings = LauncherRelaunchSettings {
+            enabled: self.relaunch_checked_clients_automatically,
+            delay_seconds: self.automatic_relaunch.delay_seconds(),
+        };
+        if let Err(error) = store.save(settings) {
+            self.last_error = Some(error.0);
         }
     }
 
@@ -1296,6 +1437,7 @@ impl LauncherWindow {
         if let Some(seconds) = parse_relaunch_delay(text) {
             // In range by construction.
             let _ = self.automatic_relaunch.set_delay_seconds(seconds);
+            self.save_relaunch_settings();
         }
     }
 
@@ -1390,20 +1532,10 @@ impl LauncherWindow {
             .collect()
     }
 
-    /// Rebuilds the chips from the accounts' tags, keeping the chosen one
-    /// while it exists.
+    /// Rebuilds the chips from the profile list (an empty profile has its
+    /// chip too), keeping the chosen one while it exists.
     fn refresh_profile_filters(&mut self, snapshot: &LauncherStateSnapshot) {
-        let mut tags: Vec<String> = Vec::new();
-        for tag in snapshot
-            .servers
-            .iter()
-            .flat_map(|server| server.accounts.iter())
-            .flat_map(|account| account.profiles.iter())
-        {
-            if !tags.iter().any(|known| known.eq_ignore_ascii_case(tag)) {
-                tags.push(tag.clone());
-            }
-        }
+        let tags = snapshot.profiles.clone();
         if let Some(filter) = &self.profile_filter
             && !tags.iter().any(|tag| tag.eq_ignore_ascii_case(filter))
         {
@@ -1441,20 +1573,75 @@ impl LauncherWindow {
             chip.is_selected = matches(&chip.profile);
         }
         let only_checked = self.show_only_checked_accounts;
+        let query = self.account_search.trim().to_lowercase();
         for group in &mut self.accounts {
             for row in &mut group.servers {
                 row.is_visible = filter
                     .as_deref()
                     .is_none_or(|filter| row.has_profile(filter))
                     && (!only_checked || row.is_checked);
+                row.matches_search = query.is_empty() || row.matches(&query);
             }
             group.is_visible = group.servers.iter().any(|row| row.is_visible);
+            group.matches_search = group.servers.iter().any(AccountServerRow::is_shown);
         }
     }
 
-    /// Filters the accounts by a profile tag (`None`: all accounts).
+    /// The search box's text.
+    pub fn account_search(&self) -> &str {
+        &self.account_search
+    }
+
+    /// Shows only the accounts whose name, or one of whose characters'
+    /// names, holds `text` (ignoring case); empty shows all. It only hides
+    /// rows: Play selected still starts every checked row the profile filter
+    /// shows.
+    pub fn set_account_search(&mut self, text: &str) {
+        if self.account_search != text {
+            text.clone_into(&mut self.account_search);
+            self.apply_profile_filter();
+        }
+    }
+
+    /// Checked rows that Play selected starts but the search hides.
+    pub fn checked_rows_hidden_by_search(&self) -> usize {
+        self.checked_rows().filter(|row| !row.is_shown()).count()
+    }
+
+    /// Filters the accounts by a profile tag (`None`: all accounts): a row
+    /// shows when its account or one of its characters is in the profile.
+    /// Choosing a profile also sets each row whose account has a character
+    /// in it to that character (saved, as choosing it by hand), so Play
+    /// selected starts the profile's characters; a row shown for its
+    /// account's tag keeps its character, so does a row whose session runs
+    /// or starts, and "All" changes none.
     pub fn set_profile_filter(&mut self, profile: Option<&str>) {
         self.profile_filter = profile.map(str::to_owned);
+        if let Some(profile) = profile {
+            let switches: Vec<(String, String, String)> = self
+                .rows()
+                // A row whose session runs or starts keeps its pick (its box
+                // is locked too), so a relaunch brings back the character
+                // that was running.
+                .filter(|row| {
+                    !row.is_active() && !self.is_row_starting(&row.account_name, &row.server_name)
+                })
+                .filter_map(|row| {
+                    row.character_in_profile(profile).map(|character| {
+                        (
+                            row.account_name.clone(),
+                            row.server_name.clone(),
+                            character.to_owned(),
+                        )
+                    })
+                })
+                .collect();
+            // A row already on its profile's character saves nothing: the
+            // pick is the same.
+            for (account, server, character) in switches {
+                self.set_row_character(&account, &server, &character);
+            }
+        }
         self.apply_profile_filter();
     }
 
@@ -1606,6 +1793,7 @@ impl LauncherWindow {
     pub fn is_modal_open(&self) -> bool {
         self.text_editor.is_open
             || self.add_server.is_open
+            || self.thwarg_import.is_open
             || self
                 .classic_migration
                 .as_ref()
@@ -1619,6 +1807,7 @@ impl LauncherWindow {
             || self.plugins.is_remove_dialog_open
             || !self.plugins.add_from_url_choices.is_empty()
             || self.remove_character_target.is_some()
+            || self.profiles_dialog.is_open
             || self.profile_migration_notice.is_some()
             || self.close_prompt.is_some()
     }
@@ -1819,6 +2008,66 @@ impl LauncherWindow {
         self.check_for_updates_at(false, now);
     }
 
+    /// Reads the installed plugins' release feeds every 30 seconds while the
+    /// launcher is open (10 minutes after GitHub asks to slow down), and
+    /// runs the plugin part of the update check when one changed. Call it
+    /// every frame.
+    pub fn poll_plugin_release_watch(&mut self, now: Instant) {
+        if self.disposed || !self.startup_initialization_complete || self.plugin_watch_running {
+            return;
+        }
+        let Some(backend) = self.plugin_backend.clone() else {
+            return;
+        };
+        let wait = if std::mem::take(&mut self.plugin_watch_backoff) {
+            PLUGIN_RELEASE_WATCH_BACKOFF
+        } else {
+            PLUGIN_RELEASE_WATCH_INTERVAL
+        };
+        let next = *self.next_plugin_watch.get_or_insert(now + wait);
+        if now < next {
+            return;
+        }
+        self.next_plugin_watch = None;
+        self.plugin_watch_running = true;
+        self.run(move |sender, wake| {
+            let state = backend.release_feeds(&CancelToken::new());
+            let _ = sender.send(Message::PluginFeedsWatched(Box::new(state)));
+            wake();
+        });
+    }
+
+    fn apply_plugin_feeds(&mut self, state: PluginFeedState) {
+        self.plugin_watch_running = false;
+        let PluginFeedState::Read(read) = state else {
+            self.plugin_watch_backoff = true;
+            return;
+        };
+        let Some(seen) = &self.plugin_feeds_seen else {
+            // The first read: the launcher's start-up check covered it.
+            self.plugin_feeds_seen = Some(
+                read.into_iter()
+                    .filter_map(|(repo, tags)| tags.map(|tags| (repo, tags)))
+                    .collect(),
+            );
+            return;
+        };
+        // A feed that could not be read this time keeps what it listed.
+        let feeds: BTreeMap<String, Vec<String>> = read
+            .into_iter()
+            .filter_map(|(repo, tags)| {
+                let tags = tags.or_else(|| seen.get(&repo).cloned())?;
+                Some((repo, tags))
+            })
+            .collect();
+        if feeds == *seen || self.plugins.is_busy {
+            // Unchanged, or another check runs and the next read sees the change again.
+            return;
+        }
+        self.plugin_feeds_pending = Some(feeds);
+        self.check_installed_plugin_updates();
+    }
+
     /// The client and launcher from the release feed, and the installed
     /// plugins. A background check only raises the banner; the button also
     /// opens what it found.
@@ -1854,8 +2103,13 @@ impl LauncherWindow {
     fn apply_installed_plugin_updates(&mut self, outcome: PluginCheckOutcome) {
         self.plugin_cancellation = None;
         self.plugins.is_busy = false;
+        let pending = self.plugin_feeds_pending.take();
         if outcome.rate_limited || outcome.catalog.is_none() {
+            // Not checked: the release watch sees the change again.
             return;
+        }
+        if pending.is_some() {
+            self.plugin_feeds_seen = pending;
         }
         if let Err(error) = self
             .orchestrator
@@ -2334,6 +2588,50 @@ impl LauncherWindow {
         });
     }
 
+    /// The clients Stop all would stop: every play session whose process or
+    /// start-up runs and whose Stop may run.
+    fn stoppable_sessions(&self) -> Vec<String> {
+        self.snapshot
+            .iter()
+            .flat_map(|snapshot| &snapshot.sessions)
+            .filter(|session| {
+                session.kind == LauncherActivityKind::Play
+                    && session.is_process_or_start_active()
+                    && self.can_stop_session(&session.session_id)
+            })
+            .map(|session| session.session_id.clone())
+            .collect()
+    }
+
+    /// Stop all may run: some client is running or starting, or a start is
+    /// on its way (a Play selected row not reached yet, a relaunch).
+    pub fn can_stop_all(&self) -> bool {
+        !self.stoppable_sessions().is_empty()
+            || !self.row_launches.is_empty()
+            || self.automatic_relaunch.is_launching()
+    }
+
+    /// Stops every running client at once, each as its row's Stop does: a
+    /// graceful logout, then a kill after 30 s. Starts still on their way
+    /// are cancelled and pending relaunches dropped, so everything stays
+    /// down until it is launched again.
+    pub fn stop_all(&mut self) {
+        for (_, cancel) in &self.row_launches {
+            cancel.cancel();
+        }
+        self.automatic_relaunch.stop_all();
+        let sessions = self.stoppable_sessions();
+        for id in &sessions {
+            self.stop_session(id);
+        }
+        if !sessions.is_empty() {
+            self.operation_status = match sessions.len() {
+                1 => "Logging out 1 client…".into(),
+                count => format!("Logging out {count} clients…"),
+            };
+        }
+    }
+
     /// The bottom bar's Cancel: the running operation and every pending
     /// row start.
     pub fn cancel_operation(&mut self) {
@@ -2370,6 +2668,37 @@ impl LauncherWindow {
         let orchestrator = Arc::clone(&self.orchestrator);
         for console in &mut self.consoles {
             console.refresh(orchestrator.as_ref());
+        }
+    }
+
+    /// Whether the consoles show every line the client writes (Verbose) or
+    /// only what a player would see: chat, the status box, typed lines and
+    /// their answers.
+    pub fn console_verbose(&self) -> bool {
+        self.console_verbose
+    }
+
+    /// Turns the consoles' Verbose on or off, and remembers it.
+    pub fn set_console_verbose(&mut self, verbose: bool) {
+        if self.console_verbose == verbose {
+            return;
+        }
+        self.console_verbose = verbose;
+        if let Some(store) = &self.console_settings
+            && let Err(error) = store.save(LauncherConsoleSettings { verbose })
+        {
+            self.last_error = Some(error.0);
+        }
+    }
+
+    /// Takes the remembered console settings (at start-up).
+    fn restore_console_settings(&mut self) {
+        let Some(store) = &self.console_settings else {
+            return;
+        };
+        match store.load() {
+            Ok(settings) => self.console_verbose = settings.verbose,
+            Err(error) => self.last_error = Some(error.0),
         }
     }
 
@@ -2520,7 +2849,7 @@ impl LauncherWindow {
     pub fn row_options_title(&self) -> String {
         match (&self.row_options_account, &self.row_options_character) {
             (Some((_, account)), _) => format!("Plugins for {account}"),
-            (None, Some((_, _, character))) => format!("Plugins for {character}"),
+            (None, Some((_, _, character))) => format!("Options for {character}"),
             _ => "Select a profile".into(),
         }
     }
@@ -2603,13 +2932,15 @@ impl LauncherWindow {
         };
         self.row_options_account = Some((server.to_owned(), account.to_owned()));
         self.row_options_character = None;
+        self.row_options_profiles.clear();
+        self.row_options_saved_profiles.clear();
         self.load_plugin_choices(&snapshot.plugins);
         self.last_error = None;
         self.is_row_options_open = true;
     }
 
-    /// A row's Options › Plugins for this character: its account's list or
-    /// one of its own.
+    /// A row's Options › Options for this character: its account's plugin
+    /// list or one of its own, and the profiles it is in.
     pub fn open_character_plugins(&mut self, account: &str, server: &str) {
         if !self.can_interact_with_row(account, server) {
             return;
@@ -2627,6 +2958,23 @@ impl LauncherWindow {
         self.row_options_character = Some((server.to_owned(), account.to_owned(), name));
         self.character_uses_account_plugins = !snapshot.has_own_plugins;
         self.load_plugin_choices(&snapshot.plugins);
+        let names = self
+            .orchestrator
+            .snapshot()
+            .map(|state| state.profiles)
+            .unwrap_or_default();
+        self.row_options_profiles = names
+            .into_iter()
+            .map(|name| RowOptionsProfile {
+                is_checked: snapshot
+                    .profiles
+                    .iter()
+                    .any(|tag| tag.eq_ignore_ascii_case(&name)),
+                name,
+            })
+            .collect();
+        self.row_options_saved_profiles
+            .clone_from(&snapshot.profiles);
         self.character_launch_mode = mode;
         self.last_error = None;
         self.is_row_options_open = true;
@@ -2635,6 +2983,104 @@ impl LauncherWindow {
     /// A row's Options › Logon commands: every account's, in one text.
     pub fn open_logon_commands(&mut self) {
         self.open_text_editor(LauncherTextEditorKind::LogonCommands);
+    }
+
+    /// Profiles…: every profile, with New profile and Delete.
+    pub fn open_profiles(&mut self) {
+        if !self.can_interact() {
+            return;
+        }
+        self.profiles_dialog = ProfilesDialog {
+            is_open: true,
+            ..ProfilesDialog::default()
+        };
+        self.refresh_profiles_dialog();
+    }
+
+    /// Lists every profile with what is in it.
+    fn refresh_profiles_dialog(&mut self) {
+        let snapshot = match self.orchestrator.snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                self.profiles_dialog.error = Some(error_text(&error));
+                return;
+            }
+        };
+        let carries =
+            |tags: &[String], name: &str| tags.iter().any(|tag| tag.eq_ignore_ascii_case(name));
+        let accounts = || {
+            snapshot
+                .servers
+                .iter()
+                .flat_map(|server| server.accounts.iter())
+        };
+        self.profiles_dialog.entries = snapshot
+            .profiles
+            .iter()
+            .map(|name| ProfileListEntry {
+                name: name.clone(),
+                members: describe_members(
+                    accounts()
+                        .filter(|account| carries(&account.profiles, name))
+                        .count(),
+                    accounts()
+                        .flat_map(|account| account.characters.iter())
+                        .filter(|character| carries(&character.profiles, name))
+                        .count(),
+                ),
+            })
+            .collect();
+    }
+
+    /// The Profiles dialog's New profile: adds the typed name (trimmed) as
+    /// an empty profile; an empty name, one already used (in any case) or
+    /// one the tag rules refuse is refused with why.
+    pub fn create_profile(&mut self) {
+        let name = self.profiles_dialog.new_name.trim().to_owned();
+        match self.orchestrator.create_profile(&name) {
+            Ok(()) => {
+                self.profiles_dialog.new_name.clear();
+                self.profiles_dialog.error = None;
+                self.operation_status = format!("Added the profile {name}.");
+                self.refresh_from_core();
+                self.refresh_profiles_dialog();
+            }
+            Err(error) => self.profiles_dialog.error = Some(error_text(&error)),
+        }
+    }
+
+    /// The Profiles dialog's Delete: asks first.
+    pub fn request_delete_profile(&mut self, name: &str) {
+        if self.profiles_dialog.is_open {
+            self.profiles_dialog.delete_target = Some(name.to_owned());
+        }
+    }
+
+    /// Keeps the profile the question was about.
+    pub fn cancel_delete_profile(&mut self) {
+        self.profiles_dialog.delete_target = None;
+    }
+
+    /// Deletes the profile the question was about, from every account and
+    /// character; a filter on it goes back to All.
+    pub fn confirm_delete_profile(&mut self) {
+        let Some(name) = self.profiles_dialog.delete_target.take() else {
+            return;
+        };
+        match self.orchestrator.delete_profile(&name) {
+            Ok(()) => {
+                self.profiles_dialog.error = None;
+                self.operation_status = format!("Deleted the profile {name}.");
+                self.refresh_from_core();
+                self.refresh_profiles_dialog();
+            }
+            Err(error) => self.profiles_dialog.error = Some(error_text(&error)),
+        }
+    }
+
+    /// Closes the Profiles dialog.
+    pub fn close_profiles(&mut self) {
+        self.profiles_dialog = ProfilesDialog::default();
     }
 
     /// The checklist for `configured`: every usable installed plugin (every
@@ -2726,13 +3172,37 @@ impl LauncherWindow {
             return;
         };
         let plugins = (!self.character_uses_account_plugins).then(|| self.checked_plugin_ids());
-        match self.orchestrator.update_character_settings(
-            &server,
-            &account,
-            &name,
-            self.character_launch_mode,
-            plugins.as_deref(),
-        ) {
+        let profiles: Vec<String> = self
+            .row_options_profiles
+            .iter()
+            .filter(|profile| profile.is_checked)
+            .map(|profile| profile.name.clone())
+            .collect();
+        let same = |left: &[String], right: &[String]| {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .all(|tag| right.iter().any(|other| other.eq_ignore_ascii_case(tag)))
+        };
+        let profiles_changed = !same(&profiles, &self.row_options_saved_profiles);
+        let saved = self
+            .orchestrator
+            .update_character_settings(
+                &server,
+                &account,
+                &name,
+                self.character_launch_mode,
+                plugins.as_deref(),
+            )
+            .and_then(|()| {
+                if profiles_changed {
+                    self.orchestrator
+                        .update_character_profiles(&server, &account, &name, &profiles)
+                } else {
+                    Ok(())
+                }
+            });
+        match saved {
             Ok(()) => {
                 self.last_error = None;
                 self.operation_status = format!("Saved launch settings for {name}.");
@@ -2861,10 +3331,16 @@ impl LauncherWindow {
             return;
         }
         self.close_desktop_dialogs();
-        if self.text_editor.is_open {
+        if self.profiles_dialog.delete_target.is_some() {
+            self.cancel_delete_profile();
+        } else if self.profiles_dialog.is_open {
+            self.close_profiles();
+        } else if self.text_editor.is_open {
             self.text_editor.close();
         } else if self.add_server.is_open {
             self.add_server.close();
+        } else if self.thwarg_import.is_open {
+            self.thwarg_import.close();
         } else if let Some(dialog) = self.classic_migration.as_mut().filter(|d| d.is_open) {
             dialog.close();
         } else if self.first_run.is_open {
@@ -3677,12 +4153,13 @@ impl LauncherWindow {
         }
     }
 
-    /// The install dialog's only profile write, for the characters chosen
-    /// there, through the same path the options dialog saves through.
     /// The install dialog's only profile write: the plugin joins the plugin
-    /// list of each account chosen there, which every character on it
-    /// without a list of its own launches with. Runs after the install
-    /// succeeded, so trouble is reported on the panel.
+    /// list of each account chosen there (every account, on a first
+    /// install), which every character on it without a list of its own
+    /// launches with, and the own list of each of its characters that has
+    /// one. Turning it off again is the character's or account's own
+    /// choice. Runs after the install succeeded, so trouble is reported on
+    /// the panel.
     fn enable_for_characters(&mut self, plugin_id: &str, accounts: &[PluginCharacterOption]) {
         let snapshots: Vec<LauncherAccountSnapshot> = self
             .orchestrator
@@ -3708,23 +4185,41 @@ impl LauncherWindow {
             .map(|index| on_server[index]) else {
                 continue;
             };
-            if account
-                .plugins
-                .iter()
-                .any(|id| id.eq_ignore_ascii_case(plugin_id))
-            {
-                continue;
+            let has =
+                |plugins: &[String]| plugins.iter().any(|id| id.eq_ignore_ascii_case(plugin_id));
+            let with = |plugins: &[String]| -> Vec<String> {
+                let mut plugins = plugins.to_vec();
+                plugins.push(plugin_id.to_owned());
+                plugins
+            };
+            let mut result = Ok(());
+            if !has(&account.plugins) {
+                result = self.orchestrator.update_account_plugins(
+                    &account.server_name,
+                    &account.account_name,
+                    &with(&account.plugins),
+                );
             }
-            let mut plugins = account.plugins.clone();
-            plugins.push(plugin_id.to_owned());
-            if let Err(error) = self.orchestrator.update_account_plugins(
-                &account.server_name,
-                &account.account_name,
-                &plugins,
-            ) {
+            for character in account
+                .characters
+                .iter()
+                .filter(|character| character.has_own_plugins && !has(&character.plugins))
+            {
+                if result.is_err() {
+                    break;
+                }
+                result = self.orchestrator.update_character_settings(
+                    &character.server_name,
+                    &character.account_name,
+                    &character.name,
+                    character.launch_mode,
+                    Some(&with(&character.plugins)),
+                );
+            }
+            if let Err(error) = result {
                 let text = error_text(&error);
                 self.plugins.error = Some(if text.trim().is_empty() {
-                    "The plugin installed, but could not be enabled for every chosen account."
+                    "The plugin installed, but could not be turned on for every account and character."
                         .into()
                 } else {
                     text

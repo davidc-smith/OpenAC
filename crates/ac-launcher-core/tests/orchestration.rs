@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime};
 
-use ac_host::PathSet;
+use ac_host_core::PathSet;
 use ac_launcher_core::cancel::CancelToken;
 use ac_launcher_core::installation::LauncherInstallRecord;
 use ac_launcher_core::launching::{
@@ -712,6 +712,79 @@ fn set_show_beta_plugins_persists_to_disk_for_a_fresh_orchestrator_instance() {
     assert!(reloaded.snapshot().unwrap().show_beta_plugins);
 }
 
+fn thwarg_files() -> ac_launcher_core::profiles::thwarg::ThwargFiles {
+    use ac_launcher_core::profiles::thwarg::{ThwargFile, ThwargFiles};
+    ThwargFiles {
+        accounts: Some("Name=testaccount,Password=other\nName=Newcomer,Password=np\n".into()),
+        user_servers: Some(
+            "<ArrayOfServerItem><ServerItem><name>Local ACE</name>\
+             <connect_string>127.0.0.1:9000</connect_string></ServerItem></ArrayOfServerItem>"
+                .into(),
+        ),
+        characters: vec![
+            ThwargFile::new(
+                "characters_Local ACE_Newcomer.txt",
+                r#"{"Local ACE-Newcomer": {"ZoneId": "newcomer", "CharacterList": [{"Id": 1342177290, "Name": "Fresh Face"}]}}"#,
+            ),
+            ThwargFile::new(
+                "characters_Local ACE_testaccount.txt",
+                r#"{"Local ACE-testaccount": {"ZoneId": "testaccount", "CharacterList": [{"Id": 1342177291, "Name": "Second"}]}}"#,
+            ),
+        ],
+        ..ThwargFiles::default()
+    }
+}
+
+#[test]
+fn the_thwarg_import_saves_through_the_profile_store_and_its_preview_does_not() {
+    let root = TempDir::new("orchestrator");
+    let orchestrator = create_orchestrator(&root, Setup::default());
+    let paths = root.path_set();
+    let saved = || std::fs::read_to_string(profile_path(&paths));
+    let before = saved().unwrap();
+
+    let preview = orchestrator.import_thwarg(&thwarg_files(), false).unwrap();
+    assert_eq!(
+        preview.accounts_added,
+        ["Newcomer on Local ACE: 1 character"]
+    );
+    assert_eq!(saved().unwrap(), before, "a preview writes nothing");
+
+    let report = orchestrator.import_thwarg(&thwarg_files(), true).unwrap();
+    assert_eq!(report, preview);
+    let reloaded = LauncherOrchestrator::new(
+        LauncherProfileStore::new(profile_path(&paths), None).unwrap(),
+        paths.clone(),
+        test_executables(),
+        Some(install()),
+    );
+    reloaded.load_profiles().unwrap();
+    let server = reloaded.snapshot().unwrap().servers.remove(0);
+    let accounts: Vec<(String, Vec<String>)> = server
+        .accounts
+        .iter()
+        .map(|account| {
+            (
+                account.account_name.clone(),
+                account.characters.iter().map(|c| c.name.clone()).collect(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        accounts,
+        [
+            (
+                "testaccount".into(),
+                vec!["+Acdream".into(), "Second".into()]
+            ),
+            ("Newcomer".into(), vec!["Fresh Face".into()]),
+        ]
+    );
+    // The account already here keeps its password.
+    let text = saved().unwrap();
+    assert!(text.contains(PASSWORD) && !text.contains("\"other\""));
+}
+
 #[test]
 fn the_exit_diagnosis_finds_its_line_after_a_lot_of_standard_output() {
     let root = TempDir::new("orchestrator");
@@ -915,6 +988,44 @@ fn snapshot_projects_the_full_hierarchy_without_the_credential() {
     assert!(!serialized.contains(PASSWORD));
     assert!(!serialized.to_lowercase().contains("password"));
     assert!(!serialized.to_lowercase().contains("credential"));
+}
+
+#[test]
+// The account's own list is kept but never run (the owner, 2026-11-05).
+fn a_launch_runs_only_the_characters_own_commands() {
+    let root = TempDir::new("orchestrator");
+    let config = Arc::new(RecordingConfigService::default());
+    let orchestrator = create_orchestrator(
+        &root,
+        Setup {
+            config: Some(config.clone()),
+            ..Setup::default()
+        },
+    );
+    let original = orchestrator
+        .read_profile_text(LauncherTextEditorKind::LogonCommands)
+        .unwrap();
+    orchestrator
+        .save_profile_text(
+            LauncherTextEditorKind::LogonCommands,
+            "#Local ACE\n##testaccount\n/vt start\n###+Acdream\n/mm ws enable\n",
+            &original,
+        )
+        .unwrap();
+    let snapshot = orchestrator.snapshot().unwrap();
+    let account = &snapshot.servers[0].accounts[0];
+    assert_eq!(account.login_commands, ["/vt start"]);
+    assert_eq!(account.characters[0].login_commands, ["/mm ws enable"]);
+
+    launch(&orchestrator, Some("+Acdream"), LaunchMode::Gui).unwrap();
+
+    // The launch's copy of the character keeps its own commands.
+    assert_eq!(config.last_character().login_commands, ["/mm ws enable"]);
+    let composed = config.last_composed();
+    assert_eq!(
+        composed.document.sessions[0].login_commands.as_deref(),
+        Some(&["/mm ws enable".to_owned()][..])
+    );
 }
 
 #[test]
@@ -2439,6 +2550,7 @@ mod relaunch {
                 is_installation_ready: true,
                 installation_status: "Ready".into(),
                 show_beta_plugins: false,
+                profiles: Vec::new(),
             }
         }
 
@@ -2493,7 +2605,7 @@ mod relaunch {
         assert!(host.launches.is_empty());
         host.sessions = vec![session(1, false)];
         host.observe(&mut scheduler, &[choice()]);
-        clock.advance(179);
+        clock.advance(29);
         host.poll(&mut scheduler, true);
         assert!(host.launches.is_empty());
         clock.advance(1);
@@ -2502,7 +2614,7 @@ mod relaunch {
     }
 
     #[test]
-    fn both_manual_stop_and_crash_restart_using_current_selection_after_delay() {
+    fn an_exit_or_a_crash_restarts_using_current_selection_after_delay() {
         for exit_code in [0, 23] {
             let mut host = Host::new();
             let clock = Clock::default();
@@ -2527,26 +2639,91 @@ mod relaunch {
         }
     }
 
+    // Changed from OpenAC, whose launcher never starts a client just
+    // because its account is checked: a checked account with a character
+    // and no client is started at once (when the launcher opens, when it is
+    // checked, when keeping clients running is turned on), unless its last
+    // client was stopped.
     #[test]
-    fn enabling_never_revives_history_or_probes_but_observes_future_play_launches() {
+    fn a_checked_account_without_a_client_starts_at_once_unless_it_was_stopped() {
+        let mut probe = session(2, false);
+        probe.kind = LauncherActivityKind::Probe;
+        let mut stopped = session(1, false);
+        stopped.stop = Some(LauncherSessionStop::Requested);
+        let cases = [
+            ("no history", Vec::new(), 1),
+            ("a crashed client", vec![session(1, false)], 1),
+            ("only a probe", vec![probe], 1),
+            ("a stopped client", vec![stopped], 0),
+        ];
+        for (case, sessions, launches) in cases {
+            let mut host = Host::new();
+            let clock = Clock::default();
+            let mut scheduler = clock.controller();
+            scheduler.set_delay_seconds(60).unwrap();
+            host.sessions = sessions;
+            host.observe(&mut scheduler, &[choice()]);
+            host.poll(&mut scheduler, true);
+            assert_eq!(host.launches.len(), launches, "{case}");
+            // Once is enough: the started client is followed from here on.
+            clock.advance(600);
+            host.poll(&mut scheduler, true);
+            assert_eq!(host.launches.len(), launches, "{case}, later");
+        }
+    }
+
+    #[test]
+    fn an_account_without_a_character_waits_for_one_before_it_starts() {
+        let mut host = Host::new();
+        let clock = Clock::default();
+        let mut scheduler = clock.controller();
+        let select = LauncherRelaunchSelection::new("World", "Account", None, LaunchMode::Gui);
+        host.observe(&mut scheduler, std::slice::from_ref(&select));
+        clock.advance(600);
+        host.poll(&mut scheduler, true);
+        assert!(host.launches.is_empty());
+        host.observe(&mut scheduler, &[choice()]);
+        host.poll(&mut scheduler, true);
+        assert_eq!(host.launches, [choice()]);
+    }
+
+    #[test]
+    fn a_start_that_fails_waits_the_full_delay_before_the_next() {
+        let mut host = Host::new();
+        let clock = Clock::default();
+        let mut scheduler = clock.controller();
+        scheduler.set_delay_seconds(60).unwrap();
+        host.launch = Some(Box::new(|_| {
+            Err(OrchestratorError::Operation("Failure".into()))
+        }));
+        host.observe(&mut scheduler, &[choice()]);
+        host.poll(&mut scheduler, true);
+        assert_eq!(host.launches.len(), 1);
+        clock.advance(59);
+        host.poll(&mut scheduler, true);
+        assert_eq!(host.launches.len(), 1);
+        clock.advance(1);
+        host.poll(&mut scheduler, true);
+        assert_eq!(host.launches.len(), 2);
+    }
+
+    #[test]
+    fn a_stopped_account_is_followed_again_once_launched_by_hand() {
         let mut host = Host::new();
         let clock = Clock::default();
         let mut scheduler = clock.controller();
         scheduler.set_delay_seconds(5).unwrap();
-        host.sessions = vec![session(1, false)];
+        let mut stopped = session(1, false);
+        stopped.stop = Some(LauncherSessionStop::Requested);
+        host.sessions = vec![stopped.clone()];
         host.observe(&mut scheduler, &[choice()]);
         clock.advance(20);
         host.poll(&mut scheduler, true);
         assert!(host.launches.is_empty());
-        let mut probe = session(2, false);
-        probe.kind = LauncherActivityKind::Probe;
-        host.sessions = vec![probe, session(1, false)];
+        // Play by hand; that client crashes.
+        host.sessions = vec![session(3, true), stopped.clone()];
         host.observe(&mut scheduler, &[choice()]);
-        clock.advance(20);
-        host.poll(&mut scheduler, true);
-        assert!(host.launches.is_empty());
-        // A launch through any caller can fail before the next observation.
-        host.sessions = vec![session(3, false), session(1, false)];
+        host.sessions = vec![session(3, false), stopped];
         host.observe(&mut scheduler, &[choice()]);
         clock.advance(5);
         host.poll(&mut scheduler, true);
@@ -2749,8 +2926,29 @@ mod relaunch {
         }
     }
 
+    // Changed from OpenAC, whose launcher relaunches a client after a
+    // graceful Stop: a Stop keeps the client down, whether it logged out or
+    // had to be killed.
+    #[test]
+    fn a_graceful_stop_is_not_relaunched() {
+        let mut host = Host::new();
+        let clock = Clock::default();
+        let mut scheduler = clock.controller();
+        scheduler.set_delay_seconds(5).unwrap();
+        host.sessions = vec![session(1, true)];
+        host.observe(&mut scheduler, &[choice()]);
+        let mut stopped = session(1, false);
+        stopped.stop = Some(LauncherSessionStop::Requested);
+        stopped.exited_gracefully = true;
+        host.sessions = vec![stopped];
+        host.observe(&mut scheduler, &[choice()]);
+        clock.advance(600);
+        host.poll(&mut scheduler, true);
+        assert!(host.launches.is_empty());
+    }
+
     // Not an OpenAC test: a Stop that had to kill the client is the player's
-    // stop, so it is not relaunched (a graceful Stop still is, as above).
+    // stop, so it is not relaunched either.
     #[test]
     fn a_forced_stop_is_not_relaunched() {
         let mut host = Host::new();
@@ -2772,11 +2970,38 @@ mod relaunch {
         assert!(host.launches.is_empty());
     }
 
+    // Not an OpenAC test: Stop all drops a relaunch waiting out its delay
+    // and a start not made yet; each stays down until launched again.
+    #[test]
+    fn stop_all_drops_pending_relaunches_and_starts() {
+        let mut host = Host::new();
+        let clock = Clock::default();
+        let mut scheduler = clock.controller();
+        scheduler.set_delay_seconds(5).unwrap();
+        host.sessions = vec![session(1, true)];
+        host.observe(&mut scheduler, &[choice()]);
+        host.sessions = vec![session(1, false)];
+        host.observe(&mut scheduler, &[choice()]);
+        scheduler.stop_all();
+        clock.advance(600);
+        host.observe(&mut scheduler, &[choice()]);
+        host.poll(&mut scheduler, true);
+        assert!(host.launches.is_empty(), "crashed");
+
+        let mut fresh = clock.controller();
+        host.sessions = Vec::new();
+        host.observe(&mut fresh, &[choice()]);
+        fresh.stop_all();
+        host.observe(&mut fresh, &[choice()]);
+        host.poll(&mut fresh, true);
+        assert!(host.launches.is_empty(), "not started yet");
+    }
+
     #[test]
     fn delay_rejects_out_of_range() {
         for seconds in [4, 3601] {
             let mut scheduler = LauncherRelaunchController::default();
-            assert_eq!(scheduler.delay_seconds(), 180);
+            assert_eq!(scheduler.delay_seconds(), 30);
             assert!(scheduler.set_delay_seconds(seconds).is_err());
         }
     }

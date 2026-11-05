@@ -13,7 +13,7 @@ use ac_launcher_core::profiles::{
     AccountProfile, CharacterProfile, CharacterRosterEntry, LaunchMode, LauncherCheckedAccount,
     LauncherCheckedAccountStore, LauncherProfileDocument, LauncherProfileStore,
     LauncherTextEditorKind, OLDER_PROFILE_FILE_NAME, PROFILE_FILE_NAME, ProfileError,
-    ServerProfile, apply_text, describe_account_removals, read_text,
+    ServerProfile, VERSION2_PROFILE_FILE_NAME, apply_text, describe_account_removals, read_text,
 };
 use common::{TempDir, strings};
 
@@ -86,7 +86,8 @@ fn load_on_missing_file_yields_empty_document_without_touching_disk() {
     let mut store = store_at(&fixture.file_path);
     assert!(!store.load().unwrap());
     assert!(!fixture.file_path.exists());
-    assert_eq!(store.document().version, 2);
+    // Version 3 since logon commands per character.
+    assert_eq!(store.document().version, 3);
     assert!(store.document().servers.is_empty());
 }
 
@@ -497,7 +498,8 @@ fn full_profile_with_servers_accounts_and_characters_round_trips_through_disk() 
 #[test]
 fn load_rejects_unsupported_version() {
     let fixture = fixture();
-    std::fs::write(&fixture.file_path, r#"{"version":3,"servers":[]}"#).unwrap();
+    // Version 4 is past the current one (3 since logon commands per character).
+    std::fs::write(&fixture.file_path, r#"{"version":4,"servers":[]}"#).unwrap();
     assert!(is_invalid(store_at(&fixture.file_path).load()));
 }
 
@@ -627,7 +629,15 @@ impl Migration {
     }
 
     fn new_store(&self) -> LauncherProfileStore {
-        LauncherProfileStore::new(self.file_path(), Some(&self.older_file_path())).unwrap()
+        // The settings folder's chain: the version 2 file, then the version 1.
+        LauncherProfileStore::with_older_files(
+            self.file_path(),
+            &[
+                &self.root.join(VERSION2_PROFILE_FILE_NAME),
+                &self.older_file_path(),
+            ],
+        )
+        .unwrap()
     }
 
     fn load_version1(&self, json: &str) -> LauncherProfileStore {
@@ -690,25 +700,31 @@ fn a_character_with_the_same_plugins_in_another_order_keeps_its_order() {
     );
 }
 
+// Changed with logon commands per character (document version 3): a
+// version 1 character keeps its own commands, so none are dropped and the
+// account shares none. Before, the account kept the first character's and
+// the notice listed the others.
 #[test]
-fn an_account_keeps_the_first_characters_commands_and_the_notice_lists_the_others() {
+fn every_version1_character_keeps_its_own_commands_and_nothing_is_dropped() {
     let migration = Migration::new();
     let store = migration.load_version1(VERSION1_FILE);
+    let notan3 = account_named(&store, "coldeve", "notan3");
+    assert!(notan3.login_commands.is_empty());
     assert_eq!(
-        account_named(&store, "coldeve", "notan3").login_commands,
+        character_named(notan3, "Festivus").login_commands,
         ["/vt meta load bore", "/vt start"]
     );
+    assert_eq!(
+        character_named(notan3, "Mule").login_commands,
+        ["/mm ws enable"]
+    );
+    assert!(character_named(notan3, "Quiet").login_commands.is_empty());
     assert!(
         account_named(&store, "sawato", "testaccount")
             .login_commands
             .is_empty()
     );
-    let notice = store.migration_notice().unwrap();
-    assert!(notice.contains("Mule's logon commands were not kept"));
-    assert!(notice.contains("/mm ws enable"));
-    assert!(notice.contains("Quiet had no logon commands; it now runs Festivus's."));
-    assert!(notice.contains(&store.version1_backup_path().display().to_string()));
-    assert!(!notice.contains("pw3"));
+    assert_eq!(store.migration_notice(), None);
 }
 
 #[test]
@@ -797,7 +813,8 @@ fn the_old_file_is_kept_byte_for_byte_and_the_new_one_written_once() {
         VERSION1_FILE
     );
     let written = std::fs::read_to_string(migration.file_path()).unwrap();
-    assert!(written.contains("\"version\": 2"));
+    // The current version (3 since logon commands per character).
+    assert!(written.contains("\"version\": 3"));
     assert!(!written.contains("\"users\""));
 
     let mut reloaded = migration.new_store();
@@ -1222,10 +1239,12 @@ fn every_account_error_is_reported_at_once_without_a_password() {
 
 #[test]
 fn logon_commands_read_every_server_and_account_with_their_commands() {
+    // Every character has its ### header under its account (added with
+    // logon commands per character).
     assert_eq!(
         read_text(&sample(), LauncherTextEditorKind::LogonCommands),
-        "#Coldeve\n##notan3\n/vt start\n##notan\n\n#sawato\n##testaccount\n/vt nav load \
-         bore_circuit1\n"
+        "#Coldeve\n##notan3\n/vt start\n###Festivus\n##notan\n\n#sawato\n##testaccount\n/vt nav \
+         load bore_circuit1\n"
     );
 }
 
@@ -1883,4 +1902,566 @@ fn logon_commands_find_an_account_named_in_another_case() {
         ["/vt start"]
     );
     assert!(document.servers[0].accounts[0].login_commands.is_empty());
+}
+
+// --- Profiles on characters, the profile list, commands per character ------
+
+/// Coldeve with "alpha" (Ann, Bea) and "beta" (Cid).
+fn character_store(fixture: &Fixture) -> LauncherProfileStore {
+    let mut store = loaded(fixture);
+    store
+        .add_server("Coldeve", "play.example.test", 9000)
+        .unwrap();
+    for (account, characters) in [("alpha", &["Ann", "Bea"][..]), ("beta", &["Cid"][..])] {
+        store.add_account("Coldeve", account, "pw").unwrap();
+        for name in characters {
+            store
+                .add_character("Coldeve", account, name, None, LaunchMode::Gui, None)
+                .unwrap();
+        }
+    }
+    store.save().unwrap();
+    store
+}
+
+fn tags<'a>(store: &'a LauncherProfileStore, account: &str, character: &str) -> &'a [String] {
+    &character_named(account_named(store, "Coldeve", account), character).profiles
+}
+
+#[test]
+fn a_profile_is_on_one_character_per_account() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    store
+        .set_character_profiles("Coldeve", "alpha", "Ann", &strings(&["Main"]))
+        .unwrap();
+    store
+        .set_character_profiles("Coldeve", "beta", "Cid", &strings(&["Main"]))
+        .unwrap();
+    store
+        .set_character_profiles("Coldeve", "alpha", "Bea", &strings(&["main", "Bots"]))
+        .unwrap();
+    // Main (in any case) leaves Ann; another account's character keeps it.
+    assert!(tags(&store, "alpha", "Ann").is_empty());
+    assert_eq!(tags(&store, "alpha", "Bea"), ["main", "Bots"]);
+    assert_eq!(tags(&store, "beta", "Cid"), ["Main"]);
+    assert!(is_invalid(store.set_character_profiles(
+        "Coldeve",
+        "alpha",
+        "Ann",
+        &strings(&["Bad,Name"])
+    )));
+}
+
+#[test]
+fn a_profile_on_two_characters_of_one_account_is_refused() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    let result = store.execute_transaction(|store| {
+        let alpha = &mut store.document_mut().servers[0].accounts[0];
+        alpha.characters[0].profiles = strings(&["Main"]);
+        alpha.characters[1].profiles = strings(&["MAIN"]);
+        Ok::<(), ProfileError>(())
+    });
+    match result {
+        Err(ProfileError::Invalid(message)) => assert_eq!(
+            message,
+            "The profile 'MAIN' is on more than one character of account 'alpha' on server \
+             'Coldeve'."
+        ),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert!(tags(&store, "alpha", "Ann").is_empty());
+}
+
+#[test]
+fn a_new_profile_exists_empty_survives_a_restart_and_tags_in_use_join_the_list() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    store
+        .execute_transaction(|store| store.create_profile("Spare"))
+        .unwrap();
+    store
+        .execute_transaction(|store| {
+            store.set_character_profiles("Coldeve", "alpha", "Ann", &strings(&["Main"]))
+        })
+        .unwrap();
+    store
+        .execute_transaction(|store| {
+            store.set_account_profiles("Coldeve", "beta", &strings(&["Bots"]))
+        })
+        .unwrap();
+    assert_eq!(store.document().profiles, ["Spare", "Main", "Bots"]);
+    let reloaded = loaded(&fixture);
+    assert_eq!(reloaded.document().profiles, ["Spare", "Main", "Bots"]);
+    assert_eq!(tags(&reloaded, "alpha", "Ann"), ["Main"]);
+}
+
+#[test]
+fn create_profile_refuses_an_empty_duplicate_or_unusable_name() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    store.create_profile("Main").unwrap();
+    for name in ["", "   ", "MAIN", "main", "a,b", "a;b", "x#", " Main2"] {
+        assert!(is_invalid(store.create_profile(name)), "{name:?}");
+    }
+    assert_eq!(store.document().profiles, ["Main"]);
+    match store.create_profile("main") {
+        Err(ProfileError::Invalid(message)) => {
+            assert_eq!(message, "A profile named 'main' already exists.");
+        }
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn delete_profile_takes_it_off_the_list_every_account_and_every_character() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    store
+        .execute_transaction(|store| {
+            store.set_character_profiles("Coldeve", "alpha", "Ann", &strings(&["Main", "Bots"]))?;
+            store.set_character_profiles("Coldeve", "beta", "Cid", &strings(&["main"]))?;
+            store.set_account_profiles("Coldeve", "alpha", &strings(&["MAIN"]))?;
+            store.set_account_profiles("Coldeve", "beta", &strings(&["Bots"]))
+        })
+        .unwrap();
+    store
+        .execute_transaction(|store| store.delete_profile("Main"))
+        .unwrap();
+    assert_eq!(store.document().profiles, ["Bots"]);
+    assert_eq!(tags(&store, "alpha", "Ann"), ["Bots"]);
+    assert!(tags(&store, "beta", "Cid").is_empty());
+    assert!(
+        account_named(&store, "Coldeve", "alpha")
+            .profiles
+            .is_empty()
+    );
+    assert_eq!(account_named(&store, "Coldeve", "beta").profiles, ["Bots"]);
+    assert!(is_invalid(store.delete_profile("Main")));
+    // Gone after a restart too.
+    let reloaded = loaded(&fixture);
+    assert_eq!(reloaded.document().profiles, ["Bots"]);
+}
+
+#[test]
+fn character_profiles_and_commands_round_trip_through_disk() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    store
+        .execute_transaction(|store| {
+            store.set_character_profiles("Coldeve", "alpha", "Bea", &strings(&["Main"]))?;
+            store.set_character_login_commands(
+                "Coldeve",
+                "alpha",
+                "Bea",
+                &strings(&["/vt start", "/mm ws enable"]),
+            )
+        })
+        .unwrap();
+    let text = std::fs::read_to_string(&fixture.file_path).unwrap();
+    assert!(text.contains("\"version\": 3"));
+    // Left out while empty: Ann has neither.
+    assert_eq!(text.matches("\"loginCommands\"").count(), 3);
+    let reloaded = loaded(&fixture);
+    assert_eq!(reloaded.document(), store.document());
+    let bea = character_named(account_named(&reloaded, "Coldeve", "alpha"), "Bea");
+    assert_eq!(bea.login_commands, ["/vt start", "/mm ws enable"]);
+}
+
+// The logon commands text with ### character headers.
+
+fn character_sample() -> LauncherProfileDocument {
+    let mut document = sample();
+    let notan3 = &mut document.servers[0].accounts[0];
+    notan3.characters[0].login_commands = strings(&["/vt meta load bore", "#hash command"]);
+    notan3.characters.push(CharacterProfile::new("Mule"));
+    document
+}
+
+#[test]
+fn logon_commands_show_shared_lines_then_each_characters_own_and_round_trip_exactly() {
+    let mut document = character_sample();
+    let text = read_text(&document, LauncherTextEditorKind::LogonCommands);
+    assert!(text.starts_with(
+        "#Coldeve\n##notan3\n/vt start\n###Festivus\n/vt meta load bore\n\\#hash command\n\
+         ###Mule\n##notan\n"
+    ));
+    apply_text(&mut document, LauncherTextEditorKind::LogonCommands, &text).unwrap();
+    assert_eq!(document, character_sample());
+    assert_eq!(
+        read_text(&document, LauncherTextEditorKind::LogonCommands),
+        text
+    );
+}
+
+#[test]
+fn logon_commands_put_lines_under_a_character_on_it_and_clear_a_character_left_out() {
+    let mut document = character_sample();
+    apply_text(
+        &mut document,
+        LauncherTextEditorKind::LogonCommands,
+        "#Coldeve\n##notan3\n/fellowship quit\n###mule\n/mm ws enable\n/vt start\n##notan\n",
+    )
+    .unwrap();
+    let notan3 = &document.servers[0].accounts[0];
+    assert_eq!(notan3.login_commands, ["/fellowship quit"]);
+    // Found ignoring case, as the one character of that name.
+    assert_eq!(
+        character_named(notan3, "Mule").login_commands,
+        ["/mm ws enable", "/vt start"]
+    );
+    // Festivus is left out of the listed account: no commands of its own.
+    assert!(
+        character_named(notan3, "Festivus")
+            .login_commands
+            .is_empty()
+    );
+    // A server left out keeps everything.
+    assert_eq!(
+        document.servers[1].accounts[0].login_commands,
+        ["/vt nav load bore_circuit1"]
+    );
+}
+
+#[test]
+fn a_bad_character_header_is_refused_with_its_line_and_changes_nothing() {
+    let cases = [
+        (
+            "#Coldeve\n##notan3\n###Nobody\n/vt start",
+            "Line 3: account 'notan3' on 'Coldeve' has no character 'Nobody'. Refresh its \
+             characters, or add the character first.",
+        ),
+        (
+            "#Coldeve\n##notan3\n###Festivus\n/a\n###Festivus\n/b",
+            "Line 5: character 'Festivus' appears more than once under 'notan3'.",
+        ),
+        (
+            "#Coldeve\n###Festivus\n/a",
+            "Line 2: put an ##Account line above ###Character.",
+        ),
+        (
+            "###Festivus",
+            "Line 1: put an ##Account line above ###Character.",
+        ),
+    ];
+    for (text, error) in cases {
+        let mut document = character_sample();
+        let message = apply_error(&mut document, LauncherTextEditorKind::LogonCommands, text);
+        assert!(
+            message.split('\n').any(|line| line == error),
+            "{text}: {message}"
+        );
+        assert_eq!(document, character_sample());
+    }
+}
+
+// The upgrade from version 2: each account's commands move to a character.
+
+const VERSION2_FILE: &str = r#"{
+  "version": 2,
+  "servers": [
+    {
+      "name": "Coldeve", "host": "play.example.test", "port": 9000,
+      "accounts": [
+        {
+          "account": "picked", "password": "pw-picked", "profiles": ["Main"], "plugins": [],
+          "loginCommands": ["/vt start"],
+          "characters": [
+            { "name": "Ann", "id": null, "launchMode": "gui" },
+            { "name": "Bea", "id": "0x50000002", "launchMode": "gui" }
+          ],
+          "selectedCharacter": "Bea", "selectedLaunchMode": "headless"
+        },
+        {
+          "account": "select", "password": "pw-select", "profiles": [], "plugins": [],
+          "loginCommands": ["/a", "/b"],
+          "characters": [
+            { "name": "Cid", "id": null, "launchMode": "guiSelect" },
+            { "name": "Dee", "id": null, "launchMode": "gui" }
+          ],
+          "selectedLaunchMode": "guiSelect"
+        },
+        {
+          "account": "lonely", "password": "pw-lonely", "profiles": ["Bots"], "plugins": [],
+          "loginCommands": ["/shared"], "characters": []
+        },
+        {
+          "account": "quiet", "password": "pw-quiet", "profiles": [], "plugins": [],
+          "loginCommands": [],
+          "characters": [ { "name": "Eve", "id": null, "launchMode": "gui" } ]
+        }
+      ],
+      "accountListInitialized": true
+    }
+  ]
+}"#;
+
+impl Migration {
+    /// The version 2 launcher's own file.
+    fn version2_file_path(&self) -> PathBuf {
+        self.root.join(VERSION2_PROFILE_FILE_NAME)
+    }
+
+    fn load_version2(&self, json: &str) -> LauncherProfileStore {
+        std::fs::write(self.version2_file_path(), json).unwrap();
+        let mut store = self.new_store();
+        assert!(store.load().unwrap());
+        store
+    }
+}
+
+#[test]
+fn the_upgrade_moves_an_accounts_commands_to_the_character_it_launches() {
+    let migration = Migration::new();
+    let store = migration.load_version2(VERSION2_FILE);
+    let picked = account_named(&store, "Coldeve", "picked");
+    assert!(picked.login_commands.is_empty());
+    assert_eq!(character_named(picked, "Bea").login_commands, ["/vt start"]);
+    assert!(character_named(picked, "Ann").login_commands.is_empty());
+    // Everything else stays as it was.
+    assert_eq!(picked.selected_character.as_deref(), Some("Bea"));
+    assert_eq!(picked.selected_launch_mode, Some(LaunchMode::Headless));
+    assert_eq!(picked.profiles, ["Main"]);
+    assert_eq!(store.document().profiles, ["Main", "Bots"]);
+}
+
+#[test]
+fn the_upgrade_gives_a_character_select_accounts_commands_to_its_first_character() {
+    let migration = Migration::new();
+    let store = migration.load_version2(VERSION2_FILE);
+    let select = account_named(&store, "Coldeve", "select");
+    assert!(select.login_commands.is_empty());
+    assert_eq!(character_named(select, "Cid").login_commands, ["/a", "/b"]);
+    assert!(character_named(select, "Dee").login_commands.is_empty());
+}
+
+#[test]
+fn the_upgrade_keeps_the_commands_of_an_account_without_characters_shared() {
+    let migration = Migration::new();
+    let store = migration.load_version2(VERSION2_FILE);
+    assert_eq!(
+        account_named(&store, "Coldeve", "lonely").login_commands,
+        ["/shared"]
+    );
+    let quiet = account_named(&store, "Coldeve", "quiet");
+    assert!(quiet.login_commands.is_empty());
+    assert!(quiet.characters[0].login_commands.is_empty());
+}
+
+#[test]
+fn the_upgrade_notice_lists_every_move_and_names_the_kept_version2_file() {
+    let migration = Migration::new();
+    let store = migration.load_version2(VERSION2_FILE);
+    let notice = store.migration_notice().unwrap();
+    assert_eq!(
+        notice,
+        format!(
+            "Logon commands now belong to characters: a character runs its own, and commands \
+             left on an account do not run. Each account's commands moved to the character it \
+             launches (the first character when it starts at the character screen):\n\nColdeve \
+             / picked: logon commands moved to Bea\nColdeve / select: logon commands moved to \
+             Cid\nColdeve / lonely: logon commands stay on the account, where they do not run; \
+             move them under a character (the account has no characters yet)\n\nThe old file is \
+             kept at {}.",
+            migration.version2_file_path().display()
+        )
+    );
+    assert!(!notice.contains("pw-"));
+}
+
+// Changed with the version 3 file name: the version 2 file stays the older
+// launcher's own (and so the backup); before, version 3 was written over it
+// and a copy kept as launcher-profiles.v2-backup.json.
+#[test]
+fn the_upgrade_writes_the_version3_file_and_never_touches_the_version2_one() {
+    let migration = Migration::new();
+    let store = migration.load_version2(VERSION2_FILE);
+    assert_eq!(
+        std::fs::read_to_string(migration.version2_file_path()).unwrap(),
+        VERSION2_FILE
+    );
+    assert_eq!(
+        migration.file_path(),
+        migration.root.join("launcher-profiles.v3.json")
+    );
+    let written = std::fs::read_to_string(migration.file_path()).unwrap();
+    assert!(written.contains("\"version\": 3"));
+    assert!(
+        !migration
+            .root
+            .join("launcher-profiles.v2-backup.json")
+            .exists()
+    );
+
+    // Read again: the version 3 file wins, nothing moves and nothing is said,
+    // whatever an older launcher wrote to its own file meanwhile.
+    std::fs::write(
+        migration.version2_file_path(),
+        VERSION2_FILE.replace("picked", "renamed"),
+    )
+    .unwrap();
+    let mut reloaded = migration.new_store();
+    reloaded.load().unwrap();
+    assert_eq!(reloaded.migration_notice(), None);
+    assert_eq!(reloaded.document(), store.document());
+
+    // An edit writes only the version 3 file.
+    reloaded
+        .execute_transaction(|store| store.add_server("Added later", "h", 9000))
+        .unwrap();
+    assert!(
+        !std::fs::read_to_string(migration.version2_file_path())
+            .unwrap()
+            .contains("Added later")
+    );
+}
+
+#[test]
+fn the_version2_file_wins_over_the_version1_file() {
+    let migration = Migration::new();
+    std::fs::write(migration.older_file_path(), VERSION1_FILE).unwrap();
+    let store = migration.load_version2(VERSION2_FILE);
+    let names: Vec<&str> = store
+        .document()
+        .servers
+        .iter()
+        .map(|server| server.name.as_str())
+        .collect();
+    assert_eq!(names, ["Coldeve"]);
+    assert!(!store.version1_backup_path().exists());
+}
+
+#[test]
+fn a_version2_file_without_commands_upgrades_without_a_notice() {
+    let migration = Migration::new();
+    let json = r#"{"version":2,"servers":[{"name":"a","host":"h","port":9000,"accounts":[]}]}"#;
+    let store = migration.load_version2(json);
+    assert_eq!(store.migration_notice(), None);
+    assert_eq!(store.document().version, 3);
+    assert_eq!(
+        std::fs::read_to_string(migration.version2_file_path()).unwrap(),
+        json
+    );
+}
+
+// --- A failed load or migration write -----------------------------------
+
+#[test]
+fn after_a_failed_load_nothing_is_saved_until_a_load_succeeds() {
+    let migration = Migration::new();
+    // A file from a newer launcher this one cannot read.
+    let newer = r#"{"version":4,"servers":[{"name":"keep","host":"h","port":9000}]}"#;
+    std::fs::write(migration.file_path(), newer).unwrap();
+    let mut store = migration.new_store();
+    assert!(is_invalid(store.load()));
+    assert!(store.load_failure().is_some());
+
+    let refused = store.execute_transaction(|store| store.add_server("New", "h", 9000));
+    match refused {
+        Err(ProfileError::Invalid(message)) => assert!(
+            message.starts_with(
+                "The profiles could not be read, so nothing is saved until they load:"
+            ),
+            "{message}"
+        ),
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+    assert!(is_invalid(store.save()));
+    assert_eq!(
+        std::fs::read_to_string(migration.file_path()).unwrap(),
+        newer
+    );
+    assert!(store.document().servers.is_empty());
+
+    // Once a load succeeds, edits save again.
+    std::fs::write(migration.file_path(), r#"{"version":3,"servers":[]}"#).unwrap();
+    store.load().unwrap();
+    assert_eq!(store.load_failure(), None);
+    store
+        .execute_transaction(|store| store.add_server("New", "h", 9000))
+        .unwrap();
+}
+
+#[test]
+fn a_failed_migration_write_leaves_the_store_as_it_was() {
+    let migration = Migration::new();
+    std::fs::write(migration.version2_file_path(), VERSION2_FILE).unwrap();
+    // The version 3 file's folder is a file, so writing it fails.
+    let blocker = migration.root.join("blocker");
+    std::fs::write(&blocker, "a file, not a folder").unwrap();
+    let mut store = LauncherProfileStore::with_older_files(
+        blocker.join(PROFILE_FILE_NAME),
+        &[&migration.version2_file_path()],
+    )
+    .unwrap();
+    assert!(store.load().is_err());
+    assert!(store.document().servers.is_empty());
+    assert_eq!(store.migration_notice(), None);
+    assert!(store.load_failure().is_some());
+    assert_eq!(
+        std::fs::read_to_string(migration.version2_file_path()).unwrap(),
+        VERSION2_FILE
+    );
+}
+
+// --- A roster merge keeps a duplicate's profiles and commands -------------
+
+#[test]
+fn merging_a_duplicate_moves_its_profiles_and_its_commands_when_the_kept_has_none() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    {
+        // Ann has the character's id; Ann2 its new name, added by hand.
+        let alpha = &mut store.document_mut().servers[0].accounts[0];
+        alpha.characters[0].id = Some("0x50000001".into());
+        alpha.characters[0].profiles = vec!["Main".into()];
+        alpha.characters[1].name = "Ann2".into();
+        alpha.characters[1].profiles = vec!["Bots".into()];
+        alpha.characters[1].login_commands = vec!["/vt start".into()];
+    }
+    // The roster names the id's character Ann2: both entries are one.
+    let notes = store
+        .merge_roster(
+            "Coldeve",
+            "alpha",
+            &[CharacterRosterEntry::new(0x5000_0001, "Ann2", 0)],
+        )
+        .unwrap();
+    assert!(notes.is_empty());
+    let alpha = account_named(&store, "Coldeve", "alpha");
+    assert_eq!(alpha.characters.len(), 1);
+    let kept = &alpha.characters[0];
+    assert_eq!(kept.name, "Ann2");
+    assert_eq!(kept.profiles, ["Main", "Bots"]);
+    assert_eq!(kept.login_commands, ["/vt start"]);
+}
+
+#[test]
+fn merging_a_duplicate_keeps_the_kept_characters_commands_and_says_what_was_dropped() {
+    let fixture = fixture();
+    let mut store = character_store(&fixture);
+    {
+        let alpha = &mut store.document_mut().servers[0].accounts[0];
+        alpha.characters[0].id = Some("0x50000001".into());
+        alpha.characters[0].login_commands = vec!["/mine".into()];
+        alpha.characters[1].name = "Ann2".into();
+        alpha.characters[1].login_commands = vec!["/theirs".into(), "/more".into()];
+    }
+    let notes = store
+        .merge_roster(
+            "Coldeve",
+            "alpha",
+            &[CharacterRosterEntry::new(0x5000_0001, "Ann2", 0)],
+        )
+        .unwrap();
+    assert_eq!(
+        notes,
+        [
+            "Ann2 was listed twice on alpha; its logon commands were kept and the other entry's \
+          were dropped: /theirs | /more"
+        ]
+    );
+    let kept = &account_named(&store, "Coldeve", "alpha").characters[0];
+    assert_eq!(kept.login_commands, ["/mine"]);
 }

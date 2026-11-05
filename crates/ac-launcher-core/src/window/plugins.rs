@@ -3,24 +3,37 @@
 //! the Check pipeline that the start-of-launcher check and Refresh list
 //! share. Nothing here runs a plugin.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::SystemTime;
 
-use ac_host::PathSet;
+use ac_host_core::PathSet;
 
 use crate::cancel::CancelToken;
 use crate::launcher_log::LauncherLog;
 use crate::net::HttpTransport;
 use crate::plugins::{
-    InstalledPluginInfo, InstalledPluginRecord, InstalledPluginRecordStore, MAXIMUM_DOCUMENT_BYTES,
-    MAXIMUM_REPOSITORY_PLUGINS, PermissionDeclaration, PluginCatalog, PluginInstaller,
-    PluginInventory, PluginReleaseCandidates, PluginReleaseClient, PluginReleaseFetchResult,
-    PluginReleaseResolveResult, PluginReleaseResolver, describe, version_only_reason,
+    FEED_MAXIMUM_BYTES, InstalledPluginInfo, InstalledPluginRecord, InstalledPluginRecordStore,
+    MAXIMUM_DOCUMENT_BYTES, MAXIMUM_REPOSITORY_PLUGINS, PermissionDeclaration, PluginCatalog,
+    PluginInstaller, PluginInventory, PluginReleaseCandidates, PluginReleaseClient,
+    PluginReleaseFetchResult, PluginReleaseResolveResult, PluginReleaseResolver, describe,
+    feed_tags, github, version_only_reason,
 };
 use crate::updates::{ClientVersionResolution, LauncherVersion};
 use crate::url::WebUrl;
+
+/// What the installed plugins' release feeds list, for noticing a new
+/// release without the full check (one small request per repository).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginFeedState {
+    /// Each repository's release tags, by repository name in lowercase;
+    /// `None` for one whose feed could not be read this time (moved,
+    /// removed, unreachable), so the others are still watched.
+    Read(BTreeMap<String, Option<Vec<String>>>),
+    /// GitHub asked to slow down.
+    RateLimited,
+}
 
 /// One listed plugin not yet installed, as Discover shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -215,6 +228,36 @@ impl PluginComposition {
     ) -> Option<InstalledPluginInfo> {
         let records = self.records();
         self.inventory.find(id, &records, client, catalog)
+    }
+
+    /// Reads the releases feed of every repository an installed plugin came
+    /// from. A different answer than last time means a release was
+    /// published, changed or taken down: time for the full check.
+    pub fn release_feeds(&self, cancel: &CancelToken) -> PluginFeedState {
+        let repositories: BTreeMap<String, String> = self
+            .installed(None, None)
+            .iter()
+            .filter_map(|info| self.find_record(&info.id))
+            .map(|record| (record.repo.to_lowercase(), record.repo))
+            .collect();
+        let mut feeds = BTreeMap::new();
+        for (key, repo) in repositories {
+            let Some(url) = github::releases_feed(&repo) else {
+                continue;
+            };
+            let tags = match self
+                .release_client
+                .fetch_document(&url, FEED_MAXIMUM_BYTES, cancel)
+            {
+                Ok(PluginReleaseFetchResult::Success(document)) => {
+                    feed_tags(&document.content, &repo).ok()
+                }
+                Ok(PluginReleaseFetchResult::RateLimited) => return PluginFeedState::RateLimited,
+                Ok(PluginReleaseFetchResult::Unavailable) | Err(_) => None,
+            };
+            feeds.insert(key, tags);
+        }
+        PluginFeedState::Read(feeds)
     }
 
     /// The launch-time recovery, run once before the inventory is first read.

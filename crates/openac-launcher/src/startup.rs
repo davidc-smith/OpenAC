@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use ac_host::PathSet;
+use ac_host_core::PathSet;
 use ac_launcher_core::cancel::CancelToken;
 use ac_launcher_core::control;
 use ac_launcher_core::installation::{InstallRootMover, RetailContentStore};
@@ -351,7 +351,7 @@ pub fn prepare(context: &StartContext) -> Result<Prepared, String> {
         )?),
         None => None,
     };
-    let install_folder = PathSet::default_root(&ac_host::SystemPlatform)
+    let install_folder = PathSet::default_root(&ac_host_core::SystemPlatform)
         .ok()
         .map(|default_root| {
             let restart_arguments = context.options.public_arguments.clone();
@@ -413,6 +413,12 @@ impl Prepared {
             client_version: self.client_version,
             apply_launcher_update: self.apply_launcher_update,
             install_folder: self.install_folder,
+            relaunch_settings: Some(
+                ac_launcher_core::profiles::LauncherRelaunchSettingsStore::for_paths(&paths),
+            ),
+            console_settings: Some(
+                ac_launcher_core::profiles::LauncherConsoleSettingsStore::for_paths(&paths),
+            ),
             checked_accounts: Some(
                 ac_launcher_core::profiles::LauncherCheckedAccountStore::for_paths(&paths),
             ),

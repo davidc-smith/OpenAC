@@ -5,8 +5,9 @@ use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use ac_host::PathSet;
-use ac_host::json as host_json;
+use ac_host_core::PathSet;
+use ac_host_core::json as host_json;
+use ac_host_core::paths::{LAUNCHER_PROFILES_FILE_NAME, OLDER_LAUNCHER_PROFILES_FILE_NAME};
 
 use super::account_name::{find_account, same_account};
 use super::character_id;
@@ -15,15 +16,26 @@ use super::document::{
 };
 use crate::fsutil;
 
-/// The document version this store writes.
-pub const CURRENT_PROFILE_VERSION: i32 = 2;
+/// The document version this store writes: version 2 with a list of
+/// profile names, and profile tags and logon commands on each character.
+pub const CURRENT_PROFILE_VERSION: i32 = 3;
+
+/// Plugins and logon commands per account, accounts per server.
+pub const PROFILE_VERSION_2: i32 = 2;
 
 /// Plugins and logon commands per character, and optionally one user list
 /// shared by every server.
 pub const PROFILE_VERSION_1: i32 = 1;
 
-/// The file this launcher reads and writes, in the settings folder.
-pub const PROFILE_FILE_NAME: &str = "launcher-profiles.v2.json";
+/// The file this launcher reads and writes, in the settings folder. Each
+/// document version that an older launcher cannot read gets its own file,
+/// so an older launcher (one a failed update rolls back to) keeps reading
+/// its own file instead of refusing ours.
+pub const PROFILE_FILE_NAME: &str = LAUNCHER_PROFILES_FILE_NAME;
+
+/// The file launchers writing version 2 read and write; read once to
+/// migrate from, never written, moved or deleted by this one.
+pub const VERSION2_PROFILE_FILE_NAME: &str = OLDER_LAUNCHER_PROFILES_FILE_NAME;
 
 /// The file launchers before version 2 read and write; never written by
 /// this one.
@@ -75,9 +87,14 @@ impl CharacterRosterEntry {
 #[derive(Debug, Clone)]
 pub struct LauncherProfileStore {
     file_path: PathBuf,
-    older_file_path: Option<PathBuf>,
+    /// Older launchers' files, newest first: the first that exists is
+    /// migrated from while `file_path` does not exist.
+    older_file_paths: Vec<PathBuf>,
     document: LauncherProfileDocument,
     migration_notice: Option<String>,
+    /// Why the last load failed. While set nothing is saved: the document
+    /// is not the file's, and writing it would replace every account.
+    load_failure: Option<String>,
 }
 
 fn require_text(value: &str, argument: &'static str) -> Result<(), ProfileError> {
@@ -261,28 +278,46 @@ impl LauncherProfileStore {
         file_path: impl AsRef<Path>,
         older_file_path: Option<&Path>,
     ) -> Result<Self, ProfileError> {
+        Self::with_older_files(file_path, older_file_path.as_slice())
+    }
+
+    /// A store for `file_path` that migrates, while `file_path` does not
+    /// exist, from the first of `older_file_paths` (newest first) that
+    /// does; none of them is ever written.
+    pub fn with_older_files(
+        file_path: impl AsRef<Path>,
+        older_file_paths: &[&Path],
+    ) -> Result<Self, ProfileError> {
         let file_path = file_path.as_ref();
         if file_path.as_os_str().to_string_lossy().trim().is_empty() {
             return Err(ProfileError::BlankArgument("filePath"));
         }
         Ok(Self {
             file_path: fsutil::full_path(file_path),
-            older_file_path: older_file_path.map(fsutil::full_path),
+            older_file_paths: older_file_paths
+                .iter()
+                .map(|path| fsutil::full_path(path))
+                .collect(),
             document: LauncherProfileDocument::default(),
             migration_notice: None,
+            load_failure: None,
         })
     }
 
-    /// The store for `launcher-profiles.v2.json` in the settings folder,
-    /// migrating from `launcher-profiles.json` beside it.
+    /// The store for `launcher-profiles.v3.json` in the settings folder,
+    /// migrating from `launcher-profiles.v2.json`, else from
+    /// `launcher-profiles.json`, beside it.
     pub fn for_paths(paths: &PathSet) -> Self {
+        let older = [
+            paths.config_directory.join(VERSION2_PROFILE_FILE_NAME),
+            paths.config_directory.join(OLDER_PROFILE_FILE_NAME),
+        ];
         Self {
             file_path: fsutil::full_path(&paths.config_directory.join(PROFILE_FILE_NAME)),
-            older_file_path: Some(fsutil::full_path(
-                &paths.config_directory.join(OLDER_PROFILE_FILE_NAME),
-            )),
+            older_file_paths: older.iter().map(|path| fsutil::full_path(path)).collect(),
             document: LauncherProfileDocument::default(),
             migration_notice: None,
+            load_failure: None,
         }
     }
 
@@ -291,15 +326,15 @@ impl LauncherProfileStore {
         &self.file_path
     }
 
-    /// An older launcher's profile file this store migrates from.
+    /// The newest older launcher's profile file this store migrates from.
     pub fn older_file_path(&self) -> Option<&Path> {
-        self.older_file_path.as_deref()
+        self.older_file_paths.first().map(PathBuf::as_path)
     }
 
-    /// A copy of the older launcher's file as it was when it was migrated,
-    /// kept whatever happens to that file later.
+    /// A copy of the oldest launcher's (version 1) file as it was when it
+    /// was migrated, kept whatever happens to that file later.
     pub fn version1_backup_path(&self) -> PathBuf {
-        let source = self.older_file_path.as_ref().unwrap_or(&self.file_path);
+        let source = self.older_file_paths.last().unwrap_or(&self.file_path);
         let stem = source
             .file_stem()
             .map(|stem| stem.to_string_lossy().into_owned())
@@ -323,6 +358,12 @@ impl LauncherProfileStore {
         self.migration_notice.take()
     }
 
+    /// Why the last load failed; `None` once one succeeds. While a load has
+    /// failed, saves are refused.
+    pub fn load_failure(&self) -> Option<&str> {
+        self.load_failure.as_deref()
+    }
+
     /// The current document.
     pub fn document(&self) -> &LauncherProfileDocument {
         &self.document
@@ -340,17 +381,26 @@ impl LauncherProfileStore {
     }
 
     /// Loads the profiles. This launcher's own file wins; without one, the
-    /// older launcher's file is read once and migrated into it (a version 1
-    /// file is kept byte for byte as the backup). Neither file gives an
-    /// empty document and `false`. A stale temp file from a crashed save is
-    /// removed first; on Unix the file read is made owner-only first. A
-    /// failed load leaves the current document as it was.
+    /// newest older launcher's file is read once and migrated into it (a
+    /// version 1 file is also kept byte for byte as a backup; a version 2
+    /// file is its own backup, as that launcher's file is never touched).
+    /// Neither file gives an empty document and `false`. A stale temp file
+    /// from a crashed save is removed first; on Unix the file read is made
+    /// owner-only first. A failed load, a failed migration write included,
+    /// leaves the current document as it was and refuses every save until
+    /// a load succeeds.
     pub fn load(&mut self) -> Result<bool, ProfileError> {
+        let result = self.read_and_migrate();
+        self.load_failure = result.as_ref().err().map(ToString::to_string);
+        result
+    }
+
+    fn read_and_migrate(&mut self) -> Result<bool, ProfileError> {
         fsutil::try_delete_file(&self.temp_path());
         self.migration_notice = None;
         let source = if self.file_path.exists() {
             self.file_path.clone()
-        } else if let Some(older) = self.older_file_path.as_ref().filter(|path| path.exists()) {
+        } else if let Some(older) = self.older_file_paths.iter().find(|path| path.exists()) {
             older.clone()
         } else {
             self.document = LauncherProfileDocument::default();
@@ -368,7 +418,13 @@ impl LauncherProfileStore {
             CURRENT_PROFILE_VERSION => {
                 LauncherProfileDocument::from_json(&bytes).map(|document| (document, Vec::new()))
             }
-            PROFILE_VERSION_1 => super::migration::from_version1(&bytes),
+            PROFILE_VERSION_2 => LauncherProfileDocument::from_json(&bytes).map(|mut document| {
+                let moves = super::migration::from_version2(&mut document);
+                (document, moves)
+            }),
+            PROFILE_VERSION_1 => {
+                super::migration::from_version1(&bytes).map(|document| (document, Vec::new()))
+            }
             _ => {
                 return Err(ProfileError::invalid(format!(
                     "Unsupported launcher-profiles version {version}; expected \
@@ -376,7 +432,7 @@ impl LauncherProfileStore {
                 )));
             }
         };
-        let (mut document, notices) = match read {
+        let (mut document, moves) = match read {
             Ok(read) => read,
             Err(ReadError::Json) => {
                 return Err(ProfileError::invalid(format!(
@@ -394,38 +450,68 @@ impl LauncherProfileStore {
         };
         validate_and_normalize_document(&mut document)?;
         let initialized = initialize_account_lists(&mut document);
-        self.document = document;
-        if version == PROFILE_VERSION_1 || source != self.file_path || initialized {
-            // A copy of the old file as migrated, whatever an older launcher
-            // does to it later.
-            let backup = self.version1_backup_path();
-            if version == PROFILE_VERSION_1 && !backup.exists() {
-                fsutil::write_via_tmp(&backup, &bytes, true)?;
+        let migrated = source != self.file_path;
+        if version != CURRENT_PROFILE_VERSION || migrated || initialized {
+            if version == PROFILE_VERSION_1 {
+                // A copy of the old file as migrated, whatever an older
+                // launcher does to it later; the first copy is kept.
+                let backup = self.version1_backup_path();
+                if !backup.exists() {
+                    fsutil::write_via_tmp(&backup, &bytes, true)?;
+                }
             }
-            self.save()?;
-            self.migration_notice = (!notices.is_empty()).then(|| {
+            // Written before it becomes the document: a failed write leaves
+            // the store as it was.
+            self.write(&mut document)?;
+            self.migration_notice = (!moves.is_empty()).then(|| {
+                let kept = if migrated {
+                    format!("\n\nThe old file is kept at {}.", source.display())
+                } else {
+                    String::new()
+                };
                 format!(
-                    "Plugins and logon commands now belong to the account, so every character on \
-                     it shares them. Where characters on one account had different logon \
-                     commands, the first character's were kept:\n\n{}\n\nThe old file is kept at \
-                     {}.",
-                    notices.join("\n"),
-                    backup.display()
+                    "Logon commands now belong to characters: a character runs its own, and \
+                     commands left on an account do not run. Each account's commands moved to \
+                     the character it launches (the first character when it starts at the \
+                     character screen):\n\n{}{kept}",
+                    moves.join("\n"),
                 )
             });
         }
+        self.document = document;
         Ok(true)
+    }
+
+    /// Refused while the last load failed: the document is not the file's.
+    fn ensure_loaded(&self) -> Result<(), ProfileError> {
+        match &self.load_failure {
+            Some(why) => Err(ProfileError::invalid(format!(
+                "The profiles could not be read, so nothing is saved until they load: {why}"
+            ))),
+            None => Ok(()),
+        }
+    }
+
+    /// Writes `document` through a temp file and a rename, every server's
+    /// account list counted as reviewed from here on.
+    fn write(&self, document: &mut LauncherProfileDocument) -> Result<(), ProfileError> {
+        for server in &mut document.servers {
+            server.account_list_initialized = true;
+        }
+        fsutil::write_via_tmp(&self.file_path, document.to_json().as_bytes(), true)?;
+        Ok(())
     }
 
     /// Writes the document through a temp file and a rename. The temp file
     /// is owner-only on Unix from its creation. Every server's account
-    /// list counts as reviewed from here on.
+    /// list counts as reviewed from here on. Refused while the last load
+    /// failed.
     pub fn save(&mut self) -> Result<(), ProfileError> {
-        for server in &mut self.document.servers {
-            server.account_list_initialized = true;
-        }
-        fsutil::write_via_tmp(&self.file_path, self.document.to_json().as_bytes(), true)?;
-        Ok(())
+        self.ensure_loaded()?;
+        let mut document = std::mem::take(&mut self.document);
+        let result = self.write(&mut document);
+        self.document = document;
+        result
     }
 
     /// Runs `mutation`, validates and saves; any failure restores the
@@ -437,6 +523,9 @@ impl LauncherProfileStore {
     where
         E: From<ProfileError>,
     {
+        // While the last load failed, an edit would write a document that
+        // is not the file's over it.
+        self.ensure_loaded()?;
         let before = self.document.clone();
         let result = (|| {
             let value = mutation(self)?;
@@ -654,7 +743,94 @@ impl LauncherProfileStore {
         Ok(())
     }
 
-    /// Commands run in order after any character on the account logs in.
+    /// The profiles a character is in. A profile is on at most one
+    /// character of an account, so each one given here is taken off the
+    /// account's other characters.
+    pub fn set_character_profiles(
+        &mut self,
+        server_name: &str,
+        account: &str,
+        character_name: &str,
+        profiles: &[String],
+    ) -> Result<(), ProfileError> {
+        validate_profile_tags(profiles)?;
+        let profile = self.locate_account(server_name, account)?;
+        let index = Self::character_index(profile, character_name)?;
+        for (other, character) in profile.characters.iter_mut().enumerate() {
+            if other != index {
+                character
+                    .profiles
+                    .retain(|tag| !profiles.iter().any(|given| given.eq_ignore_ascii_case(tag)));
+            }
+        }
+        profile.characters[index].profiles = profiles.to_vec();
+        Ok(())
+    }
+
+    /// Commands run in order after one character logs in, after its
+    /// account's shared ones.
+    pub fn set_character_login_commands(
+        &mut self,
+        server_name: &str,
+        account: &str,
+        character_name: &str,
+        commands: &[String],
+    ) -> Result<(), ProfileError> {
+        validate_string_list(Some(commands), "login command", false)?;
+        let profile = self.locate_account(server_name, account)?;
+        let index = Self::character_index(profile, character_name)?;
+        profile.characters[index].login_commands = commands.to_vec();
+        Ok(())
+    }
+
+    /// Adds a profile with no account or character in it yet. The name
+    /// follows the profile tag rules and is new, ignoring case.
+    pub fn create_profile(&mut self, name: &str) -> Result<(), ProfileError> {
+        if name.trim().is_empty() {
+            return Err(ProfileError::invalid("Type a name for the profile."));
+        }
+        validate_profile_tags(&[name.to_owned()])?;
+        if self
+            .document
+            .profiles
+            .iter()
+            .any(|known| known.eq_ignore_ascii_case(name))
+        {
+            return Err(ProfileError::invalid(format!(
+                "A profile named '{name}' already exists."
+            )));
+        }
+        self.document.profiles.push(name.to_owned());
+        Ok(())
+    }
+
+    /// Deletes a profile (named in any case): from the list and from every
+    /// account and character carrying it.
+    pub fn delete_profile(&mut self, name: &str) -> Result<(), ProfileError> {
+        let before = self.document.profiles.len();
+        self.document
+            .profiles
+            .retain(|known| !known.eq_ignore_ascii_case(name));
+        if self.document.profiles.len() == before {
+            return Err(ProfileError::invalid(format!("No profile named '{name}'.")));
+        }
+        let other = |tag: &String| !tag.eq_ignore_ascii_case(name);
+        for account in self
+            .document
+            .servers
+            .iter_mut()
+            .flat_map(|server| server.accounts.iter_mut())
+        {
+            account.profiles.retain(other);
+            for character in &mut account.characters {
+                character.profiles.retain(other);
+            }
+        }
+        Ok(())
+    }
+
+    /// The shared commands: run in order after any character on the
+    /// account logs in, before the character's own.
     pub fn set_account_login_commands(
         &mut self,
         server_name: &str,
@@ -751,10 +927,10 @@ impl LauncherProfileStore {
             )));
         }
         profile.characters.push(CharacterProfile {
-            name: character_name.to_owned(),
             id: normalized,
             launch_mode,
             plugins: plugins.map(<[String]>::to_vec),
+            ..CharacterProfile::new(character_name)
         });
         Ok(())
     }
@@ -831,15 +1007,17 @@ impl LauncherProfileStore {
 
     /// Folds a server's character list into the account: a character found
     /// by id or by name takes the roster's id and name and keeps its
-    /// settings (duplicates matching the same entry collapse into it); a new
+    /// settings (duplicates matching the same entry collapse into it, giving
+    /// it their profiles, and their logon commands when it has none); a new
     /// one launches to the character screen with its account's plugins.
-    /// Characters missing from the roster stay.
+    /// Characters missing from the roster stay. Returns a line for each
+    /// duplicate whose logon commands could not be kept, for the player.
     pub fn merge_roster(
         &mut self,
         server_name: &str,
         account: &str,
         roster: &[CharacterRosterEntry],
-    ) -> Result<(), ProfileError> {
+    ) -> Result<Vec<String>, ProfileError> {
         let profile = self.locate_account(server_name, account)?;
         let mut ids = HashSet::new();
         let mut names = HashSet::new();
@@ -857,6 +1035,7 @@ impl LauncherProfileStore {
             }
         }
 
+        let mut notes = Vec::new();
         for entry in roster {
             let id_text = character_id::to_hex_string(entry.id);
             let id_matches = |character: &CharacterProfile| {
@@ -878,21 +1057,46 @@ impl LauncherProfileStore {
                 let character = &mut profile.characters[existing];
                 character.id = Some(id_text);
                 character.name.clone_from(&entry.name);
+                let mut kept = existing;
+                // Highest first, so each removal leaves the lower indices.
                 for &duplicate in matches.iter().rev() {
-                    if duplicate != existing {
-                        profile.characters.remove(duplicate);
+                    if duplicate == existing {
+                        continue;
+                    }
+                    let removed = profile.characters.remove(duplicate);
+                    if duplicate < kept {
+                        kept -= 1;
+                    }
+                    let character = &mut profile.characters[kept];
+                    // The duplicate was on the same account, so no other
+                    // character carries its profiles: one per account holds.
+                    for tag in removed.profiles {
+                        if !character.has_profile(&tag) {
+                            character.profiles.push(tag);
+                        }
+                    }
+                    if character.login_commands.is_empty() {
+                        character.login_commands = removed.login_commands;
+                    } else if !removed.login_commands.is_empty()
+                        && removed.login_commands != character.login_commands
+                    {
+                        notes.push(format!(
+                            "{} was listed twice on {}; its logon commands were kept and the \
+                             other entry's were dropped: {}",
+                            character.name,
+                            profile.account,
+                            removed.login_commands.join(" | ")
+                        ));
                     }
                 }
                 continue;
             }
             profile.characters.push(CharacterProfile {
-                name: entry.name.clone(),
                 id: Some(id_text),
-                launch_mode: LaunchMode::GuiSelect,
-                plugins: None,
+                ..CharacterProfile::new(entry.name.clone())
             });
         }
-        Ok(())
+        Ok(notes)
     }
 }
 
@@ -956,11 +1160,46 @@ pub(crate) fn validate_and_normalize_document(
                     normalized.push((index, id));
                 }
                 validate_string_list(character.plugins.as_deref(), "plugin", true)?;
+                validate_string_list(Some(&character.login_commands), "login command", false)?;
+                validate_profile_tags(&character.profiles)?;
+                if let Some(tag) = character.profiles.iter().find(|tag| {
+                    account.characters[..index]
+                        .iter()
+                        .any(|earlier| earlier.has_profile(tag))
+                }) {
+                    return Err(ProfileError::invalid(format!(
+                        "The profile '{tag}' is on more than one character of account '{}' on \
+                         server '{}'.",
+                        account.account, server.name
+                    )));
+                }
             }
             for (index, id) in normalized {
                 account.characters[index].id = Some(character_id::to_hex_string(id));
             }
         }
     }
+    validate_profile_tags(&document.profiles)?;
+    // Every tag in use is a listed profile, in the order first used.
+    let mut missing: Vec<String> = Vec::new();
+    for tag in document
+        .servers
+        .iter()
+        .flat_map(|server| server.accounts.iter())
+        .flat_map(|account| {
+            account.profiles.iter().chain(
+                account
+                    .characters
+                    .iter()
+                    .flat_map(|character| character.profiles.iter()),
+            )
+        })
+    {
+        let known = |list: &[String]| list.iter().any(|known| known.eq_ignore_ascii_case(tag));
+        if !known(&document.profiles) && !known(&missing) {
+            missing.push(tag.clone());
+        }
+    }
+    document.profiles.append(&mut missing);
     Ok(())
 }
