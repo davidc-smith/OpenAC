@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/icons/launcher-256.png" alt="openac-rust" width="96" height="96">
+  <img src="assets/icons/launcher-256.png" alt="OpenAC" width="96" height="96">
 </p>
 
-<h1 align="center">openac-rust</h1>
+<h1 align="center">OpenAC</h1>
 
 <p align="center">
   An open-source Asheron's Call client in Rust.<br>
@@ -10,19 +10,31 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/eriknihlen/openac-rust/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/eriknihlen/openac-rust/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/eriknihlen/openac-rust/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/eriknihlen/openac-rust?display_name=tag"></a>
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/eriknihlen/openac-rust"></a>
+  <a href="https://github.com/eriknihlen/OpenAC/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/eriknihlen/OpenAC/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/eriknihlen/OpenAC/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/eriknihlen/OpenAC?display_name=tag"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/eriknihlen/OpenAC"></a>
   <img alt="Rust 1.95" src="https://img.shields.io/badge/Rust-1.95-DEA584?logo=rust">
-  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-blue">
+  <a href="https://github.com/eriknihlen/OpenAC/discussions"><img alt="Discussions" src="https://img.shields.io/github/discussions/eriknihlen/OpenAC"></a>
+  <a href="https://discord.gg/S4hKV3WTEK"><img alt="Join Discord" src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white"></a>
 </p>
 
-## What is openac-rust
+<p align="center">
+  <a href="https://github.com/eriknihlen/OpenAC/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/eriknihlen/OpenAC/total"></a>
+  <a href="https://github.com/eriknihlen/OpenAC/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/eriknihlen/OpenAC"></a>
+  <a href="https://github.com/eriknihlen/OpenAC/graphs/contributors"><img alt="Contributors" src="https://img.shields.io/github/contributors/eriknihlen/OpenAC"></a>
+  <a href="https://github.com/eriknihlen/OpenAC/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/eriknihlen/OpenAC"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-blue">
+</p>
 
-openac-rust is the Rust port of [OpenAC](https://github.com/eriknihlen/OpenAC),
-the open-source C# client for Asheron's Call. It aims at full feature parity
-with OpenAC and is maintained alongside it: the same behavior as the original
-game, in modern Rust.
+> **The C# client is retired.** Its last release is
+> [v0.1.33](https://github.com/eriknihlen/OpenAC/releases/tag/v0.1.33) and its
+> code is on the [`deprecated` branch](https://github.com/eriknihlen/OpenAC/tree/deprecated).
+> This repository now holds the Rust client below.
+
+## What is OpenAC
+
+OpenAC is an open-source Asheron's Call client in Rust: the same behavior as
+the original game, in modern Rust.
 
 - **One program, many sessions.** `openac` runs any number of game sessions
   in one process, with zero or more windows. A window can open onto any
@@ -36,15 +48,18 @@ game, in modern Rust.
 - **Plugins are WebAssembly.** A plugin is an ordinary Rust crate built for
   `wasm32-unknown-unknown`; the same plugin runs with or without a window,
   sandboxed, with the permissions it declares.
-- **A launcher** (`openac-launcher`) keeps your accounts and servers, starts
-  sessions graphical or headless, and installs plugins.
+- **A launcher** (`openac-launcher`) keeps your accounts, characters and
+  servers (and imports them from the Thwarg launcher), starts sessions
+  graphical or headless, keeps checked clients running (it starts them when
+  it opens and after a crash), runs each character's logon commands, and
+  installs and updates plugins.
 
-openac-rust does not ship any game data. You supply your own data files.
+OpenAC does not ship any game data. You supply your own data files.
 
 ## Status
 
-openac-rust is **under active development**. It ports OpenAC subsystem by
-subsystem and covers nearly all of it: login and character selection, the
+OpenAC is **under active development** and covers nearly all of the game:
+login and character selection, the
 streamed world with its terrain, buildings and dungeons, movement and
 collision, combat and magic, inventory, vendors and trade, chat, the original
 interface, audio, the WebAssembly plugin host, and the launcher. Expect bugs;
@@ -52,41 +67,55 @@ reports are welcome.
 
 **Platforms.** Windows 10 and 11 (64-bit) is where it is played most. Linux
 (64-bit, X11 or Wayland) builds and runs, with less time in front of players.
-macOS on Apple silicon (macOS 14 or later) builds and runs on Metal; it is
-the newest platform.
+macOS (macOS 14 or later) runs on Metal on Apple silicon; it is the newest
+platform. Intel Macs get a build from 0.2.0 on, so far tested only by the
+release checks.
 
 **Found a bug?** Open a
-[GitHub issue](https://github.com/eriknihlen/openac-rust/issues) with the
+[GitHub issue](https://github.com/eriknihlen/OpenAC/issues) with the
 version, what you did, what happened, and a screenshot if you can.
 
 ## Download
 
-Grab the build for your platform from the
-[latest release](https://github.com/eriknihlen/openac-rust/releases/latest),
-unzip it anywhere, and run the launcher:
+The [documentation site](https://eriknihlen.github.io/OpenAC/) has the
+player guide, the plugin guide and the release notes.
+
+**Download the launcher; it fetches the client.** Take the launcher for your
+platform from the
+[latest release](https://github.com/eriknihlen/OpenAC/releases/latest), unzip
+it anywhere and run it:
 
 | Platform | Download | Run |
 |---|---|---|
-| Windows | `openac-win-x64.zip` | `openac-launcher.exe` |
-| Linux | `openac-linux-x64.zip` | `./openac-launcher` |
+| Windows | `launcher-win-x64.zip` | `openac-launcher.exe` |
+| Linux | `launcher-linux-x64.zip` | `./openac-launcher` |
 | macOS (Apple silicon) | `OpenAC-<version>-osx-arm64.zip` | `OpenAC.app` |
+| macOS (Intel) | `OpenAC-<version>-osx-x64.zip` | `OpenAC.app` |
 
-The zip holds both programs; the launcher starts the `openac` beside it. On
-macOS they are inside `OpenAC.app`; move it to Applications and open it. The
-app is signed ad hoc, not with an Apple Developer ID, so macOS blocks the
-first start of a downloaded copy: allow it under System Settings, Privacy &
-Security ("Open Anyway").
+On first start the launcher asks for your game data folder, then offers the
+game client ("A new version of the game is available": **Review update**) and
+installs it; from then on it keeps itself and the client up to date. On macOS
+the launcher and the client come together in `OpenAC.app`; move it to
+Applications and open it. The app is signed ad hoc, not with an Apple
+Developer ID, so macOS blocks the first start of a downloaded copy: allow it
+under System Settings, Privacy & Security ("Open Anyway").
+
+**Coming from another launcher?** The launcher imports your accounts,
+servers, characters, profiles and logon commands from the Thwarg launcher
+(**Import from Thwarg launcher…**, beside Logon commands), and, once MossTank
+is installed, your VirindiTank and UtilityBelt settings and profiles
+(**Import VTank & UB…**).
 
 You will need:
 
 - A GPU and driver with **Direct3D 12** (Windows) or **Vulkan** (Windows or
-  Linux); on macOS, **Metal** (every Apple-silicon Mac).
+  Linux); on macOS, **Metal** (every Mac that runs macOS 14).
 - **Your own Asheron's Call data files** (`client_portal.dat`,
   `client_cell_1.dat`, `client_highres.dat`, `client_local_English.dat`).
   The launcher asks for their folder on first run; `openac` looks in
   `Documents\Asheron's Call` under your user profile unless `--dat-dir` or
   `OPENAC_DAT_DIR` names another.
-- **A server to connect to.** openac-rust speaks ACEmulator's protocol; a
+- **A server to connect to.** OpenAC speaks ACEmulator's protocol; a
   local ACE server works well for trying it out.
 
 ## Build from source
@@ -108,8 +137,8 @@ sudo apt install build-essential pkg-config libssl-dev libasound2-dev
 Then:
 
 ```bash
-git clone https://github.com/eriknihlen/openac-rust.git
-cd openac-rust
+git clone https://github.com/eriknihlen/OpenAC.git
+cd OpenAC
 cargo build --release
 ```
 
@@ -161,11 +190,11 @@ listed in the launcher's Discover panel.
 
 ## AI-assisted development
 
-Like OpenAC, this is a heavily AI-assisted project, and it says so openly.
-Most of the code was written by AI tools working under the maintainer's
-direction and supervision. What every change has to pass is the same gate: it
-is formatted, it passes clippy with warnings as errors, it passes the test
-suite, and it behaves like the original game when the maintainer plays it.
+This is a heavily AI-assisted project, and it says so openly. Most of the code was written by AI tools working under the
+maintainer's direction and supervision. What every change has to pass is the
+same gate: it is formatted, it passes clippy with warnings as errors, it
+passes the test suite, and it behaves like the original game when the
+maintainer plays it.
 The person who merges a change answers for it.
 
 AI-assisted contributions are welcome on exactly those terms: submit changes
@@ -176,13 +205,12 @@ request.
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules.
 - File bugs and feature requests in
-  [Issues](https://github.com/eriknihlen/openac-rust/issues).
+  [Issues](https://github.com/eriknihlen/OpenAC/issues).
 - Fork it. The MIT license means you never need permission.
 
 ## Acknowledgements
 
-openac-rust is a port of [OpenAC](https://github.com/eriknihlen/OpenAC) and
-stands on the same work of the Asheron's Call preservation community:
+OpenAC stands on the work of the Asheron's Call preservation community:
 [ACEmulator](https://github.com/ACEmulator/ACE) for the server and protocol,
 [DatReaderWriter](https://github.com/Chorizite/DatReaderWriter),
 [WorldBuilder](https://github.com/Chorizite/WorldBuilder) and
@@ -198,7 +226,7 @@ Call automation plugin should be. Rendering goes through
 
 ## License
 
-openac-rust is released under the [MIT License](LICENSE). Third-party notices
+OpenAC is released under the [MIT License](LICENSE). Third-party notices
 are in [NOTICE.md](NOTICE.md).
 
 Asheron's Call and all associated names, art, and data files are the property
