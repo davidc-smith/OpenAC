@@ -18,13 +18,15 @@
 //!
 //! The gameplay messages live in public modules by subject: [`chat`],
 //! [`turbine_chat`], [`client_commands`], [`social`], [`allegiance`],
-//! [`fellowship`], [`house`], [`trade`], [`book`], [`chess`], [`vendor`],
+//! [`fellowship`], [`house`], [`trade`], [`book`], [`chess`], [`barber`],
+//! [`vendor`],
 //! [`inventory`], [`combat`], [`magic`], [`appraise`], [`character`],
 //! [`contract`], [`effects`] and [`movement_out`]. Each holds the server
 //! messages and event payloads of its subject (`parse`) and the client
 //! requests (`build_*`). Game-action builders take the session's next
 //! action sequence number, see [`GameActionSequence`].
 
+mod account_boot;
 mod character_error;
 mod character_list;
 mod create_object;
@@ -56,6 +58,7 @@ mod wire;
 
 pub mod allegiance;
 pub mod appraise;
+pub mod barber;
 pub mod book;
 pub mod character;
 pub mod chat;
@@ -80,6 +83,7 @@ mod sequence_tests;
 mod test_util;
 
 pub use ac_bits::BitsError;
+pub use account_boot::{AccountBanned, AccountBooted};
 pub use character_error::{CharacterError, CharacterErrorCode};
 pub use character_list::{Character, CharacterList, EnterWorldSelection, SelectionError};
 pub use create_object::CreateObject;
@@ -121,11 +125,11 @@ pub use player_description::{
 };
 pub use quality_update::{
     PrivateUpdateAttribute, PrivateUpdatePosition, PrivateUpdatePropertyBool,
-    PrivateUpdatePropertyDataId, PrivateUpdatePropertyInstanceId, PrivateUpdatePropertyInt,
-    PrivateUpdatePropertyInt64, PrivateUpdatePropertyString, PrivateUpdateSkill,
-    PrivateUpdateVital, PrivateUpdateVitalCurrent, PublicUpdatePropertyBool,
-    PublicUpdatePropertyDataId, PublicUpdatePropertyInstanceId, PublicUpdatePropertyInt,
-    PublicUpdatePropertyString,
+    PrivateUpdatePropertyDataId, PrivateUpdatePropertyFloat, PrivateUpdatePropertyInstanceId,
+    PrivateUpdatePropertyInt, PrivateUpdatePropertyInt64, PrivateUpdatePropertyString,
+    PrivateUpdateSkill, PrivateUpdateVital, PrivateUpdateVitalCurrent, PublicUpdatePropertyBool,
+    PublicUpdatePropertyDataId, PublicUpdatePropertyFloat, PublicUpdatePropertyInstanceId,
+    PublicUpdatePropertyInt, PublicUpdatePropertyInt64, PublicUpdatePropertyString,
 };
 pub use update_motion::UpdateMotion;
 pub use update_position::*;

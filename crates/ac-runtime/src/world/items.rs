@@ -232,13 +232,15 @@ pub fn appraisal_update(
     }
 }
 
-/// A creature profile as the item table keeps it (its attribute highlights
-/// colour the assess window only, so they are not kept).
+/// A creature profile as the item table keeps it.
 fn creature_profile(profile: &CreatureProfile) -> ClientCreatureProfile {
+    let (attribute_highlights, attribute_colors) = profile.attribute_highlights.unwrap_or((0, 0));
     ClientCreatureProfile {
         flags: profile.flags,
         health: profile.health,
-        health_max: profile.health_max,
+        max_health: profile.health_max,
+        attribute_highlights,
+        attribute_colors,
         attributes: profile.attributes.map(|a| ClientCreatureAttributes {
             strength: a.strength,
             endurance: a.endurance,
@@ -247,9 +249,9 @@ fn creature_profile(profile: &CreatureProfile) -> ClientCreatureProfile {
             focus: a.focus,
             self_: a.self_,
             stamina: a.stamina,
-            stamina_max: a.stamina_max,
+            max_stamina: a.stamina_max,
             mana: a.mana,
-            mana_max: a.mana_max,
+            max_mana: a.mana_max,
         }),
     }
 }
@@ -263,6 +265,14 @@ impl World {
         let mut events = Vec::new();
         let result = mutate(&mut self.items, &mut events);
         for event in events {
+            // An object's quality counters live as long as its record.
+            match &event {
+                TableEvent::Removed { object, .. } => {
+                    self.quality_stamps.remove(&object.object_id());
+                }
+                TableEvent::Cleared => self.quality_stamps.clear(),
+                _ => {}
+            }
             if let Some(change) = ItemChange::of(&event) {
                 self.changes.push(WorldChange::Item(change));
             }

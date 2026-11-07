@@ -1,14 +1,16 @@
 use crate::{
-    CharacterError, CharacterList, CreateObject, DddBegin, DeleteObject, GameEventEnvelope,
-    ObjDescEvent, Opcode, ParentEvent, PickupEvent, PlayerTeleport, ProtoError, Result, ServerName,
-    SetState, UpdateMotion, UpdatePosition, VectorUpdate, is_logoff_confirmation, read_opcode,
+    AccountBanned, AccountBooted, CharacterError, CharacterList, CreateObject, DddBegin,
+    DeleteObject, GameEventEnvelope, ObjDescEvent, Opcode, ParentEvent, PickupEvent,
+    PlayerTeleport, ProtoError, Result, ServerName, SetState, UpdateMotion, UpdatePosition,
+    VectorUpdate, is_logoff_confirmation, read_opcode,
 };
 use crate::{
     InventoryRemoveObject, PrivateUpdateAttribute, PrivateUpdatePosition,
-    PrivateUpdatePropertyBool, PrivateUpdatePropertyDataId, PrivateUpdatePropertyInstanceId,
-    PrivateUpdatePropertyInt, PrivateUpdatePropertyInt64, PrivateUpdatePropertyString,
-    PrivateUpdateSkill, PrivateUpdateVital, PrivateUpdateVitalCurrent, PublicUpdatePropertyBool,
-    PublicUpdatePropertyDataId, PublicUpdatePropertyInstanceId, PublicUpdatePropertyInt,
+    PrivateUpdatePropertyBool, PrivateUpdatePropertyDataId, PrivateUpdatePropertyFloat,
+    PrivateUpdatePropertyInstanceId, PrivateUpdatePropertyInt, PrivateUpdatePropertyInt64,
+    PrivateUpdatePropertyString, PrivateUpdateSkill, PrivateUpdateVital, PrivateUpdateVitalCurrent,
+    PublicUpdatePropertyBool, PublicUpdatePropertyDataId, PublicUpdatePropertyFloat,
+    PublicUpdatePropertyInstanceId, PublicUpdatePropertyInt, PublicUpdatePropertyInt64,
     PublicUpdatePropertyString, SetStackSize,
 };
 
@@ -25,6 +27,11 @@ pub enum Inbound<'a> {
     /// A login or character-selection rejection. Check
     /// [`CharacterError::is_sentinel`] before treating it as one.
     CharacterError(CharacterError),
+    /// The server booted the account; it drops the connection next.
+    AccountBooted(AccountBooted),
+    /// The server refused the account as banned; it drops the connection
+    /// next.
+    AccountBanned(AccountBanned),
     /// The server confirmed the character log-off.
     LogOffConfirmed,
     /// The server is ready for the enter-world message.
@@ -49,6 +56,12 @@ pub enum Inbound<'a> {
     PrivateUpdatePropertyInt(PrivateUpdatePropertyInt),
     /// A 64-bit integer property changed on the player.
     PrivateUpdatePropertyInt64(PrivateUpdatePropertyInt64),
+    /// A 64-bit integer property changed on a visible object.
+    PublicUpdatePropertyInt64(PublicUpdatePropertyInt64),
+    /// A decimal property changed on the player.
+    PrivateUpdatePropertyFloat(PrivateUpdatePropertyFloat),
+    /// A decimal property changed on a visible object.
+    PublicUpdatePropertyFloat(PublicUpdatePropertyFloat),
     /// A true/false property changed on the player.
     PrivateUpdatePropertyBool(PrivateUpdatePropertyBool),
     /// A true/false property changed on a visible object.
@@ -147,6 +160,8 @@ impl<'a> Inbound<'a> {
             Some(Opcode::CharacterList) => Self::CharacterList(CharacterList::parse(body)?),
             Some(Opcode::ServerName) => Self::ServerName(ServerName::parse(body)?),
             Some(Opcode::CharacterError) => Self::CharacterError(CharacterError::parse(body)?),
+            Some(Opcode::AccountBooted) => Self::AccountBooted(AccountBooted::parse(body)?),
+            Some(Opcode::AccountBanned) => Self::AccountBanned(AccountBanned::parse(body)?),
             Some(Opcode::ServerReady) => Self::ServerReady,
             Some(Opcode::DddInterrogation) => Self::DddInterrogation,
             Some(Opcode::DddBegin) => Self::DddBegin(DddBegin::parse(body)?),
@@ -170,6 +185,15 @@ impl<'a> Inbound<'a> {
             }
             Some(Opcode::PrivateUpdatePropertyInt64) => {
                 Self::PrivateUpdatePropertyInt64(PrivateUpdatePropertyInt64::parse(body)?)
+            }
+            Some(Opcode::PublicUpdatePropertyInt64) => {
+                Self::PublicUpdatePropertyInt64(PublicUpdatePropertyInt64::parse(body)?)
+            }
+            Some(Opcode::PrivateUpdatePropertyFloat) => {
+                Self::PrivateUpdatePropertyFloat(PrivateUpdatePropertyFloat::parse(body)?)
+            }
+            Some(Opcode::PublicUpdatePropertyFloat) => {
+                Self::PublicUpdatePropertyFloat(PublicUpdatePropertyFloat::parse(body)?)
             }
             Some(Opcode::PrivateUpdatePropertyBool) => {
                 Self::PrivateUpdatePropertyBool(PrivateUpdatePropertyBool::parse(body)?)
@@ -353,6 +377,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn account_boot_and_ban_are_classified() {
+        assert_eq!(
+            Inbound::parse(&words(&[0xF7DC])),
+            Ok(Inbound::AccountBooted(AccountBooted { reason: None }))
+        );
+        assert_eq!(
+            Inbound::parse(&words(&[0xF7C1, 60])),
+            Ok(Inbound::AccountBanned(AccountBanned {
+                seconds_remaining: 60,
+                reason: None,
+            }))
+        );
+        // A ban without its seconds is malformed.
+        assert!(Inbound::parse(&words(&[0xF7C1])).is_err());
+    }
+
     /// Opcode, guid, empty appearance, empty physics block with zero
     /// counters, no description.
     fn minimal_description(opcode: u32, guid: u32) -> Vec<u8> {
@@ -474,7 +515,7 @@ mod tests {
             w.into_vec()
         }
         type Check = fn(&Inbound<'_>) -> bool;
-        let cases: [(Vec<u8>, Check); 14] = [
+        let cases: [(Vec<u8>, Check); 17] = [
             (
                 with_sequence(0x02CE, &[1, 18, 9]),
                 |m| matches!(m, Inbound::PublicUpdatePropertyInt(p) if p.guid == 1 && p.value == 9),
@@ -486,6 +527,19 @@ mod tests {
             (
                 with_sequence(0x02CF, &[1, 7, 0]),
                 |m| matches!(m, Inbound::PrivateUpdatePropertyInt64(p) if p.value == 7),
+            ),
+            (
+                with_sequence(0x02D0, &[1, 2, 7, 0]),
+                |m| matches!(m, Inbound::PublicUpdatePropertyInt64(p) if p.guid == 1 && p.value == 7),
+            ),
+            (
+                // 1.25 as a little-endian double: low word 0, high 0x3FF4_0000.
+                with_sequence(0x02D4, &[1, 39, 0, 0x3FF4_0000]),
+                |m| matches!(m, Inbound::PublicUpdatePropertyFloat(p) if p.property == 39 && p.value == 1.25),
+            ),
+            (
+                with_sequence(0x02D3, &[76, 0, 0x3FE0_0000]),
+                |m| matches!(m, Inbound::PrivateUpdatePropertyFloat(p) if p.property == 76 && p.value == 0.5),
             ),
             (
                 with_sequence(0x02D8, &[1, 52, 0x0600_1234]),

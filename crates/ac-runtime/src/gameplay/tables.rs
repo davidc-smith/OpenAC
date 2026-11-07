@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ac_core::chargen::ChargenOptions;
+use ac_core::chargen::{ChargenOptions, ChargenPalSet, ChargenPalSetSource};
 use ac_core::items::component_fill::ComponentDescription;
 use ac_core::player::{SkillBase, SkillFormula};
 use ac_core::quests::{ContractCatalog, ContractEntry};
@@ -123,6 +123,9 @@ pub struct GameTables {
     /// Each trade note's value in pyreals, by its weenie class.
     trade_notes: Arc<HashMap<u32, i32>>,
     chargen: Arc<ChargenOptions>,
+    /// The palette sets the character-creation options name (skin and
+    /// hair), by id: what the barber reads a look back from.
+    chargen_pal_sets: Arc<ChargenPalSets>,
     contracts: Arc<ContractCatalog>,
     /// The language filter's banned patterns for chat.
     chat_taboo: ChatTaboo,
@@ -160,6 +163,7 @@ impl GameTables {
             skills,
             trade_notes: Arc::default(),
             chargen: Arc::default(),
+            chargen_pal_sets: Arc::default(),
             contracts: Arc::default(),
             chat_taboo: ChatTaboo::default(),
             chat_poses: Arc::default(),
@@ -208,6 +212,20 @@ impl GameTables {
         self
     }
 
+    /// The same tables with these character-creation palette sets (tests,
+    /// tools).
+    #[must_use]
+    pub fn with_chargen_pal_sets(mut self, sets: ChargenPalSets) -> Self {
+        self.chargen_pal_sets = Arc::new(sets);
+        self
+    }
+
+    /// The palette sets the character-creation options name.
+    #[must_use]
+    pub fn chargen_pal_sets(&self) -> &ChargenPalSets {
+        &self.chargen_pal_sets
+    }
+
     /// The same tables with this contract catalog (tests, tools).
     #[must_use]
     pub fn with_contracts(mut self, contracts: ContractCatalog) -> Self {
@@ -237,7 +255,7 @@ impl GameTables {
     /// record that does not fit.
     pub fn load(dats: &DatCollection) -> Result<Self, TablesError> {
         let component_table: Option<SpellComponentTable> = dats.get(SPELL_COMPONENT_TABLE_ID)?;
-        let component_ids: Option<EnumIdMap> = dats.portal.get(COMPONENT_ID_MAP_ID)?;
+        let component_ids: Option<EnumIdMap> = dats.get(COMPONENT_ID_MAP_ID)?;
         let mut wcid_by_scid = HashMap::new();
         let mut component_names = HashMap::new();
         let mut components_by_class = HashMap::new();
@@ -377,6 +395,7 @@ impl GameTables {
             component_details,
             magic_packs,
             skills,
+            chargen_pal_sets: Arc::new(chargen_pal_sets(dats, &chargen)?),
             chargen: Arc::new(chargen),
             trade_notes: Arc::new(trade_notes),
             contracts: Arc::new(contracts),
@@ -484,6 +503,44 @@ impl GameTables {
     }
 }
 
+/// Palette sets by id, as the dats hold them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ChargenPalSets(pub HashMap<u32, Arc<ChargenPalSet>>);
+
+impl ChargenPalSetSource for ChargenPalSets {
+    fn pal_set(&self, pal_set_id: u32) -> Option<Arc<ChargenPalSet>> {
+        self.0.get(&pal_set_id).cloned()
+    }
+}
+
+/// Every gender's skin palette set and hair colours' palette sets.
+fn chargen_pal_sets(
+    dats: &DatCollection,
+    chargen: &ChargenOptions,
+) -> Result<ChargenPalSets, TablesError> {
+    let mut sets = HashMap::new();
+    for heritage in chargen.heritages_by_id.values() {
+        for gender in heritage.genders_by_key.values() {
+            let ids =
+                std::iter::once(gender.skin_pal_set_id).chain(gender.hair_colors.iter().copied());
+            for id in ids {
+                if sets.contains_key(&id) {
+                    continue;
+                }
+                if let Some(set) = dats.get::<ac_dat::objects::PaletteSet>(id)? {
+                    sets.insert(
+                        id,
+                        Arc::new(ChargenPalSet {
+                            palette_ids: set.palettes,
+                        }),
+                    );
+                }
+            }
+        }
+    }
+    Ok(ChargenPalSets(sets))
+}
+
 /// The trade notes: the master map names the category's map, whose slot
 /// names the dual map from each denomination (pyreals) to its weenie class.
 fn trade_note_denominations(dats: &DatCollection) -> Result<HashMap<u32, i32>, TablesError> {
@@ -493,7 +550,6 @@ fn trade_note_denominations(dats: &DatCollection) -> Result<HashMap<u32, i32>, T
     }
     let resolve = |map_id: u32, key: u32| -> Result<Option<u32>, TablesError> {
         Ok(dats
-            .portal
             .get::<EnumIdMap>(map_id)?
             .and_then(|m| m.client_id(key)))
     };
@@ -504,7 +560,6 @@ fn trade_note_denominations(dats: &DatCollection) -> Result<HashMap<u32, i32>, T
         return Ok(HashMap::new());
     };
     Ok(dats
-        .portal
         .get::<ac_dat::objects::DualEnumIdMap>(notes_id)?
         .map(|m| {
             m.map
@@ -531,7 +586,6 @@ pub fn magic_packs(dats: &DatCollection) -> Result<HashMap<u32, u32>, TablesErro
     }
     let resolve = |map_id: u32, key: u32| -> Result<Option<u32>, TablesError> {
         Ok(dats
-            .portal
             .get::<EnumIdMap>(map_id)?
             .and_then(|m| m.client_id(key)))
     };
@@ -542,7 +596,6 @@ pub fn magic_packs(dats: &DatCollection) -> Result<HashMap<u32, u32>, TablesErro
         return Ok(HashMap::new());
     };
     Ok(dats
-        .portal
         .get::<EnumIdMap>(packs_id)?
         .map(|m| m.client_enum_to_id.into_iter().collect())
         .unwrap_or_default())

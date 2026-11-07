@@ -321,6 +321,30 @@ fn the_toggle_sends_the_default_mode_and_the_server_s_word_follows() {
 }
 
 #[test]
+fn a_combat_mode_older_than_the_one_held_changes_nothing() {
+    // The game's per-property update counter: the combat-mode property
+    // follows the world's verdict, so a late packet carrying an older mode
+    // does not undo a newer one.
+    let mut f = Fixture::in_the_field();
+    let mode = |sequence, value| {
+        Inbound::PrivateUpdatePropertyInt(PrivateUpdatePropertyInt {
+            sequence,
+            property: COMBAT_MODE_PROPERTY,
+            value,
+        })
+    };
+    f.apply(&mode(5, CombatMode::MELEE.bits().cast_signed()));
+    assert_eq!(f.gameplay.combat().server_mode(), Some(CombatMode::MELEE));
+    f.apply(&mode(4, CombatMode::NON_COMBAT.bits().cast_signed()));
+    assert_eq!(f.gameplay.combat().server_mode(), Some(CombatMode::MELEE));
+    f.apply(&mode(6, CombatMode::NON_COMBAT.bits().cast_signed()));
+    assert_eq!(
+        f.gameplay.combat().server_mode(),
+        Some(CombatMode::NON_COMBAT)
+    );
+}
+
+#[test]
 fn with_a_body_bound_a_mode_change_waits_for_the_stance_and_a_teleport_refuses_it() {
     // OpenAC `RuntimeCombatModeReadiness` (bound by `GameRuntime`): the body
     // is not ready with no body to ask, so the change is parked; a teleport
@@ -368,6 +392,34 @@ fn death_of(guid: u32) -> Inbound<'static> {
             },
         },
     }))
+}
+
+#[test]
+fn a_corpse_deleted_before_its_create_records_no_death() {
+    // The delete came first and the world takes it right after the
+    // create: the object is gone again, so its death motion is not noted.
+    const CORPSE: u32 = 0x8000_0109;
+    let mut f = Fixture::in_the_field();
+    f.events();
+    f.apply(&Inbound::DeleteObject(ac_proto::DeleteObject {
+        guid: CORPSE,
+        instance_sequence: 1,
+    }));
+    let Inbound::CreateObject(mut corpse) = object(CORPSE, "Corpse", 0x10, 0, 6.0) else {
+        unreachable!()
+    };
+    let Inbound::UpdateMotion(dead) = death_of(CORPSE) else {
+        unreachable!()
+    };
+    corpse.physics.movement = Some(ac_proto::PhysicsMovement::Present {
+        raw: vec![0],
+        data: dead.movement,
+        is_autonomous: false,
+    });
+    f.apply(&Inbound::CreateObject(corpse));
+    assert!(f.world.object(CORPSE).is_none());
+    assert!(!f.gameplay.deaths().is_dead(CORPSE));
+    assert!(!f.events().contains(&GameplayEvent::CreatureDied(CORPSE)));
 }
 
 #[test]
@@ -1029,4 +1081,151 @@ fn a_guest_list_reply_prints_the_list_in_green_as_one_text() {
             LogTextType::Default
         )]
     );
+}
+
+// -- The barber ----------------------------------------------------------------
+
+#[test]
+fn the_start_barber_event_opens_the_barber_and_accepting_sends_the_look() {
+    use super::barber::tests::{HUMAN, MALE, options, pal_sets, server_look};
+    let mut f = Fixture::new();
+    f.gameplay = Gameplay::new(
+        Arc::new(
+            GameTables::empty()
+                .with_chargen(options())
+                .with_chargen_pal_sets(pal_sets()),
+        ),
+        String::new(),
+    );
+    f.describe(&crate::world::tests::empty_description());
+    for (property, value) in [
+        (PropertyInt::HERITAGE_GROUP.0, HUMAN),
+        (PropertyInt::GENDER.0, MALE),
+    ] {
+        f.apply(&Inbound::PrivateUpdatePropertyInt(
+            PrivateUpdatePropertyInt {
+                sequence: 1,
+                property,
+                value: value.cast_signed(),
+            },
+        ));
+    }
+    f.sent();
+    let look = barber::wire_look(&server_look());
+    let mut payload = ac_proto::barber::build_finish_barber(0, &look);
+    payload.drain(..12);
+    f.apply_bytes(&event(GameEventType::START_BARBER, &payload));
+    let view = f.gameplay.barber().view();
+    assert!(view.open);
+    assert_eq!((view.heritage, view.gender), (HUMAN, MALE));
+    assert_eq!(view.appearance.hair_style, 1);
+    assert!(f.sent().is_empty());
+    f.run(GameplayCommand::Barber(BarberCommand::Finish));
+    assert_eq!(f.sent(), [ac_proto::barber::build_finish_barber(2, &look)]);
+    assert!(!f.gameplay.barber().is_open());
+}
+
+#[test]
+fn cancelling_the_barber_sends_nothing() {
+    use super::barber::tests::server_look;
+    let mut f = Fixture::new();
+    let look = barber::wire_look(&server_look());
+    let mut payload = ac_proto::barber::build_finish_barber(0, &look);
+    payload.drain(..12);
+    f.apply_bytes(&event(GameEventType::START_BARBER, &payload));
+    assert!(f.gameplay.barber().is_open());
+    f.run(GameplayCommand::Barber(BarberCommand::Cancel));
+    assert!(f.sent().is_empty());
+    assert!(!f.gameplay.barber().is_open());
+}
+
+/// The barber opened for a character of `heritage` (male), placed in the
+/// world, with a movement owner beside it (no body: no dats).
+fn barber_for(heritage: u32) -> Fixture {
+    use super::barber::tests::{MALE, options, pal_sets, server_look};
+    let mut f = Fixture::new();
+    f.gameplay = Gameplay::new(
+        Arc::new(
+            GameTables::empty()
+                .with_chargen(options())
+                .with_chargen_pal_sets(pal_sets()),
+        ),
+        String::new(),
+    );
+    f.body = Some(Movement::new(true));
+    f.apply(&object(
+        PLAYER,
+        "+Horan",
+        0x10,
+        PublicWeenieFlags::PLAYER.bits(),
+        0.0,
+    ));
+    f.describe(&crate::world::tests::empty_description());
+    for (property, value) in [
+        (PropertyInt::HERITAGE_GROUP.0, heritage),
+        (PropertyInt::GENDER.0, MALE),
+    ] {
+        f.apply(&Inbound::PrivateUpdatePropertyInt(
+            PrivateUpdatePropertyInt {
+                sequence: 1,
+                property,
+                value: value.cast_signed(),
+            },
+        ));
+    }
+    f.sent();
+    let look = barber::wire_look(&server_look());
+    let mut payload = ac_proto::barber::build_finish_barber(0, &look);
+    payload.drain(..12);
+    f.apply_bytes(&event(GameEventType::START_BARBER, &payload));
+    assert!(f.gameplay.barber().is_open());
+    f
+}
+
+#[test]
+fn accepting_an_undead_look_stops_the_particles_then_plays_the_flames() {
+    use ac_core::chargen::barber::undead;
+    let mut f = barber_for(super::barber::tests::UNDEAD);
+    f.run(GameplayCommand::Barber(BarberCommand::SetAppearance(
+        crate::session::creation::AppearanceSlot::HairStyle,
+        2,
+    )));
+    assert!(f.gameplay.take_local_effects().is_empty());
+    f.run(GameplayCommand::Barber(BarberCommand::Finish));
+    assert_eq!(
+        f.gameplay.take_local_effects(),
+        [
+            LocalEffect::DestroyParticles(PLAYER),
+            LocalEffect::PlayScript {
+                guid: PLAYER,
+                script_id: undead::MALE_SKELETON_SCRIPT
+            },
+        ]
+    );
+    assert_eq!(f.sent().len(), 1);
+}
+
+#[test]
+fn accepting_an_empyrean_on_the_ground_gives_the_character_the_walking_table() {
+    use ac_core::chargen::barber::empyrean;
+    let mut f = barber_for(super::barber::tests::EMPYREAN);
+    let _ = f.world.drain_changes().count();
+    f.run(GameplayCommand::Barber(BarberCommand::SetToggle(true)));
+    f.run(GameplayCommand::Barber(BarberCommand::Finish));
+    assert_eq!(
+        f.world.object(PLAYER).unwrap().physics().motion_table_id,
+        Some(empyrean::MALE_MOTION_TABLE)
+    );
+    let key = f.world.object(PLAYER).unwrap().key();
+    assert!(
+        f.world
+            .drain_changes()
+            .any(|c| c == crate::world::WorldChange::AppearanceChanged(key))
+    );
+    // No particles or effect for an Empyrean.
+    assert!(f.gameplay.take_local_effects().is_empty());
+    let sent = f.sent();
+    assert_eq!(sent.len(), 1);
+    // The first option (walking) is the fifteenth word after the envelope.
+    assert_eq!(&sent[0][12 + 56..12 + 60], &1u32.to_le_bytes());
 }
