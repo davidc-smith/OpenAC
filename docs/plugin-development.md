@@ -127,13 +127,16 @@ the end of `ItemProperties`: a creature's profile from its last appraisal
 ([Appraising a creature](#appraising-a-creature)). A plugin built for an
 older version is sent the properties without it. API 1.10 added
 `launch_speed` at the end of `ProjectilePathQuery`: for a missile or arc,
-the launcher's maximum velocity (metres per second, at most 50), so the probe
-flies at that total speed on the lower arc to the aim point, as the server
-launches the shot, instead of the fixed speed lofted to land there. A target
-no arc reaches at that speed answers `InvalidTarget` ("The target is out of
-reach at 20.0 m/s."), and the answer's notice says the speed and launch angle
-used ("Launched at 20.0 m/s, 28.0° up."). A plugin built for an older version
-sends no launch speed, and its probe flies as before.
+the launcher's maximum velocity in metres per second, so the probe flies at
+that total speed on the lower arc to the aim point, as the server launches
+the shot, instead of the fixed speed lofted to land there. A speed above
+50 m/s is capped at 50. A speed that is not a finite number above 0 answers
+`InvalidTarget`, and so does a target no arc reaches at the capped speed
+("The target is out of reach at 20.0 m/s.", with no angle, as there is no
+launch). Any other answer's notice ends with the speed and launch angle used
+("Launched at 20.0 m/s, 28.0° up."). A straight shot ignores the speed. A
+plugin built for an older version sends no launch speed, and its probe flies
+as before.
 
 Everything the client offers goes through
 `Host`: game state, items, chat, movement and navigation, trade and vendors,
