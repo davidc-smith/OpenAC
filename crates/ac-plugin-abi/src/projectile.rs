@@ -56,13 +56,15 @@ wire_record! {
         pub diagnostics: bool,
         /// The launch speed, metres per second, for a missile or arc: the
         /// launcher's maximum velocity. With it the probe flies as a server
-        /// launches a missile: at this total speed (above 0, at most 50),
-        /// on the lower of the two arcs that reach the aim point under
-        /// 9.8 m/s² gravity, and a target no arc reaches at this speed is
-        /// an invalid target. The answer's notice says the speed and launch
-        /// angle used. Without it, or for a straight shot, the probe flies
-        /// as before: 46 m/s across for a missile, 37.5185 m/s for an arc,
-        /// lofted to land on the aim point. Added in API 1.10.
+        /// launches a missile: at this total speed, capped at 50, on the
+        /// lower of the two arcs that reach the aim point under 9.8 m/s²
+        /// gravity. A speed that is not a finite number above 0, or a
+        /// target no arc reaches at the (capped) speed, is an invalid
+        /// target, and the notice says which. Otherwise the answer's notice
+        /// ends with the speed and launch angle used. Without it, or for a
+        /// straight shot, the probe flies as before: 46 m/s across for a
+        /// missile, 37.5185 m/s for an arc, lofted to land on the aim
+        /// point. Added in API 1.10.
         since (1, 10) pub launch_speed: Option<f32>,
     }
 }

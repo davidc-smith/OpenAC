@@ -48,7 +48,7 @@ const GRAVITY: f32 = 9.8;
 /// point `across` metres away along the ground and `rise` metres higher.
 /// The velocity across and up, and the launch angle in radians; `None`
 /// when no arc reaches the point at this speed.
-fn ballistic_launch(speed: f32, across: f32, rise: f32) -> Option<(f32, f32, f32)> {
+pub(super) fn ballistic_launch(speed: f32, across: f32, rise: f32) -> Option<(f32, f32, f32)> {
     let speed2 = speed * speed;
     let root = speed2 * speed2 - GRAVITY * (GRAVITY * across * across + 2.0 * rise * speed2);
     if !root.is_finite() || root < 0.0 {
@@ -75,9 +75,9 @@ struct Launch {
 /// missile, arc), the curved kinds lofted to land under 9.8 m/s² gravity,
 /// and is swept one step at a time; a step that ends on the target clears
 /// it, anything else that stops it blocks. A missile or arc query with a
-/// launch speed flies instead at that total speed (at most 50 m/s) on the
+/// launch speed flies instead at that total speed (capped at 50 m/s) on the
 /// lower arc that reaches the aim point, as a server launches a missile,
-/// and the notice says the speed and angle; a target no arc reaches at
+/// and the notice says the speed and angle used; a target no arc reaches at
 /// that speed is invalid. `samples` collects one marker per step (in frame
 /// metres) when given.
 pub fn evaluate(
@@ -140,7 +140,16 @@ fn fly(
     horizontal = Vec2::new(delta.x, delta.y);
     horizontal_distance = horizontal.length();
     if horizontal_distance <= EPSILON {
-        return (result(ProjectilePathStatus::Clear), None);
+        // The aim point is straight above or below the start: nothing to
+        // fly through. A launch at a given speed must still be usable and
+        // reach that high.
+        if query.launch_speed.is_none() || query.kind == ProjectilePathKind::Straight {
+            return (result(ProjectilePathStatus::Clear), None);
+        }
+        return match launch(query, horizontal_distance, delta.z) {
+            Ok(launch) => (result(ProjectilePathStatus::Clear), launch.asked),
+            Err(refused) => (refused, None),
+        };
     }
     direction = horizontal / horizontal_distance;
     let launch = match launch(query, horizontal_distance, delta.z) {
@@ -252,8 +261,9 @@ fn fly(
 /// The velocity the flight starts with. Without a launch speed, or for a
 /// straight shot: the kind's speed across, and the climb that lands on the
 /// aim point (lofted against gravity for the curved kinds). With one, for
-/// a missile or arc: the lower arc at that total speed, or an invalid
-/// target when the speed is unusable or no arc reaches.
+/// a missile or arc: the lower arc at that total speed (above 50 m/s,
+/// 50), or an invalid target when the speed is not a finite number above 0
+/// or no arc reaches.
 fn launch(
     query: &ProjectilePathQuery,
     across: f32,
@@ -261,9 +271,9 @@ fn launch(
 ) -> Result<Launch, ProjectilePathResult> {
     let curved = query.kind != ProjectilePathKind::Straight;
     if let Some(asked) = query.launch_speed.filter(|_| curved) {
-        if asked.is_nan() || asked <= 0.0 {
+        if !asked.is_finite() || asked <= 0.0 {
             return Err(ProjectilePathResult {
-                notice: Some("The launch speed must be above 0 m/s.".to_owned()),
+                notice: Some("The launch speed must be a finite number above 0 m/s.".to_owned()),
                 ..result(ProjectilePathStatus::InvalidTarget)
             });
         }

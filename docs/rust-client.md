@@ -47,7 +47,7 @@ keeps loading and receives exactly what it did before:
 | 1.7 | 0.1.11 | plugin services (plugins call each other) and the server's last position of objects |
 | 1.8 | 0.1.11 | status board subscriptions: a plugin hears another's status changes |
 | 1.9 | 0.2.2 | a creature's appraisal profile (health, attributes, stamina and mana, and which are enchanted) in its item properties |
-| 1.10 | 0.2.3 | a projectile path query's launch speed: a missile or arc probe flies at the launcher's speed on the lower arc to its aim point |
+| 1.10 | 0.2.3 | a projectile path query's launch speed: a missile or arc probe flies at the launcher's speed (capped at 50 m/s) on the lower arc to its aim point |
 
 From 1.6 on, a released version never changes: a new function, event or
 field comes with the next minor version. 0.2.0 adds none; 1.10 is current.
