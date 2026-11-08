@@ -205,9 +205,10 @@ mod tests {
     /// published the same value as 1.5: it added two values of a pointer
     /// event's kind byte, not a shape. API 1.7 (plugin services, the
     /// server's last position on the world-object records) changed it,
-    /// API 1.8 (the status board's change notices) again, and API 1.9 (a
-    /// creature's appraisal profile on the item properties) again.
-    const PUBLISHED: u64 = 0xc38c_91a4_a884_79fa;
+    /// API 1.8 (the status board's change notices) again, API 1.9 (a
+    /// creature's appraisal profile on the item properties) again, and API
+    /// 1.10 (a projectile path query's launch speed) again.
+    const PUBLISHED: u64 = 0x0a41_279b_787e_750b;
 
     /// The fingerprint API 1.7 was published with. A released version's
     /// layout never changes: what a later version adds is marked `since`.
@@ -215,6 +216,57 @@ mod tests {
 
     /// The fingerprint API 1.8 was published with.
     const PUBLISHED_1_8: u64 = 0xce10_d6e2_b705_0b25;
+
+    /// The fingerprint API 1.9 was published with.
+    const PUBLISHED_1_9: u64 = 0xc38c_91a4_a884_79fa;
+
+    /// API 1.9 is published: it keeps the fingerprint it was published
+    /// with, whatever later versions add.
+    #[test]
+    fn api_1_9_keeps_its_published_fingerprint() {
+        let v1_9 = fingerprint_at(ApiVersion::new(1, 9));
+        assert_eq!(
+            v1_9, PUBLISHED_1_9,
+            "API 1.9's layout changed (fingerprint {v1_9:016x}, published {PUBLISHED_1_9:016x}): \
+             mark what was added `since` the version that adds it"
+        );
+    }
+
+    /// The calls API 1.10 changed, with the shape each had in API 1.9: a
+    /// projectile path query gained a launch speed.
+    const API_1_9_CHANGED: [(Import, u64); 1] =
+        [(Import::ProjectilesEvaluatePath, 0x9891_daed_5038_26ef)];
+
+    /// An import's shape as API 1.9 had it: its shape before API 1.10
+    /// changed it, else its shape now.
+    fn shape_before_1_10(import: Import) -> u64 {
+        API_1_9_CHANGED
+            .iter()
+            .find(|(i, _)| *i == import)
+            .map_or_else(|| import.shape(), |(_, shape)| *shape)
+    }
+
+    /// API 1.10 added a field at the end of a projectile path query, which
+    /// changes that one call's shape and nothing in the core shape. A
+    /// plugin built for API 1.9 keeps its own shape for it, and every
+    /// other import it has is as it was.
+    #[test]
+    fn api_1_9_plugins_keep_their_core_and_import_shapes() {
+        let v1_9 = ApiVersion::new(1, 9);
+        assert_eq!(core_shape(v1_9), CORE_SHAPE);
+        for (import, shape) in API_1_9_CHANGED {
+            assert_eq!(import.shape_at(v1_9), shape, "{import:?}");
+            assert_ne!(import.shape(), shape, "{import:?}");
+        }
+        let section = PluginLayout::parse(&section_at(v1_9)).unwrap();
+        for import in Import::ALL {
+            let expected = import
+                .since()
+                .is_at_most(v1_9)
+                .then(|| shape_before_1_10(*import));
+            assert_eq!(section.import_shape(import.name()), expected, "{import:?}");
+        }
+    }
 
     /// API 1.8 is published: it keeps the fingerprint it was published
     /// with, whatever later versions add.
@@ -244,12 +296,12 @@ mod tests {
     ];
 
     /// An import's shape as API 1.8 had it: its shape before API 1.9
-    /// changed it, else its shape now.
+    /// changed it, else its shape before API 1.10 did.
     fn shape_before_1_9(import: Import) -> u64 {
         API_1_8_CHANGED
             .iter()
             .find(|(i, _)| *i == import)
-            .map_or_else(|| import.shape(), |(_, shape)| *shape)
+            .map_or_else(|| shape_before_1_10(import), |(_, shape)| *shape)
     }
 
     /// API 1.9 added a field at the end of the item properties, which
