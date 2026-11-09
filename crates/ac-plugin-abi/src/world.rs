@@ -289,7 +289,9 @@ wire_record! {
         pub wielder_id: u32,
         /// [`capabilities`] bits.
         pub capabilities: u32,
-        /// The player carries or wields it (directly or in a pack).
+        /// The player carries or wields it (directly or in a pack), also
+        /// when a pack lists it before its description arrives (then
+        /// `container_id` is that pack).
         pub is_owned: bool,
         /// A landscape object (a static, non-item object).
         pub is_landscape: bool,
@@ -297,7 +299,9 @@ wire_record! {
         pub position: Option<Position>,
         /// An appraisal of it has arrived.
         pub has_appraisal_data: bool,
-        /// The server's time of the last appraisal, 0 for none.
+        /// When the last successful appraisal arrived, in milliseconds of
+        /// the client's session clock (not the server's time: compare it
+        /// only with other values of this field); 0 for none.
         pub last_id_time: i32,
         /// A door that stands open.
         pub is_door_open: bool,

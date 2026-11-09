@@ -126,7 +126,16 @@ a plugin built for an older version never gets. API 1.9 added `creature` at
 the end of `ItemProperties`: a creature's profile from its last appraisal
 ([Appraising a creature](#appraising-a-creature)). A plugin built for an
 older version is sent the properties without it. API 1.10 added
-`launch_speed` at the end of `ProjectilePathQuery`: for a missile or arc,
+`Host::all_enchantments`: every enchantment on the character, also one that
+a stronger enchantment of its family surpasses (an item's spell under a
+stronger buff), where `Host::enchantments` lists only those in effect. It
+covers every list (the multiplicative and additive ones, vitae and
+cooldowns), in order of layer, then spell id; one with no spell-table entry,
+such as a cooldown, reads family 0 and tier 0. An
+enchantment that does not run out reads `seconds_remaining` infinite; a timed
+one that has run out reads 0. A plugin built for an older version cannot
+import it. It also added `align` on a list's `<column>` in markup. API 1.11
+added `launch_speed` at the end of `ProjectilePathQuery`: for a missile or arc,
 the launcher's maximum velocity in metres per second, so the probe flies at
 that total speed on the lower arc to the aim point, as the server launches
 the shot, instead of the fixed speed lofted to land there. A speed above
@@ -213,6 +222,17 @@ plugin registers a window with `ui::PanelSpec`, pushes values to its
 bindings, and hears its buttons as `Event::Ui`. The window's state lives in
 the session, so a game window that attaches later shows it as it stands, and
 a session without a window answers the same.
+
+**List columns.** A list's `<column>` takes `align="left"` (the default) or
+`align="right"` (API 1.10), which keeps its text cells and its header caption
+to that edge of the column, a few pixels in, so numbers line up; text too
+wide for the column starts at the left and is cut at the right, as a
+left-aligned cell is. Any other value refuses the markup, and so does
+`align="right"` on a tree list's tree column (the first text column), whose
+tree indents from the left; its other columns may align right. The attribute
+moves only text: check, icon and button cells draw as they do. A client
+older than 1.10 ignores the attribute, as it ignores any it does not know,
+and draws the column left-aligned.
 
 **World drawing.** A plugin can put labels over objects
 (`Host::show_labels`), lines (`Host::create_line_layer`) and filled triangles
@@ -541,7 +561,7 @@ Every plugin folder holds a `plugin.json` beside its module:
   "displayName": "Hello",
   "version": "0.1.0",
   "entry": "hello.wasm",
-  "apiVersion": "1.10",
+  "apiVersion": "1.11",
   "minHostVersion": "0.1.0",
   "permissionsVersion": 1,
   "permissions": [
@@ -557,7 +577,7 @@ Every plugin folder holds a `plugin.json` beside its module:
 | `displayName` | The name players see. |
 | `version` | A SemVer 2.0 version (`1.2.0`, `1.3.0-beta.1`). |
 | `entry` | The `.wasm` file, inside the plugin folder. |
-| `apiVersion` | The plugin API version it was built for, `"MAJOR.MINOR"`: the SDK's `API_CURRENT` (currently `"1.10"`), which must match the version the SDK writes into the module. |
+| `apiVersion` | The plugin API version it was built for, `"MAJOR.MINOR"`: the SDK's `API_CURRENT` (currently `"1.11"`), which must match the version the SDK writes into the module. |
 | `minHostVersion`, `maxHostVersion`, `skipHostVersions` | The client versions it supports or is known broken on. `minHostVersion` is required for a launcher install. |
 | `permissionsVersion` | The permission vocabulary version (`1`); required when `permissions` is present. |
 | `permissions` | What it may do beyond the basics, each with a one-sentence `note` (at most 120 characters) the player reads before installing. |

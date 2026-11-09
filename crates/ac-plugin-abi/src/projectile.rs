@@ -64,8 +64,8 @@ wire_record! {
         /// ends with the speed and launch angle used. Without it, or for a
         /// straight shot, the probe flies as before: 46 m/s across for a
         /// missile, 37.5185 m/s for an arc, lofted to land on the aim
-        /// point. Added in API 1.10.
-        since (1, 10) pub launch_speed: Option<f32>,
+        /// point. Added in API 1.11.
+        since (1, 11) pub launch_speed: Option<f32>,
     }
 }
 
@@ -93,12 +93,12 @@ mod tests {
     use super::*;
     use crate::{ApiVersion, Wire};
 
-    // API 1.10 added the launch speed: what a plugin built for 1.9 sends is
+    // API 1.11 added the launch speed: what a plugin built for 1.10 sends is
     // the query without it, byte for byte as before, and reads as no launch
-    // speed; one built for 1.10 sends it.
+    // speed; one built for 1.11 sends it.
     #[test]
-    fn a_query_from_a_plugin_built_for_api_1_9_has_no_launch_speed() {
-        let v1_9 = ApiVersion::new(1, 9);
+    fn a_query_from_a_plugin_built_for_api_1_10_has_no_launch_speed() {
+        let v1_10 = ApiVersion::new(1, 10);
         let asked = ProjectilePathQuery {
             target_id: 0x5000_0001,
             kind: ProjectilePathKind::Missile,
@@ -113,11 +113,11 @@ mod tests {
             launch_speed: None,
             ..asked.clone()
         };
-        let old = asked.to_bytes_at(v1_9);
-        assert_eq!(old, without.to_bytes_at(v1_9));
+        let old = asked.to_bytes_at(v1_10);
+        assert_eq!(old, without.to_bytes_at(v1_10));
         assert_eq!(old.len() + 5, asked.to_bytes().len());
         assert_eq!(
-            ProjectilePathQuery::from_bytes_at(&old, v1_9).unwrap(),
+            ProjectilePathQuery::from_bytes_at(&old, v1_10).unwrap(),
             without
         );
         let now = ProjectilePathQuery::from_bytes(&asked.to_bytes()).unwrap();

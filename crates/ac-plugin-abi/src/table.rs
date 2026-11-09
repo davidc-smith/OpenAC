@@ -333,6 +333,15 @@ macro_rules! import_table {
             CharacterEnchantments = character_enchantments(bool)
                 -> Vec<$crate::character::ActiveEnchantment>,
                 permission: None, window: false, since: (1, 0);
+            /// Every enchantment on the character, in every list (the
+            /// multiplicative and additive ones, vitae and cooldowns),
+            /// including one a stronger enchantment of its family surpasses
+            /// (which `character_enchantments(false)` leaves out). One with no
+            /// spell-table entry (such as a cooldown) reads family 0 and tier 0.
+            /// In order of layer, then spell id.
+            CharacterAllEnchantments = character_all_enchantments(())
+                -> Vec<$crate::character::ActiveEnchantment>,
+                permission: None, window: false, since: (1, 10);
             /// Spend experience or credits on one stat.
             CharacterAdvance = character_advance($crate::character::AdvancementRequest)
                 -> $crate::character::AdvancementResult,
@@ -538,7 +547,12 @@ macro_rules! import_table {
                 permission: None, window: false, since: (1, 0);
 
             // ── G. Items, equipment, loot ───────────────────────────────
-            /// Everything the character owns, by name then id.
+            /// Everything the character owns, by name then id: worn, wielded,
+            /// in the main pack and inside every pack. An item the server has
+            /// listed in a pack but not described yet is included, in the
+            /// pack whose list holds it, with no name, class `Unknown` and no
+            /// header until its description arrives; until then it cannot be
+            /// sold, moved or used (those calls refuse it or send nothing).
             ItemsOwned = items_owned(()) -> Vec<$crate::items::InventoryItem>,
                 permission: None, window: false, since: (1, 0);
             /// Where the item commands stand (busy, completions).
@@ -547,7 +561,8 @@ macro_rules! import_table {
             /// The server has listed the character's inventory and every
             /// nested pack, and no inventory move or request is pending: only
             /// then does an item missing from the owned list mean it is no
-            /// longer owned. False outside the world.
+            /// longer owned. Listed, not described: an item may still lack
+            /// its description. False outside the world.
             ItemsInventoryComplete = items_inventory_complete(()) -> bool,
                 permission: None, window: false, since: (1, 0);
             /// The properties of an item the character owns.
@@ -705,7 +720,8 @@ macro_rules! import_table {
             /// Add (listing, count) to the buy list.
             VendorAddBuy = vendor_add_buy((u32, i32)) -> $crate::trade::VendorResult,
                 permission: None, window: false, since: (1, 0);
-            /// Add an owned item to the sell list.
+            /// Add an owned item to the sell list; one listed but not yet
+            /// described is refused as an invalid item.
             VendorAddSell = vendor_add_sell(u32) -> $crate::trade::VendorResult,
                 permission: None, window: false, since: (1, 0);
             /// Take a listing off the buy list.

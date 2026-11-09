@@ -64,6 +64,16 @@ impl Host<'_> {
         self.call::<calls::CharacterEnchantments>(&true)
     }
 
+    /// Every enchantment on the character, including those a stronger one
+    /// of the same family surpasses (API 1.10). [`Self::enchantments`]
+    /// lists only the ones in effect. Every list is included (the
+    /// multiplicative and additive ones, vitae and cooldowns); one with no
+    /// spell-table entry (such as a cooldown) reads family 0 and tier 0. In
+    /// order of layer, then spell id.
+    pub fn all_enchantments(&mut self) -> Vec<ActiveEnchantment> {
+        self.call::<calls::CharacterAllEnchantments>(&())
+    }
+
     /// Spend experience (or credits, to train) on one stat.
     pub fn advance(&mut self, kind: AdvancementKind, stat_id: u32, cost: u64) -> AdvancementResult {
         self.call::<calls::CharacterAdvance>(&AdvancementRequest {
@@ -213,7 +223,7 @@ impl Host<'_> {
     /// client's collision world (OpenAC `EvaluatePath`, with markers per
     /// step when `query.diagnostics` is set). For a missile or arc, set
     /// `query.launch_speed` to the launcher's maximum velocity to fly the
-    /// probe as the server launches the shot (API 1.10): at that speed,
+    /// probe as the server launches the shot (API 1.11): at that speed,
     /// capped at 50 m/s, on the lower arc to the aim point. A speed that is
     /// not a finite number above 0, or a target out of reach at the capped
     /// speed, answers `InvalidTarget` with a notice saying which; any other
