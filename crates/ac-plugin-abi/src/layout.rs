@@ -207,9 +207,10 @@ mod tests {
     /// server's last position on the world-object records) changed it,
     /// API 1.8 (the status board's change notices) again, API 1.9 (a
     /// creature's appraisal profile on the item properties) again, and API
-    /// 1.10 (every enchantment on the character, an import) again, and
-    /// API 1.11 (a projectile path query's launch speed) again.
-    const PUBLISHED: u64 = 0x58eb_b0d8_f514_961b;
+    /// 1.10 (every enchantment on the character, an import) again, API
+    /// 1.11 (a projectile path query's launch speed) again, and API 1.12
+    /// (canvases in markup windows, resizing a canvas) again.
+    const PUBLISHED: u64 = 0x5295_5e52_d27b_6da3;
 
     /// The fingerprint API 1.7 was published with. A released version's
     /// layout never changes: what a later version adds is marked `since`.
@@ -217,6 +218,67 @@ mod tests {
 
     /// The fingerprint API 1.8 was published with.
     const PUBLISHED_1_8: u64 = 0xce10_d6e2_b705_0b25;
+
+    /// The fingerprint API 1.11 was published with.
+    const PUBLISHED_1_11: u64 = 0x58eb_b0d8_f514_961b;
+
+    /// API 1.11 is published: it keeps the fingerprint it was published
+    /// with, whatever later versions add.
+    #[test]
+    fn api_1_11_keeps_its_published_fingerprint() {
+        let v1_11 = fingerprint_at(ApiVersion::new(1, 11));
+        assert_eq!(
+            v1_11, PUBLISHED_1_11,
+            "API 1.11's layout changed (fingerprint {v1_11:016x}, published {PUBLISHED_1_11:016x}): \
+             mark what was added `since` the version that adds it"
+        );
+    }
+
+    /// The core shape every plugin built for API 1.9, 1.10 or 1.11 carries.
+    const API_1_11_CORE: u64 = 0x5cd8_bc3e_ecf2_2441;
+
+    /// The calls API 1.12 changed, with the shape each had in API 1.11: a
+    /// canvas registration gained whether it sits in markup.
+    const API_1_11_CHANGED: [(Import, u64); 1] =
+        [(Import::UiCanvasRegister, 0xf46e_dd2a_f0bf_2f4c)];
+
+    /// The import API 1.12 added: resizing a canvas on the screen.
+    const API_1_12_CANVAS: [Import; 1] = [Import::UiCanvasResize];
+
+    /// An import's shape as API 1.11 had it: its shape before API 1.12
+    /// changed it, else its shape now.
+    fn shape_before_1_12(import: Import) -> u64 {
+        API_1_11_CHANGED
+            .iter()
+            .find(|(i, _)| *i == import)
+            .map_or_else(|| import.shape(), |(_, shape)| *shape)
+    }
+
+    /// API 1.12 added an event (an in-markup canvas's new size), an import
+    /// and a field at the end of a canvas registration, each marked
+    /// `since`. A plugin built for API 1.11 keeps its core shape, its own
+    /// shape for the registration, lacks the import, and has every other
+    /// import as it was.
+    #[test]
+    fn api_1_11_plugins_keep_their_core_and_import_shapes() {
+        let v1_11 = ApiVersion::new(1, 11);
+        assert_eq!(core_shape(v1_11), API_1_11_CORE);
+        assert_ne!(CORE_SHAPE, API_1_11_CORE);
+        for (import, shape) in API_1_11_CHANGED {
+            assert_eq!(import.shape_at(v1_11), shape, "{import:?}");
+            assert_ne!(import.shape(), shape, "{import:?}");
+        }
+        let section = PluginLayout::parse(&section_at(v1_11)).unwrap();
+        for import in Import::ALL {
+            let new = API_1_12_CANVAS.contains(import);
+            assert_eq!(import.since() == ApiVersion::new(1, 12), new, "{import:?}");
+            let expected = import
+                .since()
+                .is_at_most(v1_11)
+                .then(|| shape_before_1_12(*import));
+            assert_eq!(section.import_shape(import.name()), expected, "{import:?}");
+        }
+    }
 
     /// The fingerprint API 1.10 was published with.
     const PUBLISHED_1_10: u64 = 0x4f98_d3ca_2e58_145f;
@@ -239,12 +301,12 @@ mod tests {
         [(Import::ProjectilesEvaluatePath, 0x9891_daed_5038_26ef)];
 
     /// An import's shape as API 1.10 had it: its shape before API 1.11
-    /// changed it, else its shape now.
+    /// changed it, else its shape before API 1.12 did.
     fn shape_before_1_11(import: Import) -> u64 {
         API_1_10_CHANGED
             .iter()
             .find(|(i, _)| *i == import)
-            .map_or_else(|| import.shape(), |(_, shape)| *shape)
+            .map_or_else(|| shape_before_1_12(import), |(_, shape)| *shape)
     }
 
     /// API 1.11 added a field at the end of a projectile path query, which
@@ -254,7 +316,7 @@ mod tests {
     #[test]
     fn api_1_10_plugins_keep_their_core_and_import_shapes() {
         let v1_10 = ApiVersion::new(1, 10);
-        assert_eq!(core_shape(v1_10), CORE_SHAPE);
+        assert_eq!(core_shape(v1_10), API_1_11_CORE);
         for (import, shape) in API_1_10_CHANGED {
             assert_eq!(import.shape_at(v1_10), shape, "{import:?}");
             assert_ne!(import.shape(), shape, "{import:?}");
@@ -288,17 +350,21 @@ mod tests {
     const API_1_10_ENCHANTMENTS: [Import; 1] = [Import::CharacterAllEnchantments];
 
     /// API 1.10 added only an import, marked `since`: a plugin built for
-    /// API 1.9 keeps this version's core shape, lacks the import, and has
-    /// every other import as API 1.10 has it.
+    /// API 1.9 keeps API 1.10's core shape, lacks the import (and those
+    /// later versions added), and has every other import as API 1.10 has
+    /// it.
     #[test]
     fn api_1_9_plugins_keep_their_core_and_import_shapes() {
         let v1_9 = ApiVersion::new(1, 9);
-        assert_eq!(core_shape(v1_9), CORE_SHAPE);
+        assert_eq!(core_shape(v1_9), API_1_11_CORE);
         let section = PluginLayout::parse(&section_at(v1_9)).unwrap();
         for import in Import::ALL {
             let new = API_1_10_ENCHANTMENTS.contains(import);
             assert_eq!(import.since() == ApiVersion::new(1, 10), new, "{import:?}");
-            let expected = (!new).then(|| shape_before_1_11(*import));
+            let expected = import
+                .since()
+                .is_at_most(v1_9)
+                .then(|| shape_before_1_11(*import));
             assert_eq!(section.import_shape(import.name()), expected, "{import:?}");
         }
         assert_ne!(section_at(v1_9), LAYOUT_SECTION_BYTES);
