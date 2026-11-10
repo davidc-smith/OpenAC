@@ -223,7 +223,7 @@ impl Host<'_> {
     /// client's collision world (OpenAC `EvaluatePath`, with markers per
     /// step when `query.diagnostics` is set). For a missile or arc, set
     /// `query.launch_speed` to the launcher's maximum velocity to fly the
-    /// probe as the server launches the shot (API 1.11): at that speed,
+    /// probe as the server launches the shot (API 1.12): at that speed,
     /// capped at 50 m/s, on the lower arc to the aim point. A speed that is
     /// not a finite number above 0, or a target out of reach at the capped
     /// speed, answers `InvalidTarget` with a notice saying which; any other

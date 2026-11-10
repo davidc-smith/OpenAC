@@ -1,5 +1,8 @@
-# Writing a plugin
-
++++
+title = "Writing a plugin"
+weight = 40
+aliases = ["docs/plugin-development.html"]
++++
 OpenAC plugins are WebAssembly modules. You write one as an ordinary
 Rust crate against the `openac-plugin` SDK, build it for
 `wasm32-unknown-unknown`, and drop it into the plugins folder. The client
@@ -8,7 +11,7 @@ it only what its `plugin.json` declares. The same plugin runs in a session
 with a game window and in one without.
 
 The SDK (`crates/openac-plugin`) and the calling convention under it
-(`crates/ac-plugin-abi`, with its version rules in `crates/ac-plugin-version`)
+(`crates/ac-plugin-abi`, with its version type in `crates/ac-plugin-version`)
 are MIT-licensed, so a plugin may use any license.
 
 Plugins written for the retired C# client are .NET assemblies and do not
@@ -135,6 +138,22 @@ such as a cooldown, reads family 0 and tier 0. An
 enchantment that does not run out reads `seconds_remaining` infinite; a timed
 one that has run out reads 0. A plugin built for an older version cannot
 import it. It also added `align` on a list's `<column>` in markup. API 1.11
+added `source` at the end of `SelectionChange` (`Event::SelectionChanged`):
+who changed the selection, one of the constants in `world::selection_source`:
+`SYSTEM` (0: the client itself: the selected object died, left the world or
+hid, or the session ended; the nearest monster picked as the next target with
+the auto-target option; a window picking a listing on its own, such as a
+shop's first listing as it opens), `KEYBOARD` (1: a selection key or a
+quick-slot select key; a deselect asked for on purpose, by Escape, a window or
+a plugin, reads this too), `MOUSE` (2: any selection made with the mouse: a
+left click, a right click that examines, or lifting an item to drag it, in the
+world or in a window) and `PLUGIN` (3: a plugin's select, or a selection the
+client makes for a command: an attack or a spell at a target, the give key, a
+merge or a pickup selecting the stack it joins; so `PLUGIN` does not mean the
+plugin's own selection). The event compares the selection
+once a pass, so when it changed more than once in a pass it reports the last
+change's source. A plugin built for an older version is sent the change
+without it and reads `SYSTEM`. API 1.12
 added `launch_speed` at the end of `ProjectilePathQuery`: for a missile or arc,
 the launcher's maximum velocity in metres per second, so the probe flies at
 that total speed on the lower arc to the aim point, as the server launches
@@ -145,8 +164,8 @@ the shot, instead of the fixed speed lofted to land there. A speed above
 launch). Any other answer's notice ends with the speed and launch angle used
 ("Launched at 20.0 m/s, 28.0° up."). A straight shot ignores the speed. A
 plugin built for an older version sends no launch speed, and its probe flies
-as before. API 1.12 added canvases inside windows: `in_markup` at the end of a
-canvas registration, the markup `<canvas>` element that hosts such a canvas
+as before. API 1.12 also added canvases inside windows: `in_markup` at the end
+of a canvas registration, the markup `<canvas>` element that hosts such a canvas
 ([Canvases in windows](#canvases-in-windows)), and `Event::CanvasResized`,
 which a plugin built for an older version never gets; its canvases sit on the
 screen as before. It also added `Canvas::resize` for a canvas on the screen.
@@ -635,7 +654,7 @@ Every plugin folder holds a `plugin.json` beside its module:
 | `displayName` | The name players see. |
 | `version` | A SemVer 2.0 version (`1.2.0`, `1.3.0-beta.1`). |
 | `entry` | The `.wasm` file, inside the plugin folder. |
-| `apiVersion` | The plugin API version it was built for, `"MAJOR.MINOR"`: the SDK's `API_CURRENT` (currently `"1.12"`), which must match the version the SDK writes into the module. |
+| `apiVersion` | The plugin API version it was built for, `"MAJOR.MINOR"`: the SDK's `API_CURRENT` (currently `"1.12"`), which must match the version the SDK writes into the module. The launcher installs a plugin only when the installed client loads this version (each client release says which versions it loads; see [Plugin API versions](rust-client.md#plugin-api-versions)), and refuses an install while no client is installed. |
 | `minHostVersion`, `maxHostVersion`, `skipHostVersions` | The client versions it supports or is known broken on. `minHostVersion` is required for a launcher install. |
 | `permissionsVersion` | The permission vocabulary version (`1`); required when `permissions` is present. |
 | `permissions` | What it may do beyond the basics, each with a one-sentence `note` (at most 120 characters) the player reads before installing. |
@@ -698,7 +717,9 @@ through storage.
 `plugincheck` tells you whether the launcher would install your plugin, using
 the launcher's own code: the same manifest parser, install rules, zip safety
 checks, content policy and icon rules. It also loads the module (never runs
-it) and checks it as a session would: the API version it was built for, the
+it) and checks it as a session would: the API version it was built for
+(against the client it was built with, so build `plugincheck` from the
+release your players run), the
 record layouts it was compiled against (a plugin built against a different
 SDK layout must be rebuilt), and that every client function it imports is
 allowed by its declared permissions. It lists permissions declared but never

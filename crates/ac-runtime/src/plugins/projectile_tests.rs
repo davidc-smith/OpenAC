@@ -171,7 +171,7 @@ fn a_shot_in_the_open_is_clear_and_one_under_the_ground_is_blocked() {
     assert!(samples.iter().all(|(_, clear)| *clear));
 }
 
-// ── A launch speed (API 1.11): a missile or arc flies at that total speed
+// ── A launch speed (API 1.12): a missile or arc flies at that total speed
 // on the lower arc that reaches the aim point, as a server launches one.
 
 fn launched_at(speed: f32, target_id: u32, kind: ProjectilePathKind) -> ProjectilePathQuery {
@@ -503,7 +503,7 @@ fn an_aim_point_straight_above_still_needs_a_usable_speed_that_reaches() {
     );
 }
 
-// Without a launch speed every kind flies exactly as before API 1.11:
+// Without a launch speed every kind flies exactly as before API 1.12:
 // these answers were recorded from the flight as it was, over open ground
 // 12 and 35 m out (the step count, its highest point over the shooter's
 // ground and where the middle step reached).

@@ -1012,6 +1012,44 @@ fn a_world_objects_server_position_reaches_only_plugins_built_for_api_1_7() {
     }
 }
 
+/// A selection change reaches a plugin exactly as its API version encodes
+/// it, through a real module: `rawbytes` built for API 1.10 is handed the
+/// change without who made it (byte for byte the 1.10 encoding) and reads
+/// it as the client's own; built for this API it gets it.
+#[test]
+fn the_selection_source_reaches_only_plugins_built_for_api_1_11() {
+    use ac_plugin::abi::world::{SelectionChange, selection_source};
+    let event = Event::SelectionChanged(SelectionChange {
+        previous: None,
+        selected: Some(0x8012_D57D),
+        source: selection_source::MOUSE,
+    });
+    for version in [ApiVersion::new(1, 10), API_CURRENT] {
+        let root = Root::new(&format!("raw-selection-{version}"));
+        install_built_for(&root.0, "rawbytes", version);
+        let mut api = FakeSession::default();
+        let mut plugins = session(&[&root.0], Some(&["openac.rawbytes"]));
+        plugins.start(&mut api);
+        assert_eq!(plugins.loaded_ids(), ["openac.rawbytes"], "{version}");
+        plugins.queue_event(event.clone());
+        plugins.pump(0.0, None, &mut api);
+        plugins.shutdown(&mut api);
+        let handed = raw_handed(&api, "event");
+        assert_eq!(handed, [event.to_bytes_at(version)], "{version}");
+        let Ok(Event::SelectionChanged(read)) = Event::from_bytes_at(&handed[0], version) else {
+            panic!("{version}: a selection change");
+        };
+        assert_eq!(read.selected, Some(0x8012_D57D), "{version}");
+        if version == API_CURRENT {
+            assert_eq!(handed[0], event.to_bytes());
+            assert_eq!(read.source, selection_source::MOUSE);
+        } else {
+            assert_eq!(handed[0].len() + 1, event.to_bytes().len(), "{version}");
+            assert_eq!(read.source, selection_source::SYSTEM, "{version}");
+        }
+    }
+}
+
 /// A path preview's plan reaches a plugin exactly as its API version
 /// encodes it, through a real module: `rawbytes` built for API 1.4 is
 /// handed the plan without the grid it reused or the worker's time (byte
